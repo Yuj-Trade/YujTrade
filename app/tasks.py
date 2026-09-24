@@ -69,7 +69,9 @@ async def run_full_analysis_task(chat_id: int, message_id: int):
         container = await TaskServiceContainer.instance()
         signals = await container.trading_service.run_analysis_for_all_symbols()
         logger.info(
-            f"Task 'run_full_analysis_task' finished for chat_id: {chat_id}. Generated {len(signals)} signals."
+            f"Task 'run_full_analysis_task' finished for chat_id: {chat_id}. "
+            f"Generated {len(signals)} signals "
+            f"({container.trading_service.last_errors} task error(s))."
         )
     except Exception as e:
         logger.error(f"Error in run_full_analysis_task: {e}", exc_info=True)
@@ -83,7 +85,9 @@ async def run_quick_scan_task(chat_id: int, message_id: int):
         # تعریف واحد Quick Analysis (شکاف ۱۷) — همان implementation سرویس.
         signals = await container.trading_service.run_quick_analysis()
         logger.info(
-            f"Task 'run_quick_scan_task' finished for chat_id: {chat_id}. Generated {len(signals)} signals."
+            f"Task 'run_quick_scan_task' finished for chat_id: {chat_id}. "
+            f"Generated {len(signals)} signals "
+            f"({container.trading_service.last_errors} task error(s))."
         )
     except Exception as e:
         logger.error(f"Error in run_quick_scan_task: {e}", exc_info=True)

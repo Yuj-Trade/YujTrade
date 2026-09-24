@@ -270,6 +270,9 @@ class ModelManager:
     async def predict_with_confidence(
         self, model_type: str, symbol: str, timeframe: str
     ) -> Optional[Dict[str, float]]:
+        """قرارداد شکاف ۳۰: None یعنی «مدل در دسترس نیست» (آموزش‌ندیده/بی‌داده/
+        پیش‌بینی نامعتبر) و مؤلفه ML در Scorer به صفر degrade می‌شود — نه شکست
+        تحلیل. خطاهای غیرمنتظره منتشر می‌شوند (به‌جز لغو task)."""
         self._check_if_closed()
 
         model = await self.get_model(model_type, symbol, timeframe)

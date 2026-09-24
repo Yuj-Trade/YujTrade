@@ -45,7 +45,11 @@ class MarketDataProvider:
     - هر Fetcher فقط کش دامنه خودش (derivatives/macro/indices/news/
       fundamental/trending/...) را با کلید نام‌منبع خودش مدیریت می‌کند.
     - متدهای get_*_data خروجی Fetcherها را دوباره کش نمی‌کنند؛ نتیجه
-      تجمیعی MarketIndicesFetcher هم کش نمی‌شود (اجزا قبلاً کش شده‌اند)."""
+      تجمیعی MarketIndicesFetcher هم کش نمی‌شود (اجزا قبلاً کش شده‌اند).
+    قرارداد خطا (شکاف ۳۰):
+    - fetch_ohlcv_data در شکست یکپارچگی raise می‌کند (InsufficientDataError).
+    - متدهای get_* enrichment اختیاری‌اند: None یعنی «در دسترس نیست»
+      (تحلیل با degradation ادامه می‌یابد)، نه «شکست»."""
     def __init__(
         self,
         resource_manager: ResourceManager,

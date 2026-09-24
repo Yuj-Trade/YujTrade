@@ -148,6 +148,8 @@ class TradingSignal:
     trending_data: Optional[TrendingData] = None
     market_indices: Optional[Dict[str, Any]] = None
     ml_confidence: Optional[float] = None
+    threshold_used: Optional[float] = None
+    threshold_regime: Optional[str] = None
     expiry_time: Optional[datetime] = None
     position_size: Optional[float] = None
     data_collection_timestamp: Optional[datetime] = None

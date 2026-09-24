@@ -142,7 +142,7 @@ class TelegramBotHandler:
                 signals,
                 chat_id,
                 "✅ Quick Analyze completed.",
-                "❌ No signals found on 1h timeframe.",
+                self._no_signals_text("❌ No signals found on 1h timeframe."),
             )
 
         self.background_tasks.create_task(
@@ -167,12 +167,23 @@ class TelegramBotHandler:
                 signals,
                 chat_id,
                 "✅ Full Analyze completed.",
-                "❌ No signals found across all timeframes.",
+                self._no_signals_text("❌ No signals found across all timeframes."),
             )
 
         self.background_tasks.create_task(
             analysis_task(), name=f"FullAnalyze-{chat_id}"
         )
+
+    def _no_signals_text(self, base_text: str) -> str:
+        """تفکیک معنایی شکاف ۳۰: اگر آخرین اجرا خطا داشته، «بدون سیگنال»
+        با «تحلیل ناقص» قاطی نمی‌شود."""
+        if getattr(self.trading_service, "last_errors", 0):
+            return (
+                f"{base_text} ⚠️ "
+                f"({self.trading_service.last_errors} analysis task(s) failed — "
+                "check logs for details.)"
+            )
+        return base_text
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._is_admin(update, context):
@@ -216,7 +227,7 @@ class TelegramBotHandler:
             signals,
             self.admin_chat_id,
             "Scheduled analysis completed. ⏰",
-            "No new signals found from scheduled analysis. 🤷",
+            self._no_signals_text("No new signals found from scheduled analysis. 🤷"),
         )
 
     async def send_signals_to_telegram(

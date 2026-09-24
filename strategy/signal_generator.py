@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 
 from common.core import TradingSignal, SignalType
+from common.exceptions import InsufficientDataError
+from strategy.signal_tracker import AdaptiveThresholdManager
 from data.data_provider import MarketDataProvider
 from data.data_validator import DataQualityChecker
 from features.feature_engineering import FeatureEngineer
@@ -37,6 +39,21 @@ class SignalGenerator:
         self.market_analyzer = MarketConditionAnalyzer()
         self.scorer = AnalysisScorer(self.config_manager)
         self.data_validator = DataQualityChecker()
+        # مالک آستانه تطبیقی در Pipeline اصلی (گروه C): بدون شواهد کافی،
+        # رفتار دقیقاً برابر آستانه ثابت کانفیگ است (خنثی تا یادگیری).
+        self.threshold_manager = AdaptiveThresholdManager()
+
+    @staticmethod
+    def _hurst_range(hurst) -> str:
+        try:
+            h = float(hurst)
+        except (TypeError, ValueError):
+            return "unknown"
+        if h > 0.55:
+            return "high"
+        if h < 0.45:
+            return "low"
+        return "mid"
 
     async def generate_signal(
         self,
@@ -46,7 +63,12 @@ class SignalGenerator:
         include_external: bool = True,
         include_ml: bool = True,
     ) -> Optional[TradingSignal]:
-        """include_external/include_ml: برای بک‌تست تاریخی False می‌شوند تا
+        """قرارداد خطای واحد (شکاف ۳۰):
+        - بازگرداندن None یعنی «سیگنالی نیست» (HOLD، رد RR، رد multi-TF ندارد
+          — آن در TradingService است): تصمیم سالم تحلیل، نه خطا.
+        - raise یعنی «تحلیل شکست خورد» (داده بی‌کیفیت، خطای دیتا/محاسبه) و
+          باید به جمع‌کننده برسد، نه اینکه به None تبدیل شود.
+        include_external/include_ml: برای بک‌تست تاریخی False می‌شوند تا
         داده لحظه‌ای (live) وارد تحلیل گذشته نشود (شکاف ۱۴). تولید زنده
         همیشه True است و رفتار آن بدون تغییر می‌ماند."""
         analysis_timestamp = datetime.now(timezone.utc)
@@ -55,10 +77,10 @@ class SignalGenerator:
             data, timeframe
         )
         if not is_valid:
-            logger.warning(
+            # نقش Signal (شکاف ۲۳): داده آماده تحلیل نیست → شکست تحلیل، نه «بدون سیگنال».
+            raise InsufficientDataError(
                 f"Data quality check failed for {symbol}-{timeframe}: {quality_msg}"
             )
-            return None
 
         market_regime = detect_market_regime(data)
         market_context = self.market_analyzer.analyze_market_condition(data)
@@ -124,7 +146,17 @@ class SignalGenerator:
             scores, all_reasons, timeframe
         )
 
-        signal_type = self.determine_signal_type(final_score)
+        # آستانه تطبیقی (گروه C): کلید رژیم از داده واقعی؛ بدون سابقه کافی
+        # همان آستانه ثابت کانفیگ برمی‌گردد، پس رفتار زنده بدون تغییر است.
+        vol_regime = str(market_regime.get("volatility_regime", "normal"))
+        hurst_range = self._hurst_range(market_context.hurst_exponent)
+        base_threshold = self.config_manager.get("signal_threshold", 50)
+        threshold = self.threshold_manager.get_optimal_threshold(
+            vol_regime, hurst_range, base_threshold
+        )
+        threshold_regime = f"{vol_regime}|{hurst_range}"
+
+        signal_type = self.determine_signal_type(final_score, threshold)
         if signal_type == SignalType.HOLD:
             logger.info(
                 f"No signal for {symbol}-{timeframe}. Final Score: {final_score:.2f}"
@@ -175,6 +207,8 @@ class SignalGenerator:
             trending_data=external_data.get("trending"),
             market_indices=external_data.get("market_indices"),
             ml_confidence=float(ml_confidence),
+            threshold_used=float(threshold),
+            threshold_regime=threshold_regime,
         )
 
         return signal
@@ -229,8 +263,11 @@ class SignalGenerator:
                 predictions[model_types[i]] = res
         return predictions
 
-    def determine_signal_type(self, score: float) -> SignalType:
-        threshold = self.config_manager.get("signal_threshold", 50)
+    def determine_signal_type(
+        self, score: float, threshold: float = None
+    ) -> SignalType:
+        if threshold is None:
+            threshold = self.config_manager.get("signal_threshold", 50)
         if score > threshold:
             return SignalType.BUY
         if score < -threshold:

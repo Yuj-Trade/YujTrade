@@ -66,6 +66,9 @@ class TradingService(ModelDataProvider):
         self.resource_manager = resource_manager
         self.invalid_symbols: Set[str] = set()
         self._initialized = False
+        # شمارنده خطاهای آخرین اجرا (شکاف ۳۰): caller با آن «سیگنالی نیست»
+        # را از «تحلیل شکست خورد» تشخیص می‌دهد.
+        self.last_errors: int = 0
 
         # NOTE: ResourceManager.get_redis_client() is async؛ فراخوانی آن در
         # __init__ هم‌زمان (sync) یک coroutine برمی‌گرداند نه کلاینت.
@@ -144,6 +147,11 @@ class TradingService(ModelDataProvider):
     async def analyze_symbol(
         self, symbol: str, timeframe: str
     ) -> Optional[TradingSignal]:
+        """قرارداد خطای واحد (شکاف ۳۰):
+        - None یعنی «سیگنالی نیست» (HOLD/رد RR/رد multi-TF/رد گیت‌ها) یا
+          سمبل دائماً نامعتبر (ignore-list).
+        - Exception یعنی «تحلیل شکست خورد» و منتشر می‌شود تا جمع‌کننده
+          (run_*‎) آن را بشمارد و گزارش دهد، نه اینکه به None تبدیل شود."""
         if symbol in self.invalid_symbols:
             logger.debug(f"Skipping analysis for invalid symbol: {symbol}")
             return None
@@ -213,20 +221,17 @@ class TradingService(ModelDataProvider):
             logger.warning(f"Symbol {symbol} is invalid. Adding to ignore list.")
             self.invalid_symbols.add(symbol)
             return None
-        except KeyError as e:
-            logger.error(
-                f"KeyError encountered while analyzing {symbol} on {timeframe}: {e}",
-                exc_info=True,
-            )
-            return None
-        except ValueError as e:
-            logger.error(
-                f"ValueError encountered while analyzing {symbol} on {timeframe}: {e}"
-            )
-            return None
-        except Exception as e:
-            logger.error(f"Error analyzing {symbol} on {timeframe}: {e}", exc_info=True)
-            return None
+
+    def _partition_results(self, results) -> List[TradingSignal]:
+        """تفکیک معنایی نتایج gather (شکاف ۳۰): سیگنال‌ها برمی‌گردند؛
+        خطاها شمرده و لاگ می‌شوند و در last_errors می‌مانند تا caller
+        «سیگنالی نیست» را از «تحلیل شکست خورد» تشخیص دهد."""
+        signals = [res for res in results if isinstance(res, TradingSignal)]
+        errors = [res for res in results if isinstance(res, Exception)]
+        self.last_errors = len(errors)
+        for err in errors:
+            logger.error(f"Signal generation failed: {err}", exc_info=err)
+        return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:
         """گیت‌های مرحله ۳ Pipeline (شکاف ۲۱) — فقط Ruleهای موجود."""
@@ -286,15 +291,16 @@ class TradingService(ModelDataProvider):
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        signals = []
-        for res in results:
-            if isinstance(res, TradingSignal):
-                signals.append(res)
-            elif isinstance(res, Exception) and not isinstance(res, InvalidSymbolError):
-                logger.error(f"Signal generation failed: {res}")
+        signals = self._partition_results(results)
 
         if not signals:
-            logger.info("No signals generated in this analysis cycle")
+            if self.last_errors:
+                logger.warning(
+                    f"No signals: {self.last_errors} analysis task(s) failed "
+                    "in this cycle (distinct from 'no signal')."
+                )
+            else:
+                logger.info("No signals generated in this analysis cycle")
             return []
 
         ranked_signals = SignalRanking.rank_signals(signals)
@@ -348,7 +354,7 @@ class TradingService(ModelDataProvider):
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        return [res for res in results if isinstance(res, TradingSignal)]
+        return self._partition_results(results)
 
     async def cleanup(self):
         """مالک ModelManager در سطح سرویس (شکاف ۲۵). Provider و ResourceManager

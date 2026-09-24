@@ -113,11 +113,17 @@ class BacktraderStrategy(bt.Strategy):
             confidence = float(signal_row.get("confidence_score", 0.0) or 0.0)
         except (TypeError, ValueError):
             confidence = 0.0
+        try:
+            threshold = float(signal_row.get("threshold_used", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            threshold = 0.0
         return {
             "signal_id": make_signal_id(
                 self.symbol, self.timeframe, current_dt, signal_row.get("signal_type")
             ),
             "confidence": confidence,
+            "threshold": threshold,
+            "threshold_regime": signal_row.get("threshold_regime"),
         }
 
 
@@ -169,8 +175,16 @@ class BacktestingEngine:
                 )
             )
 
-        signals = await asyncio.gather(*tasks)
-        signals = [s for s in signals if s is not None]
+        signals = await asyncio.gather(*tasks, return_exceptions=True)
+        # قرارداد شکاف ۳۰: None یعنی «سیگنالی نیست» (رد می‌شود)، Exception
+        # یعنی «تحلیل شکست خورد» (لاگ می‌شود) — فقط سیگنال‌های واقعی می‌مانند.
+        genuine = []
+        for s in signals:
+            if isinstance(s, TradingSignal):
+                genuine.append(s)
+            elif isinstance(s, Exception):
+                logger.debug(f"Historical signal skipped: {s}")
+        signals = genuine
 
         if not signals:
             return pd.DataFrame()
@@ -180,6 +194,8 @@ class BacktestingEngine:
                 "timestamp": s.timestamp,
                 "signal_type": s.signal_type.value,
                 "confidence_score": s.confidence_score,
+                "threshold_used": s.threshold_used,
+                "threshold_regime": s.threshold_regime,
             }
             for s in signals
         ]
@@ -189,25 +205,40 @@ class BacktestingEngine:
         return signals_df
 
     async def _flush_calibration(self):
-        """حلقه بازخورد کالیبراسیون (شکاف ۱۲): نتیجه واقعی هر سیگنال به
-        calibrator مدل‌ها برمی‌گردد. چون تفکیک confidence به‌ازای هر مدل در
-        قرارداد فعلی plumbing نشده، از confidence ترکیبی سیگنال به‌عنوان
-        proxy استفاده می‌شود (بدون مکانیزم جدید)."""
+        """حلقه بازخورد کالیبراسیون (شکاف ۱۲) + آستانه تطبیقی (گروه C):
+        نتیجه واقعی هر سیگنال به calibrator مدل‌ها و به threshold_manager
+        برمی‌گردد. چون تفکیک confidence به‌ازای هر مدل در قرارداد فعلی
+        plumbing نشده، از confidence ترکیبی سیگنال به‌عنوان proxy استفاده
+        می‌شود (بدون مکانیزم جدید)."""
+        threshold_manager = (
+            self.trading_service.signal_generator.threshold_manager
+        )
         for outcome in self.pending_outcomes:
+            success = bool(outcome.get("success", False))
             confidence = outcome.get("confidence", 0.0) or 0.0
-            if confidence <= 0:
-                continue
-            for model_type in ("lstm", "xgboost"):
-                try:
-                    await self.trading_service.model_manager.record_signal_performance(
-                        model_type,
-                        self.symbol,
-                        self.timeframe,
-                        float(confidence),
-                        bool(outcome.get("success", False)),
+            if confidence > 0:
+                for model_type in ("lstm", "xgboost"):
+                    try:
+                        await self.trading_service.model_manager.record_signal_performance(
+                            model_type,
+                            self.symbol,
+                            self.timeframe,
+                            float(confidence),
+                            success,
+                        )
+                    except Exception as e:
+                        logger.debug(f"Calibration flush skipped: {e}")
+            # مسیر نوشتن آستانه تطبیقی: فقط با هر سه جزء (رژیم/آستانه/نتیجه).
+            try:
+                regime = outcome.get("threshold_regime") or ""
+                vol_regime, _, hurst_range = regime.partition("|")
+                threshold = float(outcome.get("threshold", 0.0) or 0.0)
+                if vol_regime and hurst_range and threshold > 0:
+                    threshold_manager.record_performance(
+                        vol_regime, hurst_range, threshold, success
                     )
-                except Exception as e:
-                    logger.debug(f"Calibration flush skipped: {e}")
+            except (TypeError, ValueError, AttributeError) as e:
+                logger.debug(f"Threshold feedback skipped: {e}")
 
     async def run_backtest(
         self,
