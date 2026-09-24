@@ -18,8 +18,19 @@ from telegram.request import HTTPXRequest
 from utils.background_manager import BackgroundTaskManager
 from config.settings import ConfigManager
 from common.core import TradingSignal
+from common.constants import LONG_TERM_CONFIG
 from config.logger import logger
 from services.trading_service import TradingService
+
+
+# تعریف واحد Full Analysis (شکاف ۱۶): همان focus_timeframes سرویس.
+# برچسب‌ها از همین‌جا ساخته می‌شوند تا UI و Service drift نکنند.
+def _focus_label() -> str:
+    focus = LONG_TERM_CONFIG.get("focus_timeframes", [])
+    return ", ".join(focus) if focus else "all timeframes"
+
+
+QUICK_TIMEFRAMES = ["1h"]
 
 
 def escape_markdown_v2(text: str) -> str:
@@ -81,7 +92,8 @@ class TelegramBotHandler:
             ],
             [
                 InlineKeyboardButton(
-                    "📊 Full Analyze (Long-term: 1h-1M)", callback_data="full_analyze"
+                    f"📊 Full Analyze ({_focus_label()})",
+                    callback_data="full_analyze",
                 )
             ],
         ]
@@ -90,7 +102,7 @@ class TelegramBotHandler:
             "Welcome to the Long-term Trading Signal Bot! 🤖\n\n"
             "Choose your analysis type:\n"
             "• *Quick Analyze*: Only 1h timeframe ⚡\n"
-            "• *Full Analyze*: All long-term timeframes (1h, 4h, 1d, 1w, 1M) 📊"
+            f"• *Full Analyze*: Long-term timeframes \\({_focus_label()}\\) 📊"
         )
         await update.message.reply_text(
             escape_markdown_v2(welcome_text),
@@ -121,17 +133,10 @@ class TelegramBotHandler:
             chat_id = self.admin_chat_id
             
         async def analysis_task():
-            symbols = self.config_manager.get("symbols", [])
-            timeframes_to_run = ["1h"]
-
-            tasks = [
-                self.trading_service.analyze_symbol(symbol, tf)
-                for symbol in symbols
-                for tf in timeframes_to_run
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            signals = [res for res in results if isinstance(res, TradingSignal)]
+            # تعریف واحد Quick Analysis (شکاف ۱۷) — همان implementation سرویس.
+            signals = await self.trading_service.run_quick_analysis(
+                QUICK_TIMEFRAMES
+            )
 
             await self.send_signals_to_telegram(
                 signals,
@@ -146,7 +151,7 @@ class TelegramBotHandler:
 
     async def full_analyze(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        text = "Starting Full Analyze (all timeframes)... ⏳"
+        text = f"Starting Full Analyze ({_focus_label()})... ⏳"
         if query:
             await query.edit_message_text(
                 escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2

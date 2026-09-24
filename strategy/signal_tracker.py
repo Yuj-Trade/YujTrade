@@ -1,11 +1,27 @@
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 import numpy as np
 
 
+def make_signal_id(
+    symbol: str, timeframe: str, timestamp: datetime, signal_type: str
+) -> str:
+    """شناسه قطعی سیگنال برای پیوند Generator ↔ Backtest (شکاف ۱۳/۱۴).
+    هر دو طرف از همین تابع استفاده می‌کنند تا outcome به سیگنال درست برسد."""
+    if isinstance(timestamp, datetime):
+        ts = timestamp.isoformat()
+    else:
+        ts = str(timestamp)
+    return f"{symbol}|{timeframe}|{ts}|{signal_type}"
+
+
 class SignalTracker:
+    """lifecycle سیگنال (شکاف ۱۳): generated (outcome=None, pending) →
+    outcome recorded (True/False). خلاصه عملکرد فقط سیگنال‌های حل‌شده را
+    می‌شمارد تا pendingها نرخ برد را خراب نکنند."""
+
     def __init__(self, storage_path: str = "signal_history.json"):
         self.storage_path = Path(storage_path)
         self.history = self._load_history()
@@ -23,28 +39,52 @@ class SignalTracker:
         with open(self.storage_path, "w") as f:
             json.dump(self.history, f, indent=4)
 
-    def record(self, signal_id: str, outcome: bool, details: Dict[str, Any]):
+    def record(
+        self, signal_id: str, outcome: Optional[bool], details: Dict[str, Any]
+    ):
         """
         Records the outcome of a trading signal.
 
-        :param signal_id: A unique identifier for the signal.
-        :param outcome: True for a successful trade (profit), False otherwise.
+        :param signal_id: A unique identifier for the signal (see make_signal_id).
+        :param outcome: True for a successful trade (profit), False otherwise,
+            None for a freshly generated signal whose outcome is not known yet.
         :param details: A dictionary containing signal parameters for later analysis.
         """
         self.history[signal_id] = {"outcome": outcome, "details": details}
         self._save_history()
 
+    def resolve(self, signal_id: str, outcome: bool, details: Dict[str, Any] = None):
+        """ثبت نتیجه سیگنال pending (شکاف ۱۲/۱۳/۱۴)."""
+        entry = self.history.get(signal_id, {})
+        merged = dict(entry.get("details", {}))
+        if details:
+            merged.update(details)
+        self.record(signal_id, outcome, merged)
+
     def get_performance_summary(self) -> Dict[str, float]:
         """
-        Provides a summary of historical performance.
+        Provides a summary of historical performance (resolved signals only).
         """
-        total_signals = len(self.history)
+        resolved = {
+            sid: data
+            for sid, data in self.history.items()
+            if data.get("outcome") is True or data.get("outcome") is False
+        }
+        total_signals = len(resolved)
         if total_signals == 0:
-            return {"total": 0, "win_rate": 0.0}
+            return {
+                "total": 0,
+                "win_rate": 0.0,
+                "pending": len(self.history),
+            }
 
-        wins = sum(1 for data in self.history.values() if data.get("outcome"))
+        wins = sum(1 for data in resolved.values() if data.get("outcome"))
         win_rate = (wins / total_signals) * 100
-        return {"total": total_signals, "win_rate": win_rate}
+        return {
+            "total": total_signals,
+            "win_rate": win_rate,
+            "pending": len(self.history) - total_signals,
+        }
 
 
 class AdaptiveThresholdManager:

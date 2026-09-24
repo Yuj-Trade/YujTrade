@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -11,9 +11,37 @@ from common.constants import LONG_TERM_CONFIG
 from strategy.signal_generator import SignalGenerator
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.signal_ranking import SignalRanking
+from strategy.signal_tracker import SignalTracker, make_signal_id
 from modeling.model_manager import ModelManager, ModelDataProvider
 from common.exceptions import InvalidSymbolError
 from utils.resource_manager import ResourceManager
+
+
+async def create_trading_stack(
+    config_manager: Optional[ConfigManager] = None,
+    resource_manager: Optional[ResourceManager] = None,
+) -> Tuple[ConfigManager, ResourceManager, MarketDataProvider, "TradingService"]:
+    """تنها Composition Root سیستم (شکاف ۱۸). MainApp، TaskServiceContainer و
+    ابزارهای بهینه‌سازی همگی از همین مسیر stack را می‌سازند تا dependency
+    graph دوباره‌کاری و drift نشود. خروجی: (config, resources, provider, service).
+    تمیزکاری همچنان با خود فراخواننده است (provider.close /
+    service.cleanup / resources.cleanup)."""
+    config_manager = config_manager or ConfigManager()
+    resource_manager = resource_manager or ResourceManager()
+
+    market_data_provider = MarketDataProvider(
+        resource_manager=resource_manager, config_manager=config_manager
+    )
+    await market_data_provider.initialize()
+
+    trading_service = TradingService(
+        market_data_provider=market_data_provider,
+        config_manager=config_manager,
+        resource_manager=resource_manager,
+    )
+    await trading_service.initialize()
+
+    return config_manager, resource_manager, market_data_provider, trading_service
 
 
 class TradingService(ModelDataProvider):
@@ -39,6 +67,9 @@ class TradingService(ModelDataProvider):
             data_provider=self,
             redis_client=self._redis_client,
             model_path=self.config_manager.get("model_path", "models"),
+            auto_train_on_predict=self.config_manager.get(
+                "model_auto_train_on_predict", True
+            ),
         )
 
         self.signal_generator = SignalGenerator(
@@ -52,6 +83,9 @@ class TradingService(ModelDataProvider):
             redis_client=self._redis_client,
             config_manager=self.config_manager,
         )
+
+        # مالک lifecycle رهگیری سیگنال در Pipeline اصلی (شکاف ۱۳).
+        self.signal_tracker = SignalTracker()
 
     async def initialize(self) -> None:
         """اتصال Redis را برقرار و به زیرکامپوننت‌ها تزریق می‌کند. Idempotent."""
@@ -69,6 +103,7 @@ class TradingService(ModelDataProvider):
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
     ) -> Optional[pd.DataFrame]:
+        # همان قرارداد TrainingDataProvider: محدودیت‌ها فقط از Config.
         limit_map = self.config_manager.get(
             "model_data_limits",
             {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
@@ -76,7 +111,9 @@ class TradingService(ModelDataProvider):
         limit = limit_map.get(timeframe, 2000)
 
         if for_prediction:
-            limit = min(limit, 300)
+            limit = min(
+                limit, self.config_manager.get("model_prediction_limit", 300)
+            )
 
         try:
             data = await self.market_data_provider.fetch_ohlcv_data(
@@ -132,6 +169,26 @@ class TradingService(ModelDataProvider):
                 logger.info(
                     f"Generated signal for {symbol} on {timeframe}: {signal.signal_type.value} with confidence {signal.confidence_score:.2f}"
                 )
+                # شروع lifecycle رهگیری: generated → pending (شکاف ۱۳).
+                try:
+                    self.signal_tracker.record(
+                        make_signal_id(
+                            signal.symbol,
+                            signal.timeframe,
+                            signal.timestamp,
+                            signal.signal_type.value,
+                        ),
+                        None,
+                        {
+                            "symbol": signal.symbol,
+                            "timeframe": signal.timeframe,
+                            "signal_type": signal.signal_type.value,
+                            "confidence": signal.confidence_score,
+                            "entry": signal.entry_price,
+                        },
+                    )
+                except Exception as e:
+                    logger.debug(f"Signal tracking skipped: {e}")
                 return signal
 
             return None
@@ -198,6 +255,24 @@ class TradingService(ModelDataProvider):
             logger.info("No signals met the final quality criteria.")
 
         return final_signals
+
+    async def run_quick_analysis(
+        self, timeframes: Optional[List[str]] = None
+    ) -> List[TradingSignal]:
+        """تعریف واحد Quick Analysis (شکاف ۱۷): اسکن فقط تایم‌فریم‌های داده‌شده
+        (پیش‌فرض ["1h"]) بدون رتبه‌بندی/محدودسازی نهایی. هم Telegram و هم
+        TaskService از همین implementation استفاده می‌کنند."""
+        symbols = self.config_manager.get("symbols", [])
+        timeframes_to_run = timeframes or ["1h"]
+
+        tasks = [
+            self.analyze_symbol(symbol, tf)
+            for symbol in symbols
+            for tf in timeframes_to_run
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        return [res for res in results if isinstance(res, TradingSignal)]
 
     async def cleanup(self):
         logger.info("Cleaning up TradingService resources.")

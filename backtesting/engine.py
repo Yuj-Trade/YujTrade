@@ -1,28 +1,29 @@
 import asyncio
+
 import backtrader as bt
 import pandas as pd
-from typing import List
+from typing import Dict, List, Optional
 
 from config.logger import logger
 from common.core import TradingSignal
+from strategy.signal_tracker import make_signal_id
 
 
 class BacktraderStrategy(bt.Strategy):
     params = (
-        ("signal_generator", None),
         ("symbol", None),
         ("timeframe", None),
+        ("signals_df", None),
         ("owner_engine", None),
     )
 
     def __init__(self):
-        self.signal_generator = self.p.signal_generator
         self.symbol = self.p.symbol
         self.timeframe = self.p.timeframe
+        self.signals_df = self.p.signals_df
         self.owner_engine = self.p.owner_engine
         self.order = None
-        # Pre-calculate signals for the entire dataset for efficiency
-        self.signals_df = self.owner_engine.pre_calculate_signals()
+        self._open_trade = None
 
     def log(self, txt, dt=None):
         dt = dt or self.datas[0].datetime.date(0)
@@ -43,19 +44,33 @@ class BacktraderStrategy(bt.Strategy):
             self.bar_executed = len(self)
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.log("Order Canceled/Margin/Rejected")
+            self._open_trade = None
         self.order = None
 
     def notify_trade(self, trade):
         if not trade.isclosed:
             return
         self.log(f"OPERATION PROFIT, GROSS {trade.pnl:.2f}, NET {trade.pnlcomm:.2f}")
-        if self.owner_engine and hasattr(self.owner_engine, "signal_tracker"):
-            # This part is conceptual. We need signal_id and a way to map trade to signal.
-            # For simplicity, let's assume we can get it from the trade or a shared context.
-            # signal_id = trade.signal_id
-            # outcome = trade.pnl > 0
-            # self.owner_engine.signal_tracker.record(signal_id, outcome)
-            pass
+        # نتیجه واقعی معامله → چرخه رهگیری (شکاف ۱۲/۱۳/۱۴). فراخوانی‌های
+        # async کالیبراتور بعد از پایان cerebro.run به‌صورت async flush می‌شوند
+        # تا callback همگام backtrader با lifecycle async تولید تداخل نکند.
+        if self._open_trade and self.owner_engine is not None:
+            try:
+                self.owner_engine.pending_outcomes.append(
+                    {
+                        "signal_id": self._open_trade["signal_id"],
+                        "success": trade.pnl > 0,
+                        "confidence": self._open_trade.get("confidence", 0.0),
+                    }
+                )
+                self.owner_engine.signal_tracker.resolve(
+                    self._open_trade["signal_id"],
+                    trade.pnl > 0,
+                    {"pnl": trade.pnl, "pnlcomm": trade.pnlcomm},
+                )
+            except Exception as e:
+                logger.debug(f"Trade outcome tracking skipped: {e}")
+        self._open_trade = None
 
     def next(self):
         if self.order:
@@ -66,7 +81,7 @@ class BacktraderStrategy(bt.Strategy):
         )
 
         # Check if the current datetime from backtrader exists in our pre-calculated signals
-        if self.signals_df.empty or current_dt not in self.signals_df.index:
+        if self.signals_df is None or self.signals_df.empty or current_dt not in self.signals_df.index:
             return
 
         signal_row = self.signals_df.loc[current_dt]
@@ -78,9 +93,11 @@ class BacktraderStrategy(bt.Strategy):
         if not self.position:
             if signal_type == "buy":
                 self.log(f"BUY CREATE, {self.datas[0].close[0]:.2f}")
+                self._open_trade = self._capture_signal(current_dt, signal_row)
                 self.order = self.buy()
             elif signal_type == "sell":
                 self.log(f"SELL CREATE, {self.datas[0].close[0]:.2f}")
+                self._open_trade = self._capture_signal(current_dt, signal_row)
                 self.order = self.sell()
         else:
             # Simple logic: close position if the signal reverses
@@ -91,16 +108,32 @@ class BacktraderStrategy(bt.Strategy):
                 self.log(f"CLOSE (BUY) CREATE, {self.datas[0].close[0]:.2f}")
                 self.order = self.close()
 
+    def _capture_signal(self, current_dt, signal_row) -> Dict:
+        try:
+            confidence = float(signal_row.get("confidence_score", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        return {
+            "signal_id": make_signal_id(
+                self.symbol, self.timeframe, current_dt, signal_row.get("signal_type")
+            ),
+            "confidence": confidence,
+        }
+
 
 class BacktestingEngine:
+    """موتور بک‌تست هم‌مسیر با Production (شکاف ۱۵): کاملاً async و بدون
+    run_until_complete؛ از همان lifecycle سیستم استفاده می‌کند.
+    سیگنال‌های تاریخی در حالت خالص محاسبه می‌شوند (شکاف ۱۴):
+    بدون external لحظه‌ای و بدون ML زنده."""
+
     def __init__(self, trading_service):
         self.trading_service = trading_service
+        self.signal_tracker = trading_service.signal_tracker
         self.full_data = None
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
+        self.pending_outcomes: List[Dict] = []
+        self.symbol = None
+        self.timeframe = None
 
     def get_historical_data(self, current_len):
         """
@@ -113,34 +146,41 @@ class BacktestingEngine:
             return self.full_data.iloc[:current_len]
         return pd.DataFrame()
 
-    def pre_calculate_signals(self) -> pd.DataFrame:
+    async def pre_calculate_signals(self) -> pd.DataFrame:
         """
         Generates signals for the entire dataset at once to speed up backtesting.
+        حالت تاریخی خالص: include_external=False و include_ml=False تا داده
+        لحظه‌ای Production وارد تحلیل گذشته نشود (شکاف ۱۴).
         """
         if self.full_data is None:
             return pd.DataFrame()
 
-        async def generate_all_signals() -> List[TradingSignal]:
-            tasks = []
-            # Generate a signal for each data point in the dataset
-            for i in range(100, len(self.full_data)):  # Start after a warmup period
-                data_slice = self.full_data.iloc[:i]
-                tasks.append(
-                    self.trading_service.signal_generator.generate_signal(
-                        self.symbol, self.timeframe, data_slice
-                    )
+        tasks = []
+        # Generate a signal for each data point in the dataset
+        for i in range(100, len(self.full_data)):  # Start after a warmup period
+            data_slice = self.full_data.iloc[:i]
+            tasks.append(
+                self.trading_service.signal_generator.generate_signal(
+                    self.symbol,
+                    self.timeframe,
+                    data_slice,
+                    include_external=False,
+                    include_ml=False,
                 )
+            )
 
-            signals = await asyncio.gather(*tasks)
-            return [s for s in signals if s is not None]
-
-        signals = self.loop.run_until_complete(generate_all_signals())
+        signals = await asyncio.gather(*tasks)
+        signals = [s for s in signals if s is not None]
 
         if not signals:
             return pd.DataFrame()
 
         signal_data = [
-            {"timestamp": s.timestamp, "signal_type": s.signal_type.value}
+            {
+                "timestamp": s.timestamp,
+                "signal_type": s.signal_type.value,
+                "confidence_score": s.confidence_score,
+            }
             for s in signals
         ]
         signals_df = pd.DataFrame(signal_data)
@@ -148,7 +188,28 @@ class BacktestingEngine:
         signals_df = signals_df.set_index("timestamp")
         return signals_df
 
-    def run_backtest(
+    async def _flush_calibration(self):
+        """حلقه بازخورد کالیبراسیون (شکاف ۱۲): نتیجه واقعی هر سیگنال به
+        calibrator مدل‌ها برمی‌گردد. چون تفکیک confidence به‌ازای هر مدل در
+        قرارداد فعلی plumbing نشده، از confidence ترکیبی سیگنال به‌عنوان
+        proxy استفاده می‌شود (بدون مکانیزم جدید)."""
+        for outcome in self.pending_outcomes:
+            confidence = outcome.get("confidence", 0.0) or 0.0
+            if confidence <= 0:
+                continue
+            for model_type in ("lstm", "xgboost"):
+                try:
+                    await self.trading_service.model_manager.record_signal_performance(
+                        model_type,
+                        self.symbol,
+                        self.timeframe,
+                        float(confidence),
+                        bool(outcome.get("success", False)),
+                    )
+                except Exception as e:
+                    logger.debug(f"Calibration flush skipped: {e}")
+
+    async def run_backtest(
         self,
         symbol: str,
         timeframe: str,
@@ -163,19 +224,22 @@ class BacktestingEngine:
 
         self.symbol = symbol
         self.timeframe = timeframe
+        self.pending_outcomes = []
 
         # Fetch the complete data for the backtest period
-        self.full_data = self.loop.run_until_complete(
-            self.trading_service.market_data_provider.fetch_ohlcv_data(
+        self.full_data = (
+            await self.trading_service.market_data_provider.fetch_ohlcv_data(
                 symbol, timeframe, limit=5000
             )  # Fetch ample data
         )
-        if self.full_data.empty:
+        if self.full_data is None or self.full_data.empty:
             logger.error(f"No data for {symbol} on {timeframe}")
             return {}
 
         if not isinstance(self.full_data.index, pd.DatetimeIndex):
             self.full_data = self.full_data.set_index("timestamp")
+
+        signals_df = await self.pre_calculate_signals()
 
         # Create a data feed for cerebro with the specified date range
         data_feed = bt.feeds.PandasData(
@@ -185,9 +249,9 @@ class BacktestingEngine:
 
         cerebro.addstrategy(
             BacktraderStrategy,
-            signal_generator=self.trading_service.signal_generator,
             symbol=symbol,
             timeframe=timeframe,
+            signals_df=signals_df,
             owner_engine=self,
         )
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe")
@@ -199,6 +263,8 @@ class BacktestingEngine:
         results = cerebro.run()
         strat = results[0]
         logger.info("Backtest finished.")
+
+        await self._flush_calibration()
 
         trade_analysis = strat.analyzers.trades.get_analysis()
 
@@ -220,4 +286,6 @@ class BacktestingEngine:
                 if trade_analysis.get("total", {}).get("total", 0) > 0
                 else 0
             ),
+            "tracked_outcomes": len(self.pending_outcomes),
+            "tracker_summary": self.signal_tracker.get_performance_summary(),
         }

@@ -15,15 +15,31 @@ warnings.filterwarnings("ignore")
 
 
 class TrainingDataProvider(ModelDataProvider):
-    """A dedicated data provider for the training script."""
+    """A dedicated data provider for the training script.
 
-    def __init__(self, market_data_provider: MarketDataProvider):
+    قرارداد واحد با TradingService.get_data_for_model (شکاف ۱۰):
+    محدودیت‌ها فقط از Config خوانده می‌شوند؛ تفاوت صرفاً parameter است."""
+
+    def __init__(
+        self,
+        market_data_provider: MarketDataProvider,
+        config_manager: Optional[ConfigManager] = None,
+    ):
         self._market_data_provider = market_data_provider
+        self._config_manager = config_manager or ConfigManager()
 
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
     ) -> Optional[pd.DataFrame]:
-        limit = 2000 if not for_prediction else 300
+        limit_map = self._config_manager.get(
+            "model_data_limits",
+            {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
+        )
+        limit = limit_map.get(timeframe, 2000)
+        if for_prediction:
+            limit = min(
+                limit, self._config_manager.get("model_prediction_limit", 300)
+            )
         return await self._market_data_provider.fetch_ohlcv_data(
             symbol, timeframe, limit=limit
         )
@@ -45,7 +61,10 @@ class ModelTrainer:
             f"--- Starting training for {symbol}-{timeframe} ({model_type}) ---"
         )
         try:
-            limit_map = {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300}
+            limit_map = self.config.get(
+                "model_data_limits",
+                {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
+            )
             limit = limit_map.get(timeframe, 2000)
 
             data = await self.market_data_provider.fetch_ohlcv_data(
@@ -106,7 +125,9 @@ async def main():
     )
     await market_data_provider.initialize()
 
-    training_data_provider = TrainingDataProvider(market_data_provider)
+    training_data_provider = TrainingDataProvider(
+        market_data_provider, config_manager
+    )
 
     model_manager = ModelManager(
         data_provider=training_data_provider, model_path="models"

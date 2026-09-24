@@ -1,13 +1,10 @@
 import asyncio
 import signal
 import sys
-from typing import List
 
 from services.trading_service import TradingService
-from data.data_provider import MarketDataProvider
-from config.settings import ConfigManager, SecretsManager
+from config.settings import SecretsManager
 from config.logger import logger
-from common.core import TradingSignal
 from utils.resource_manager import ResourceManager
 from app.telegram_bot import TelegramBotHandler
 
@@ -31,28 +28,15 @@ class MainApp:
 
         try:
             logger.info("Initializing application components...")
-            config_manager = ConfigManager()
-            self.resource_manager = ResourceManager()
+            # همان Composition Root اصلی (شکاف ۱۸) — بدون graph موازی.
+            from services.trading_service import create_trading_stack
 
-            logger.info("Getting session...")
-            await self.resource_manager.get_session()
-            
-            logger.info("Getting Redis client...")
-            await self.resource_manager.get_redis_client()
-
-            logger.info("Initializing MarketDataProvider...")
-            self.market_data_provider = MarketDataProvider(
-                resource_manager=self.resource_manager, config_manager=config_manager
-            )
-            await self.market_data_provider.initialize()
-
-            logger.info("Initializing TradingService...")
-            self.trading_service = TradingService(
-                market_data_provider=self.market_data_provider,
-                config_manager=config_manager,
-                resource_manager=self.resource_manager,
-            )
-            await self.trading_service.initialize()
+            (
+                config_manager,
+                self.resource_manager,
+                self.market_data_provider,
+                self.trading_service,
+            ) = await create_trading_stack()
 
             bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
             if not bot_token:
@@ -111,6 +95,12 @@ class MainApp:
                     await self.trading_service.cleanup()
                 except Exception as e:
                     logger.error(f"Error cleaning up trading service: {e}")
+
+            if getattr(self, "market_data_provider", None):
+                try:
+                    await self.market_data_provider.close()
+                except Exception as e:
+                    logger.error(f"Error closing market data provider: {e}")
                     
             if self.resource_manager:
                 try:

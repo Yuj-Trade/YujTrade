@@ -32,6 +32,7 @@ from common.core import (
     DerivativesAnalysis,
     BinanceFuturesData,
     FundamentalAnalysis,
+    OnChainAnalysis,
     OrderBook,
     MacroEconomicData,
     TrendingData,
@@ -370,6 +371,15 @@ class MarketDataProvider:
                 return await self.coingecko_fetcher.get_fundamental_data(symbol)
             except Exception as e:
                 logger.error(f"Error fetching fundamental data for {symbol}: {e}")
+        return None
+
+    async def get_onchain_data(self, symbol: str) -> Optional[OnChainAnalysis]:
+        """داده آن‌چین (MVRV/SOPR/active_addresses) از Messari موجود."""
+        if self.messari_fetcher:
+            try:
+                return await self.messari_fetcher.get_on_chain_data(symbol)
+            except Exception as e:
+                logger.error(f"Error fetching on-chain data for {symbol}: {e}")
         return None
 
     async def get_order_book(self, symbol: str) -> Optional[OrderBook]:

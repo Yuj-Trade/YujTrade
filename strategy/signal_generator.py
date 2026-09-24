@@ -39,8 +39,16 @@ class SignalGenerator:
         self.data_validator = DataQualityChecker()
 
     async def generate_signal(
-        self, symbol: str, timeframe: str, data: pd.DataFrame
+        self,
+        symbol: str,
+        timeframe: str,
+        data: pd.DataFrame,
+        include_external: bool = True,
+        include_ml: bool = True,
     ) -> Optional[TradingSignal]:
+        """include_external/include_ml: برای بک‌تست تاریخی False می‌شوند تا
+        داده لحظه‌ای (live) وارد تحلیل گذشته نشود (شکاف ۱۴). تولید زنده
+        همیشه True است و رفتار آن بدون تغییر می‌ماند."""
         analysis_timestamp = datetime.now(timezone.utc)
 
         is_valid, quality_msg = self.data_validator.validate_data_quality(
@@ -59,19 +67,48 @@ class SignalGenerator:
             data, timeframe
         )
 
+        # شکاف ۶: Market Data → Market Regime → Existing Weight Adjustment → Scoring
+        base_weights = self.config_manager.get_indicator_weights(timeframe) or {}
+        regime_weights = self.adjust_weights_by_regime(
+            dict(base_weights), market_regime
+        )
+        decorr_weights = self.feature_engineer.get_decorrelation_weights(
+            last_indicator_results
+        )
+        combined_weights = {
+            name: float(regime_weights.get(name, 1.0))
+            * float(decorr_weights.get(name, 1.0))
+            for name in last_indicator_results.keys()
+        }
+
         tech_score = self.scorer.score_technical_results(
-            last_indicator_results, market_context
+            last_indicator_results, market_context, weights=combined_weights
         )
 
         market_score, market_reasons = self.scorer.score_market_context(market_context)
 
-        external_data = await self._gather_external_data(symbol)
+        if include_external:
+            external_data = await self._gather_external_data(symbol)
+        else:
+            external_data = {
+                "derivatives": None,
+                "fundamental": None,
+                "onchain": None,
+                "order_book": None,
+                "macro": None,
+                "trending": None,
+                "market_indices": None,
+                "news": None,
+            }
         external_score, external_reasons = self.scorer.score_external_data(
             external_data, market_context, symbol
         )
 
         current_price = data["close"].iloc[-1]
-        ml_predictions = await self.get_ml_predictions(symbol, timeframe)
+        if include_ml:
+            ml_predictions = await self.get_ml_predictions(symbol, timeframe)
+        else:
+            ml_predictions = {}
         ml_score, ml_reasons, ml_confidence = self.scorer.score_ml_predictions(
             ml_predictions, current_price
         )
@@ -128,10 +165,12 @@ class SignalGenerator:
             dynamic_levels=levels,
             analysis_timestamp=analysis_timestamp,
             fundamental_analysis=external_data.get("fundamental"),
+            on_chain_analysis=external_data.get("onchain"),
             derivatives_analysis=external_data.get("derivatives"),
             order_book=external_data.get("order_book"),
             macro_data=external_data.get("macro"),
             trending_data=external_data.get("trending"),
+            market_indices=external_data.get("market_indices"),
         )
 
         return signal
@@ -140,9 +179,13 @@ class SignalGenerator:
         tasks = {
             "derivatives": self.data_provider.get_derivatives_data(symbol),
             "fundamental": self.data_provider.get_fundamental_data(symbol),
+            "onchain": self.data_provider.get_onchain_data(symbol),
             "order_book": self.data_provider.get_order_book(symbol),
             "macro": self.data_provider.get_macro_data(),
             "trending": self.data_provider.get_trending_data(),
+            # get_all_indices = crypto (CoinGecko+DeFiLlama) + traditional
+            # (YFinance: DXY/SPX/VIX/...) + macro تا همه Sourceها در زنجیره باشند.
+            "market_indices": self.data_provider.get_all_indices(),
         }
 
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -160,7 +203,9 @@ class SignalGenerator:
             news_sentiment = await self.data_provider.get_news_sentiment(
                 [base_currency]
             )
-            external_data["news"] = {"data": news_sentiment}
+            # قرارداد واحد: همه مقادیر external_data خام ذخیره می‌شوند
+            # (بدون wrapper موازی {"data": ...})؛ Scorer هم همان را می‌خواند.
+            external_data["news"] = news_sentiment
         except Exception as e:
             logger.warning(f"Failed to fetch news sentiment for {symbol}: {e}")
             external_data["news"] = None

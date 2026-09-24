@@ -25,10 +25,15 @@ class ModelManager:
         data_provider: ModelDataProvider,
         model_path: str = "models",
         redis_client: Optional[redis.Redis] = None,
+        auto_train_on_predict: bool = True,
     ):
         self.model_path = Path(model_path)
         self.model_path.mkdir(parents=True, exist_ok=True)
         self.redis_client = redis_client
+        # شکاف ۱۱: مالکیت صریح Training. True = رفتار فعلی (آموزش ضمنی
+        # هنگام Prediction)؛ False = Prediction فقط از lifecycle موجود
+        # تبعیت می‌کند و مالک آموزش مسیر صریح است.
+        self.auto_train_on_predict = auto_train_on_predict
         self._cache: Dict[str, "BaseModel"] = {}
         self._lock = asyncio.Lock()
         self._is_closed = False
@@ -275,6 +280,12 @@ class ModelManager:
             return None
 
         if not model.is_trained:
+            if not self.auto_train_on_predict:
+                self.logger.info(
+                    f"Model {model_type} for {symbol}-{timeframe} is not trained "
+                    "and auto_train_on_predict is disabled. Skipping prediction."
+                )
+                return None
             self.logger.info(
                 f"Model {model_type} for {symbol}-{timeframe} is not trained. Attempting to train now."
             )

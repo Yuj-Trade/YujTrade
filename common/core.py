@@ -145,6 +145,7 @@ class TradingSignal:
     order_book: Optional[OrderBook] = None
     macro_data: Optional[MacroEconomicData] = None
     trending_data: Optional[TrendingData] = None
+    market_indices: Optional[Dict[str, Any]] = None
     expiry_time: Optional[datetime] = None
     position_size: Optional[float] = None
     data_collection_timestamp: Optional[datetime] = None

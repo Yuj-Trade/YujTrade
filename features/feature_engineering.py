@@ -4,18 +4,46 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
+from common.core import IndicatorResult
 from common.exceptions import IndicatorError, ModelError, InsufficientDataError
 from config.logger import logger
 from config.settings import ConfigManager
+from analysis.correlation import IndicatorCorrelationManager
 from features.indicators.factory import IndicatorFactory
 
 
 class FeatureEngineer:
+    """مرز دو مسیر (شکاف ۹):
+    - مسیر Signal: get_last_indicator_results() → AnalysisScorer (بدون scaler).
+    - مسیر ML: create_features() → scale_features() → create_sequences() → Model.
+    هر دو مسیر از یک primitive واحد (_compute_indicator) استفاده می‌کنند تا
+    مدیریت متناقض ابزار واحد رخ ندهد. scaler و feature_columns فقط متعلق
+    به مسیر ML هستند و مسیر Signal به آنها دست نمی‌زند."""
+
     def __init__(self, config_manager: ConfigManager = None):
         self.config_manager = config_manager if config_manager else ConfigManager()
         self.indicator_factory = IndicatorFactory()
         self.scaler = MinMaxScaler(feature_range=(0, 1))
         self.feature_columns: Optional[List[str]] = None
+        self.correlation_manager = IndicatorCorrelationManager()
+
+    def _compute_indicator(
+        self, indicator_name: str, data: pd.DataFrame
+    ) -> Optional[IndicatorResult]:
+        """primitive واحد محاسبه اندیکاتور برای هر دو مسیر (Signal و ML)."""
+        indicator_instance = self.indicator_factory.create(indicator_name)
+        if not indicator_instance:
+            return None
+        try:
+            return indicator_instance.calculate(data)
+        except (IndicatorError, InsufficientDataError) as e:
+            logger.debug(f"Could not calculate indicator '{indicator_name}': {e}")
+        except Exception as e:
+            logger.error(
+                f"Unexpected error with indicator '{indicator_name}': {e}",
+                exc_info=True,
+            )
+        return None
 
     def create_features(
         self, data: pd.DataFrame, indicators_to_run: List[str] = None
@@ -31,38 +59,29 @@ class FeatureEngineer:
         features_df = data.copy()
 
         for indicator_name in indicators_to_run:
-            try:
-                indicator_instance = self.indicator_factory.create(indicator_name)
-                if indicator_instance:
-                    indicator_output = indicator_instance.calculate(features_df)
-                    # For feature engineering, we care about the raw value
-                    value_to_add = None
-                    if isinstance(indicator_output.value, (pd.Series, np.ndarray)):
-                        value_to_add = indicator_output.value
-                    elif isinstance(indicator_output.value, (int, float, np.number)):
-                        # Create a series with the same index as the data to broadcast the single value
-                        value_to_add = pd.Series(
-                            indicator_output.value, index=features_df.index
-                        )
-
-                    if value_to_add is not None:
-                        # Ensure the series is aligned with the dataframe index
-                        if not isinstance(
-                            value_to_add.index, pd.DatetimeIndex
-                        ) or not value_to_add.index.equals(features_df.index):
-                            value_to_add = pd.Series(
-                                value_to_add.values,
-                                index=features_df.index[-len(value_to_add) :],
-                            )
-                        features_df[indicator_name] = value_to_add
-
-            except (IndicatorError, InsufficientDataError) as e:
-                logger.debug(f"Could not calculate indicator '{indicator_name}': {e}")
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error with indicator '{indicator_name}': {e}",
-                    exc_info=True,
+            indicator_output = self._compute_indicator(indicator_name, features_df)
+            if indicator_output is None:
+                continue
+            # For feature engineering, we care about the raw value
+            value_to_add = None
+            if isinstance(indicator_output.value, (pd.Series, np.ndarray)):
+                value_to_add = indicator_output.value
+            elif isinstance(indicator_output.value, (int, float, np.number)):
+                # Create a series with the same index as the data to broadcast the single value
+                value_to_add = pd.Series(
+                    indicator_output.value, index=features_df.index
                 )
+
+            if value_to_add is not None:
+                # Ensure the series is aligned with the dataframe index
+                if not isinstance(
+                    value_to_add.index, pd.DatetimeIndex
+                ) or not value_to_add.index.equals(features_df.index):
+                    value_to_add = pd.Series(
+                        value_to_add.values,
+                        index=features_df.index[-len(value_to_add) :],
+                    )
+                features_df[indicator_name] = value_to_add
 
         # Reorder columns to have original data first
         original_cols = ["open", "high", "low", "close", "volume"]
@@ -145,30 +164,28 @@ class FeatureEngineer:
     ) -> Dict[str, Any]:
         """
         Calculates and retrieves the last result for all active indicators for a given timeframe.
-        This is the primary method used by the SignalGenerator.
+        This is the primary method used by the SignalGenerator (مسیر Signal).
+        به scaler و feature_columns دست نمی‌زند (متعلق به مسیر ML).
         """
         results = {}
         active_indicators = self.config_manager.get_indicator_weights(timeframe).keys()
 
         for name in active_indicators:
-            indicator_instance = self.indicator_factory.create(name)
-            if indicator_instance:
-                try:
-                    # Each indicator calculates its result based on the full data
-                    indicator_result = indicator_instance.calculate(data)
-                    if (
-                        indicator_result
-                        and indicator_result.value is not None
-                        and not pd.isna(indicator_result.value)
-                    ):
-                        results[name] = {"result": indicator_result}
-                except (InsufficientDataError, IndicatorError) as e:
-                    logger.debug(
-                        f"Indicator '{name}' failed during last result calculation: {e}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Unexpected error calculating indicator '{name}': {e}",
-                        exc_info=True,
-                    )
+            # Each indicator calculates its result based on the full data
+            indicator_result = self._compute_indicator(name, data)
+            if indicator_result is None or indicator_result.value is None:
+                continue
+            try:
+                if bool(pd.isna(indicator_result.value).all() if isinstance(indicator_result.value, (pd.Series, np.ndarray)) else pd.isna(indicator_result.value)):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            results[name] = {"result": indicator_result}
+
+        # تصمیم شکاف ۷: همبستگی فقط با history واقعی؛ در مسیر زنده وزن خنثی.
+        self.correlation_manager.compute_correlations(results)
         return results
+
+    def get_decorrelation_weights(self, results: Dict[str, Any]) -> Dict[str, float]:
+        """وزن‌های ضد‌همبستگی برای مسیر Signal؛ بدون history واقعی خنثی (1.0)."""
+        return self.correlation_manager.get_decorrelation_weights(results)

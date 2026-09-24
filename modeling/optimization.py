@@ -61,25 +61,18 @@ class HyperparameterOptimizer:
 
         resource_manager: Optional[ResourceManager] = None
         trading_service: Optional[TradingService] = None
+        market_data_provider: Optional[MarketDataProvider] = None
 
         try:
-            # Setup a temporary trading service for backtesting
-            config_manager = ConfigManager()
-            resource_manager = ResourceManager()
-            await resource_manager.get_session()
-            await resource_manager.get_redis_client()
+            # همان Composition Root اصلی (شکاف ۱۸) — بدون graph موازی.
+            from services.trading_service import create_trading_stack
 
-            market_data_provider = MarketDataProvider(
-                resource_manager=resource_manager, config_manager=config_manager
-            )
-            await market_data_provider.initialize()
-
-            trading_service = TradingService(
-                market_data_provider=market_data_provider,
-                config_manager=config_manager,
-                resource_manager=resource_manager,
-            )
-            await trading_service.initialize()
+            (
+                _config_manager,
+                resource_manager,
+                market_data_provider,
+                trading_service,
+            ) = await create_trading_stack(ConfigManager())
 
             if self.model_type == "lstm":
                 params = self._define_lstm_search_space(trial)
@@ -110,7 +103,7 @@ class HyperparameterOptimizer:
             start_date = self.data.index.min().strftime("%Y-%m-%d")
             end_date = self.data.index.max().strftime("%Y-%m-%d")
 
-            results = backtester.run_backtest(
+            results = await backtester.run_backtest(
                 symbol=self.symbol,
                 timeframe=self.timeframe,
                 start=start_date,
@@ -136,6 +129,8 @@ class HyperparameterOptimizer:
             # Cleanup resources
             if trading_service:
                 await trading_service.cleanup()
+            if market_data_provider:
+                await market_data_provider.close()
             if resource_manager:
                 await resource_manager.cleanup()
 

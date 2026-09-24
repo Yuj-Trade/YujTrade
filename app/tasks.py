@@ -1,12 +1,8 @@
 import asyncio
-from typing import Set
 
 from utils.background_manager import BackgroundTaskManager
 from config.settings import ConfigManager, SecretsManager
 from config.logger import logger
-from data.data_provider import MarketDataProvider
-from services.trading_service import TradingService
-from utils.resource_manager import ResourceManager
 
 
 class TaskServiceContainer:
@@ -33,21 +29,15 @@ class TaskServiceContainer:
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN is not configured.")
 
-        self.resource_manager = ResourceManager()
-        await self.resource_manager.get_session()
-        await self.resource_manager.get_redis_client()
+        # همان Composition Root اصلی (شکاف ۱۸) — بدون graph موازی.
+        from services.trading_service import create_trading_stack
 
-        self.market_data_provider = MarketDataProvider(
-            resource_manager=self.resource_manager, config_manager=self.config_manager
-        )
-        await self.market_data_provider.initialize()
-
-        self.trading_service = TradingService(
-            market_data_provider=self.market_data_provider,
-            config_manager=self.config_manager,
-            resource_manager=self.resource_manager,
-        )
-        await self.trading_service.initialize()
+        (
+            self.config_manager,
+            self.resource_manager,
+            self.market_data_provider,
+            self.trading_service,
+        ) = await create_trading_stack(self.config_manager)
 
         logger.info("TaskServiceContainer initialized successfully.")
 
@@ -90,7 +80,8 @@ async def run_quick_scan_task(chat_id: int, message_id: int):
         logger.info(f"Task 'run_quick_scan_task' started for chat_id: {chat_id}")
         container = await TaskServiceContainer.instance()
 
-        signals = await container.trading_service.run_analysis_for_all_symbols()
+        # تعریف واحد Quick Analysis (شکاف ۱۷) — همان implementation سرویس.
+        signals = await container.trading_service.run_quick_analysis()
         logger.info(
             f"Task 'run_quick_scan_task' finished for chat_id: {chat_id}. Generated {len(signals)} signals."
         )

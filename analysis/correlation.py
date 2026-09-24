@@ -4,42 +4,50 @@ import numpy as np
 
 
 class IndicatorCorrelationManager:
+    """تصمیم معماری (شکاف ۷): این ابزار بخشی از Pipeline زنده است، اما فقط
+    با سری‌های تاریخی واقعی اندیکاتورها کار می‌کند. بدون history، ماتریس
+    ساخته نمی‌شود و وزن‌ها خنثی (1.0) برمی‌گردند — هیچ داده مصنوعی/random
+    تولید نمی‌شود. مسیر آفلاین/تحقیقاتی می‌تواند history واقعی بدهد."""
+
     def __init__(self, correlation_threshold: float = 0.7):
         self.correlation_matrix: Optional[pd.DataFrame] = None
         self.correlation_threshold = correlation_threshold
 
-    def compute_correlations(self, processed_results: Dict[str, Any]):
+    def compute_correlations(
+        self,
+        processed_results: Dict[str, Any],
+        history: Optional[Dict[str, pd.Series]] = None,
+    ):
         """
-        Computes the correlation matrix for indicators that have a single numeric value.
+        Computes the correlation matrix from REAL historical indicator series.
+        :param processed_results: {name: {"result": IndicatorResult}} فعلی.
+        :param history: {name: سری تاریخی} اختیاری؛ بدون آن ماتریس None
+            می‌ماند و وزن‌ها خنثی هستند.
         """
-        indicator_values = {
-            name: item["result"].value
-            for name, item in processed_results.items()
-            if "result" in item
-            and hasattr(item["result"], "value")
-            and isinstance(item["result"].value, (int, float))
-            and not pd.isna(item["result"].value)
-        }
+        self.correlation_matrix = None
 
-        if not indicator_values or len(indicator_values) < 2:
-            self.correlation_matrix = None
+        if not history:
             return
 
-        # Since we only have one value per indicator, we can't compute a real correlation matrix.
-        # This part of the code needs a series of historical indicator values to be meaningful.
-        # For now, we create a dummy DataFrame to simulate the structure.
-        # In a real scenario, you would pass historical data to indicators.
-        num_rows = 100  # Dummy number of historical points
-        temp_data = {
-            name: np.random.normal(loc=val, scale=abs(val * 0.1) + 0.01, size=num_rows)
-            for name, val in indicator_values.items()
-        }
+        aligned = {}
+        for name in processed_results.keys():
+            series = history.get(name)
+            if series is None:
+                continue
+            try:
+                s = pd.Series(series).dropna()
+                if len(s) >= 10:
+                    aligned[name] = s
+            except (TypeError, ValueError):
+                continue
 
-        if not temp_data:
-            self.correlation_matrix = None
+        if len(aligned) < 2:
             return
 
-        df = pd.DataFrame(temp_data)
+        df = pd.DataFrame(aligned).dropna()
+        if df.empty or len(df) < 10 or len(df.columns) < 2:
+            return
+
         self.correlation_matrix = df.corr()
 
     def get_decorrelation_weights(

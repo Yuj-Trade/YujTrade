@@ -76,6 +76,21 @@ class ConfigManager:
         "schedule_hour": "*/1",
         "app_version": "6.0.0",
         "timeframe_based_weights": True,
+        # قرارداد واحد داده مدل (شکاف ۱۰): هم Training و هم Prediction
+        # محدودیت‌ها را فقط از همین‌جا می‌خوانند.
+        "model_data_limits": {
+            "1h": 2000,
+            "4h": 1500,
+            "1d": 1000,
+            "1w": 500,
+            "1M": 300,
+        },
+        "model_prediction_limit": 300,
+        # مالکیت Training (شکاف ۱۱): True یعنی Prediction در صورت نبود مدل
+        # آموزش را خودش انجام می‌دهد (رفتار فعلی)؛ False یعنی مالک آموزش
+        # فقط مسیر صریح (scripts/train_models.py) است و Prediction صرفاً
+        # از lifecycle موجود تبعیت می‌کند.
+        "model_auto_train_on_predict": True,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {
