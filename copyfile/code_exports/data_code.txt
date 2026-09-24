@@ -1,0 +1,675 @@
+[data\data_provider.py] :
+
+import asyncio
+from typing import Optional, List, Union, Dict, Any
+from io import StringIO
+import pandas as pd
+import aiohttp
+
+from data.sources.binance_fetcher import BinanceFetcher
+from data.sources.coindesk_fetcher import CoinDeskFetcher
+from data.sources.marketindices_fetcher import MarketIndicesFetcher
+from data.sources.coingecko_fetcher import CoinGeckoFetcher
+from data.sources.alphavantage_fetcher import AlphaVantageFetcher
+from data.sources.messari_fetcher import MessariFetcher
+from data.sources.news_fetcher import NewsFetcher
+from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
+from data.sources.alternativeme_fetcher import AlternativeMeFetcher
+
+from common.exceptions import (
+    InsufficientDataError,
+    NetworkError,
+    DataError,
+    ObjectClosedError,
+)
+from config.logger import logger
+from common.utils import async_retry
+from data.data_validator import DataQualityChecker
+from common.cache import CacheKeyBuilder
+from utils.resource_manager import ResourceManager
+from config.settings import ConfigManager, SecretsManager
+from common.core import (
+    DerivativesAnalysis,
+    BinanceFuturesData,
+    FundamentalAnalysis,
+    OrderBook,
+    MacroEconomicData,
+    TrendingData,
+)
+
+
+class MarketDataProvider:
+    def __init__(
+        self,
+        resource_manager: ResourceManager,
+        config_manager: ConfigManager,
+    ):
+        self._is_closed = False
+        self.resource_manager = resource_manager
+        self.config_manager = config_manager
+        self.redis: Optional[aiohttp.ClientSession] = None
+        self.session: Optional[aiohttp.ClientSession] = None
+
+        self.binance_fetcher: Optional[BinanceFetcher] = None
+        self.coindesk_fetcher: Optional[CoinDeskFetcher] = None
+        self.market_indices_fetcher: Optional[MarketIndicesFetcher] = None
+        self.coingecko_fetcher: Optional[CoinGeckoFetcher] = None
+        self.alphavantage_fetcher: Optional[AlphaVantageFetcher] = None
+        self.messari_fetcher: Optional[MessariFetcher] = None
+        self.news_fetcher: Optional[NewsFetcher] = None
+
+        self.fetchers: List[Any] = []
+
+        self.data_quality_checker = DataQualityChecker()
+
+    async def initialize(self):
+        if self.session is not None and not self.session.closed:
+            return
+
+        logger.info("Initializing MarketDataProvider...")
+        
+        try:
+            self.session = await asyncio.wait_for(
+                self.resource_manager.get_session(),
+                timeout=10.0
+            )
+            logger.info("Session initialized successfully.")
+        except asyncio.TimeoutError:
+            logger.error("Session initialization timed out.")
+            raise
+        
+        try:
+            self.redis = await asyncio.wait_for(
+                self.resource_manager.get_redis_client(),
+                timeout=10.0
+            )
+            if self.redis:
+                logger.info("Redis client initialized successfully.")
+            else:
+                logger.warning("Redis client not available, continuing without cache.")
+        except asyncio.TimeoutError:
+            logger.warning("Redis initialization timed out, continuing without cache.")
+            self.redis = None
+        except Exception as e:
+            logger.warning(f"Redis initialization failed: {e}, continuing without cache.")
+            self.redis = None
+
+        common_args = {
+            "redis_client": self.redis,
+            "session": self.session,
+            "config_manager": self.config_manager,
+        }
+
+        logger.info("Initializing data fetchers...")
+        
+        self.binance_fetcher = BinanceFetcher(**common_args)
+
+        if SecretsManager.COINDESK_API_KEY:
+            self.coindesk_fetcher = CoinDeskFetcher(
+                api_key=SecretsManager.COINDESK_API_KEY, **common_args
+            )
+
+        self.coingecko_fetcher = CoinGeckoFetcher(
+            api_key=SecretsManager.COINGECKO_KEY, **common_args
+        )
+
+        if SecretsManager.ALPHA_VANTAGE_KEY:
+            self.alphavantage_fetcher = AlphaVantageFetcher(
+                api_key=SecretsManager.ALPHA_VANTAGE_KEY, **common_args
+            )
+
+        if SecretsManager.MESSARI_API_KEY:
+            self.messari_fetcher = MessariFetcher(
+                api_key=SecretsManager.MESSARI_API_KEY, **common_args
+            )
+
+        self.market_indices_fetcher = MarketIndicesFetcher(
+            coingecko_fetcher=self.coingecko_fetcher,
+            alphavantage_fetcher=self.alphavantage_fetcher,
+            **common_args,
+        )
+
+        if SecretsManager.CRYPTOPANIC_KEY:
+            cryptopanic_fetcher = CryptoPanicFetcher(
+                api_key=SecretsManager.CRYPTOPANIC_KEY, **common_args
+            )
+            alternativeme_fetcher = AlternativeMeFetcher(**common_args)
+
+            self.news_fetcher = NewsFetcher(
+                cryptopanic_fetcher=cryptopanic_fetcher,
+                alternativeme_fetcher=alternativeme_fetcher,
+                coindesk_fetcher=self.coindesk_fetcher,
+                messari_fetcher=self.messari_fetcher,
+                redis_client=self.redis,
+            )
+
+        self.fetchers = [
+            f
+            for f in [
+                self.binance_fetcher,
+                self.coindesk_fetcher,
+                self.market_indices_fetcher,
+                self.coingecko_fetcher,
+                self.alphavantage_fetcher,
+                self.messari_fetcher,
+                self.news_fetcher,
+            ]
+            if f is not None
+        ]
+        
+        logger.info("MarketDataProvider initialization completed.")
+
+    async def close(self):
+        if self._is_closed:
+            return
+        self._is_closed = True
+        close_tasks = [
+            fetcher.close() for fetcher in self.fetchers if hasattr(fetcher, "close")
+        ]
+        await asyncio.gather(*close_tasks, return_exceptions=True)
+        logger.info("MarketDataProvider and all associated fetchers cleaned up.")
+
+    def _get_data_quality_score(self, df: pd.DataFrame, timeframe: str) -> float:
+        if df is None or df.empty:
+            return 0.0
+
+        is_valid, _ = self.data_quality_checker.validate_data_quality(df, timeframe)
+        if not is_valid:
+            return 0.0
+
+        score = 100.0
+
+        try:
+            no_gaps, _ = self.data_quality_checker.detect_data_gaps(df)
+            if no_gaps is False:
+                score -= 30.0
+        except ValueError:
+            return 0.0
+
+        if not self.data_quality_checker.check_sufficient_volume(df):
+            score -= 20.0
+
+        score -= df.isnull().sum().sum() * 0.1
+
+        return score
+
+    @async_retry(attempts=3, delay=5, exceptions=(NetworkError, DataError))
+    async def fetch_ohlcv_data(
+        self, symbol: str, timeframe: str, limit: int = 1000
+    ) -> Optional[pd.DataFrame]:
+        if self._is_closed:
+            raise ObjectClosedError("MarketDataProvider is closed")
+
+        if self.session is None or self.session.closed:
+            await self.initialize()
+
+        cache_ttl = self.config_manager.get_cache_ttl("ohlcv", timeframe)
+
+        cache_key = CacheKeyBuilder.ohlcv_key("unified", symbol, timeframe, limit)
+        if self.redis:
+            try:
+                cached = await self.redis.get(cache_key)
+                if cached:
+                    df = pd.read_json(StringIO(cached), orient="split")
+                    if "timestamp" in df.columns:
+                        df["timestamp"] = pd.to_datetime(
+                            df["timestamp"], unit="ms", utc=True
+                        )
+                        df.set_index("timestamp", inplace=True)
+                    is_valid, _ = self.data_quality_checker.validate_data_quality(
+                        df, timeframe
+                    )
+                    if not is_valid:
+                        logger.debug(
+                            f"Cached data for {symbol}-{timeframe} is invalid, refetching"
+                        )
+                    else:
+                        return df
+            except Exception as e:
+                logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
+
+        fetch_sources = [
+            (
+                (self.binance_fetcher.get_historical_ohlc, "binance")
+                if self.binance_fetcher
+                else None
+            ),
+            (
+                (self.coindesk_fetcher.get_historical_ohlc, "coindesk")
+                if self.coindesk_fetcher
+                else None
+            ),
+        ]
+
+        fetch_sources = [s for s in fetch_sources if s is not None]
+
+        tasks = [
+            fetch_func(symbol, timeframe, limit) for fetch_func, _ in fetch_sources
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        best_df = None
+        best_score = -1.0
+
+        for i, res_df in enumerate(results):
+            source_name = fetch_sources[i][1]
+            if isinstance(res_df, Exception) or res_df is None or res_df.empty:
+                logger.warning(
+                    f"Source {source_name} failed for {symbol}/{timeframe}: {res_df}"
+                )
+                continue
+
+            if isinstance(res_df.index, pd.DatetimeIndex):
+                res_df.index = (
+                    res_df.index.tz_convert("UTC")
+                    if res_df.index.tz is not None
+                    else res_df.index.tz_localize("UTC")
+                )
+            else:
+                if "timestamp" in res_df.columns:
+                    res_df["timestamp"] = pd.to_datetime(
+                        res_df["timestamp"], unit="ms", utc=True
+                    )
+                    res_df.set_index("timestamp", inplace=True)
+                else:
+                    logger.warning(
+                        f"No timestamp column in data from {source_name}, skipping"
+                    )
+                    continue
+
+            score = self._get_data_quality_score(res_df, timeframe)
+            logger.debug(
+                f"Data quality score for {symbol}/{timeframe} from {source_name}: {score:.2f}"
+            )
+
+            if score > best_score:
+                best_score = score
+                best_df = res_df
+
+        if best_df is not None and not best_df.empty:
+            if self.redis:
+                try:
+                    df_to_cache = best_df.reset_index()
+                    df_to_cache["timestamp"] = (
+                        df_to_cache["timestamp"].astype(int) // 10**6
+                    )
+                    await self.redis.set(
+                        cache_key, df_to_cache.to_json(orient="split"), ex=cache_ttl
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Redis SET failed for {cache_key}: {e}", exc_info=True
+                    )
+            return best_df
+
+        raise InsufficientDataError(
+            f"Failed to fetch sufficient OHLCV for {symbol} on {timeframe} from all sources."
+        )
+
+    async def get_derivatives_data(self, symbol: str) -> Optional[DerivativesAnalysis]:
+        if not self.binance_fetcher:
+            return None
+
+        try:
+            tasks = {
+                "open_interest": self.binance_fetcher.get_open_interest(symbol),
+                "funding_rate": self.binance_fetcher.get_funding_rate(symbol),
+                "long_short_ratio": self.binance_fetcher.get_taker_long_short_ratio(
+                    symbol
+                ),
+                "top_trader_accounts": self.binance_fetcher.get_top_trader_long_short_ratio_accounts(
+                    symbol
+                ),
+                "top_trader_positions": self.binance_fetcher.get_top_trader_long_short_ratio_positions(
+                    symbol
+                ),
+                "mark_price": self.binance_fetcher.get_mark_price(symbol),
+            }
+
+            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+            oi, fr, lsr, tta, ttp, mp = results
+
+            binance_data = BinanceFuturesData(
+                top_trader_long_short_ratio_accounts=tta
+                if not isinstance(tta, Exception)
+                else None,
+                top_trader_long_short_ratio_positions=ttp
+                if not isinstance(ttp, Exception)
+                else None,
+                mark_price=mp if not isinstance(mp, Exception) else None,
+            )
+
+            return DerivativesAnalysis(
+                open_interest=oi if not isinstance(oi, Exception) else None,
+                funding_rate=fr if not isinstance(fr, Exception) else None,
+                taker_long_short_ratio=lsr if not isinstance(lsr, Exception) else None,
+                binance_futures_data=binance_data,
+            )
+        except Exception as e:
+            logger.error(f"Error fetching derivatives data for {symbol}: {e}")
+            return None
+
+    async def get_fundamental_data(self, symbol: str) -> Optional[FundamentalAnalysis]:
+        if self.coingecko_fetcher:
+            try:
+                return await self.coingecko_fetcher.get_fundamental_data(symbol)
+            except Exception as e:
+                logger.error(f"Error fetching fundamental data for {symbol}: {e}")
+        return None
+
+    async def get_order_book(self, symbol: str) -> Optional[OrderBook]:
+        if self.binance_fetcher:
+            try:
+                return await self.binance_fetcher.get_order_book_depth(symbol)
+            except Exception as e:
+                logger.error(f"Error fetching order book for {symbol}: {e}")
+        return None
+
+    async def get_macro_data(self) -> Optional[MacroEconomicData]:
+        if self.alphavantage_fetcher:
+            try:
+                data = await self.alphavantage_fetcher.get_comprehensive_macro_data()
+                if data:
+                    return MacroEconomicData(
+                        cpi=data.get("CPI"),
+                        fed_rate=data.get("FED_RATE"),
+                        treasury_yield_10y=data.get("TREASURY_YIELD"),
+                        gdp=data.get("GDP"),
+                        unemployment=data.get("UNEMPLOYMENT"),
+                    )
+            except Exception as e:
+                logger.error(f"Error fetching macro data: {e}")
+        return None
+
+    async def get_trending_data(self) -> Optional[TrendingData]:
+        if self.coingecko_fetcher:
+            try:
+                trending = await self.coingecko_fetcher.get_trending_searches()
+                if trending:
+                    return TrendingData(coingecko_trending=trending)
+            except Exception as e:
+                logger.error(f"Error fetching trending data: {e}")
+        return None
+
+    async def get_news_sentiment(
+        self, currencies: List[str] = ["BTC", "ETH"]
+    ) -> Optional[Dict[str, Any]]:
+        if self.news_fetcher:
+            try:
+                return await self.news_fetcher.fetch_sentiment_analysis(currencies)
+            except Exception as e:
+                logger.error(f"Error fetching news sentiment: {e}")
+        return None
+
+=====
+
+[data\data_validator.py] :
+
+from typing import Tuple
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from config.logger import logger
+from common.constants import LONG_TERM_CONFIG
+
+
+class DataQualityChecker:
+
+    def __init__(self):
+        self.min_data_points_map = LONG_TERM_CONFIG.get(
+            "min_data_points", {"1h": 500, "4h": 400, "1d": 200, "1w": 150, "1M": 100}
+        )
+
+    def validate_data_quality(
+        self, data: pd.DataFrame, timeframe: str
+    ) -> Tuple[bool, str]:
+        if data is None or data.empty:
+            return False, "Data is None or empty."
+
+        min_required = self.min_data_points_map.get(timeframe, 200)
+        if len(data) < min_required:
+            return False, f"Insufficient data: {len(data)} < {min_required}"
+
+        required_cols = ["open", "high", "low", "close", "volume"]
+        missing_cols = [col for col in required_cols if col not in data.columns]
+        if missing_cols:
+            return False, f"Missing required columns: {missing_cols}"
+
+        if data[required_cols].isnull().values.any():
+            null_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if null_ratio > 0.1:
+                return False, f"Too many null values: {null_ratio:.2%}"
+
+        if (data["high"] < data["low"]).any():
+            return False, "Invalid data: high is less than low in some rows."
+
+        if (data["close"] <= 0).any() or (data["open"] <= 0).any():
+            return False, "Invalid data: zero or negative prices found."
+
+        price_changes = data["close"].pct_change().abs()
+        if (price_changes > 0.75).any():
+            logger.warning(
+                f"Excessive volatility detected: price changed more than 75% in one candle."
+            )
+
+        if "volume" in data.columns and data["volume"].mean() < 1:
+            logger.warning(
+                f"Average volume is extremely low: {data['volume'].mean():.2f}"
+            )
+
+        if not self._check_data_freshness(data, timeframe):
+            return False, f"Data is stale for timeframe {timeframe}"
+
+        if self._detect_duplicate_timestamps(data):
+            logger.warning("Duplicate timestamps detected in data")
+
+        return True, "Data quality OK"
+
+    def _check_data_freshness(self, data: pd.DataFrame, timeframe: str) -> bool:
+        if not isinstance(data.index, pd.DatetimeIndex) or data.empty:
+            return False
+
+        last_timestamp = data.index[-1]
+        current_time = datetime.now(last_timestamp.tz)
+
+        freshness_thresholds = {
+            "1h": timedelta(hours=4),
+            "4h": timedelta(hours=16),
+            "1d": timedelta(days=4),
+            "1w": timedelta(days=28),
+            "1M": timedelta(days=120),
+        }
+
+        threshold = freshness_thresholds.get(timeframe, timedelta(days=1))
+        return current_time - last_timestamp <= threshold
+
+    def _detect_duplicate_timestamps(self, data: pd.DataFrame) -> bool:
+        if not isinstance(data.index, pd.DatetimeIndex):
+            return False
+        return data.index.duplicated().any()
+
+    def calculate_overall_quality_score(
+        self, data: pd.DataFrame, timeframe: str, volatility: float = None
+    ) -> float:
+        score = 1.0
+
+        is_valid, msg = self.validate_data_quality(data, timeframe)
+        if not is_valid:
+            score *= 0.8
+
+        weighted_null_ratio = self._calculate_weighted_null_ratio(data)
+        score *= 1 - weighted_null_ratio
+
+        has_gaps, gap_penalty = self.detect_data_gaps(data)
+        if has_gaps:
+            score *= 1 - gap_penalty * 0.5
+
+        if not self.check_sufficient_volume(data):
+            score *= 0.9
+
+        persistence_ok, persistence_penalty = self.check_trend_persistence(
+            data, volatility=volatility
+        )
+        if not persistence_ok:
+            score *= 1 - persistence_penalty * 0.5
+
+        price_volatility = data["close"].pct_change().std()
+        if price_volatility > 0.1:
+            score *= 0.9
+
+        return np.clip(score, 0.0, 1.0)
+
+    def _calculate_weighted_null_ratio(self, data: pd.DataFrame) -> float:
+        if data.empty:
+            return 1.0
+
+        total_cells = len(data) * len(data.columns)
+        if total_cells == 0:
+            return 0.0
+
+        null_counts = data.isnull().sum()
+        weighted_nulls = 0
+
+        for col in data.columns:
+            weight = (
+                2.0
+                if col in ["open", "high", "low", "close"]
+                else 0.5 if col == "volume" else 1.0
+            )
+            weighted_nulls += null_counts[col] * weight
+
+        total_weight = sum(
+            (
+                2.0
+                if col in ["open", "high", "low", "close"]
+                else 0.5 if col == "volume" else 1.0
+            )
+            for col in data.columns
+        )
+
+        return (
+            weighted_nulls / (total_cells * total_weight / len(data.columns))
+            if total_weight > 0
+            else 0.0
+        )
+
+    def check_trend_persistence(
+        self, data: pd.DataFrame, min_bars: int = 30, volatility: float = None
+    ) -> Tuple[bool, float]:
+        if len(data) < min_bars:
+            return False, 0.3
+
+        closes = data["close"].tail(min_bars)
+        sma_short = closes.rolling(window=min(10, min_bars // 3)).mean().dropna()
+        if len(sma_short) < 2:
+            return False, 0.3
+
+        direction_changes = np.sign(sma_short.diff().dropna()).diff().ne(0).sum()
+
+        max_allowed_changes = self._get_volatility_adjusted_max_changes(
+            min_bars, volatility
+        )
+
+        is_persistent = direction_changes <= max_allowed_changes
+        penalty = (
+            min(direction_changes / (max_allowed_changes + 1), 0.3)
+            if not is_persistent
+            else 0.0
+        )
+
+        if not is_persistent:
+            logger.debug(
+                f"Trend changed {int(direction_changes)} times in {min_bars} bars (max allowed: {max_allowed_changes})"
+            )
+
+        return is_persistent, penalty
+
+    def _get_volatility_adjusted_max_changes(
+        self, min_bars: int, volatility: float
+    ) -> int:
+        base_divisor = 8
+        if volatility is not None:
+            if volatility > 0.05:  # High volatility
+                base_divisor = 5
+            elif volatility > 0.03:  # Medium volatility
+                base_divisor = 7
+            else:  # Low volatility
+                base_divisor = 9
+
+        return max(4, min_bars // base_divisor)
+
+    def check_sufficient_volume(
+        self, data: pd.DataFrame, min_ratio: float = 0.5
+    ) -> bool:
+        if "volume" not in data.columns or len(data) < 40:
+            return True
+
+        recent_volume = data["volume"].tail(20).mean()
+        historical_volume = data["volume"].iloc[:-20].mean()
+
+        if historical_volume == 0:
+            return recent_volume > 0
+
+        volume_ratio = recent_volume / historical_volume
+        return volume_ratio >= min_ratio
+
+    def _map_freq_str(self, freq_str: str) -> str:
+        if freq_str is None:
+            return None
+        freq_lower = freq_str.lower()
+        if "w" in freq_lower:
+            return "1W"
+        if "m" in freq_lower:
+            return "1M"
+        if "d" in freq_lower:
+            return "1D"
+        return freq_str
+
+    def detect_data_gaps(
+        self, data: pd.DataFrame, max_gap_tolerance: int = 3
+    ) -> Tuple[bool, float]:
+        if not isinstance(data.index, pd.DatetimeIndex) or len(data) < 2:
+            return False, 0.0
+
+        time_diffs = data.index.to_series().diff().dropna()
+        if time_diffs.empty:
+            return False, 0.0
+
+        inferred_freq = self._map_freq_str(pd.infer_freq(data.index))
+        freq_str = (
+            self._map_freq_str(getattr(data.index, "freqstr", None)) or inferred_freq
+        )
+
+        try:
+            expected_interval = pd.to_timedelta(freq_str)
+        except (ValueError, TypeError):
+            expected_interval = time_diffs.median()
+
+        if expected_interval <= pd.Timedelta(0):
+            return False, 0.0
+
+        large_gaps = time_diffs[
+            time_diffs > expected_interval * (max_gap_tolerance + 1)
+        ]
+
+        if not large_gaps.empty:
+            gap_count = len(large_gaps)
+            total_time = (data.index[-1] - data.index[0]).total_seconds()
+            total_gap_time = large_gaps.sum().total_seconds()
+
+            if total_time > 0:
+                gap_ratio = total_gap_time / total_time
+                if gap_ratio > 0.1:
+                    raise ValueError("Data gap too large — aborting signal generation")
+
+            penalty = min(0.05 * gap_count, 0.5)
+
+            return True, penalty
+
+        return False, 0.0
+
+
+=====
+

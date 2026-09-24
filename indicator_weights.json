@@ -1,0 +1,243 @@
+{
+    "default_settings": {
+        "component_weights": {
+            "technical_analysis": 40,
+            "market_context": 25,
+            "external_data": 15,
+            "ml_models": 20
+        },
+        "indicator_weights": {
+            "rsi": 14,
+            "macd": 16,
+            "stoch": 7,
+            "mfi": 12,
+            "cci": 10,
+            "bb": 12,
+            "supertrend": 15,
+            "psar": 10,
+            "ichimoku": 18,
+            "volume": 10,
+            "cmf": 10,
+            "obv": 9,
+            "adx": 15,
+            "aroon": 8,
+            "williams_r": 7,
+            "atr": 9,
+            "vwap": 11,
+            "ema": 13,
+            "sma": 12,
+            "squeeze": 10,
+            "stochrsi": 8,
+            "kst": 7,
+            "uo": 8,
+            "roc": 7,
+            "trix": 7
+        }
+    },
+    "timeframe_based_settings": {
+        "1h": {
+            "component_weights": {
+                "technical_analysis": 50,
+                "market_context": 20,
+                "external_data": 10,
+                "ml_models": 20
+            },
+            "indicator_weights": {
+                "rsi": 10,
+                "macd": 10,
+                "stoch": 8,
+                "mfi": 8,
+                "bb": 8,
+                "supertrend": 9,
+                "psar": 6,
+                "ichimoku": 9,
+                "volume": 7,
+                "cmf": 7,
+                "obv": 6,
+                "adx": 9,
+                "aroon": 6,
+                "williams_r": 5,
+                "atr": 7,
+                "vwap": 8,
+                "ema": 9,
+                "sma": 8,
+                "squeeze": 7,
+                "stochrsi": 6,
+                "cci": 7,
+                "uo": 6,
+                "roc": 5,
+                "kst": 5,
+                "trix": 5
+            }
+        },
+        "4h": {
+            "component_weights": {
+                "technical_analysis": 45,
+                "market_context": 25,
+                "external_data": 10,
+                "ml_models": 20
+            },
+            "indicator_weights": {
+                "rsi": 12,
+                "macd": 14,
+                "stoch": 8,
+                "mfi": 10,
+                "bb": 10,
+                "supertrend": 12,
+                "psar": 8,
+                "ichimoku": 13,
+                "volume": 8,
+                "cmf": 8,
+                "obv": 7,
+                "adx": 12,
+                "aroon": 7,
+                "williams_r": 6,
+                "atr": 8,
+                "vwap": 9,
+                "ema": 11,
+                "sma": 10,
+                "squeeze": 9,
+                "stochrsi": 7,
+                "cci": 8,
+                "uo": 7,
+                "roc": 6,
+                "kst": 6,
+                "trix": 6
+            }
+        },
+        "1d": {
+            "component_weights": {
+                "technical_analysis": 40,
+                "market_context": 25,
+                "external_data": 15,
+                "ml_models": 20
+            },
+            "indicator_weights": {
+                "rsi": 14,
+                "macd": 16,
+                "stoch": 7,
+                "mfi": 12,
+                "bb": 12,
+                "supertrend": 15,
+                "psar": 10,
+                "ichimoku": 18,
+                "volume": 10,
+                "cmf": 10,
+                "obv": 9,
+                "adx": 15,
+                "aroon": 8,
+                "williams_r": 7,
+                "atr": 9,
+                "vwap": 11,
+                "ema": 13,
+                "sma": 12,
+                "squeeze": 10,
+                "stochrsi": 8,
+                "cci": 10,
+                "uo": 8,
+                "roc": 7,
+                "kst": 7,
+                "trix": 7
+            }
+        },
+        "1w": {
+            "component_weights": {
+                "technical_analysis": 35,
+                "market_context": 25,
+                "external_data": 20,
+                "ml_models": 20
+            },
+            "indicator_weights": {
+                "rsi": 15,
+                "macd": 18,
+                "stoch": 6,
+                "mfi": 13,
+                "bb": 13,
+                "supertrend": 17,
+                "psar": 11,
+                "ichimoku": 22,
+                "volume": 11,
+                "cmf": 11,
+                "obv": 10,
+                "adx": 17,
+                "aroon": 9,
+                "williams_r": 8,
+                "atr": 10,
+                "vwap": 12,
+                "ema": 14,
+                "sma": 13,
+                "squeeze": 11,
+                "stochrsi": 8,
+                "cci": 11,
+                "uo": 9,
+                "roc": 8,
+                "kst": 8,
+                "trix": 8
+            }
+        },
+        "1M": {
+            "component_weights": {
+                "technical_analysis": 30,
+                "market_context": 25,
+                "external_data": 25,
+                "ml_models": 20
+            },
+            "indicator_weights": {
+                "rsi": 16,
+                "macd": 20,
+                "stoch": 5,
+                "mfi": 14,
+                "bb": 14,
+                "supertrend": 19,
+                "psar": 12,
+                "ichimoku": 25,
+                "volume": 12,
+                "cmf": 12,
+                "obv": 11,
+                "adx": 19,
+                "aroon": 10,
+                "williams_r": 9,
+                "atr": 11,
+                "vwap": 13,
+                "ema": 15,
+                "sma": 14,
+                "squeeze": 12,
+                "stochrsi": 9,
+                "cci": 12,
+                "uo": 10,
+                "roc": 9,
+                "kst": 9,
+                "trix": 9
+            }
+        }
+    },
+    "cache_config": {
+        "ohlcv_ttl": {
+            "1h": 300,
+            "4h": 900,
+            "1d": 1800,
+            "1w": 3600,
+            "1M": 7200
+        },
+        "generic_ttl": 3600,
+        "news_ttl": 600,
+        "macro_ttl": 86400
+    },
+    "external_data_weights": {
+    "fear_greed": 40,
+    "btc_dominance": 25,
+    "dxy": 20,
+    "funding_rate": 15
+    },
+    "ml_model_weights": {
+    "lstm": 45,
+    "xgboost": 40,
+    "multi_tf_analysis": 15
+    },
+    "analysis_weights": {
+        "trend_strength": 30,
+        "divergence_detection": 25,
+        "pattern_recognition": 25,
+        "macro_analysis": 20
+    }
+}

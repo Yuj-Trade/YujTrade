@@ -1,0 +1,131 @@
+import asyncio
+import signal
+import sys
+from typing import List
+
+from services.trading_service import TradingService
+from data.data_provider import MarketDataProvider
+from config.settings import ConfigManager, SecretsManager
+from config.logger import logger
+from common.core import TradingSignal
+from utils.resource_manager import ResourceManager
+from app.telegram_bot import TelegramBotHandler
+
+
+class MainApp:
+    def __init__(self):
+        self.shutdown_event = asyncio.Event()
+        self.resource_manager: ResourceManager | None = None
+        self.trading_service: TradingService | None = None
+        self.bot_handler: TelegramBotHandler | None = None
+        self.background_tasks_manager = None
+
+    def _handle_shutdown(self, sig, frame):
+        if not self.shutdown_event.is_set():
+            logger.info(f"Shutdown signal {sig} received. Initiating graceful shutdown...")
+            self.shutdown_event.set()
+
+    async def run(self):
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+        try:
+            logger.info("Initializing application components...")
+            config_manager = ConfigManager()
+            self.resource_manager = ResourceManager()
+
+            logger.info("Getting session...")
+            await self.resource_manager.get_session()
+            
+            logger.info("Getting Redis client...")
+            await self.resource_manager.get_redis_client()
+
+            logger.info("Initializing MarketDataProvider...")
+            self.market_data_provider = MarketDataProvider(
+                resource_manager=self.resource_manager, config_manager=config_manager
+            )
+            await self.market_data_provider.initialize()
+
+            logger.info("Initializing TradingService...")
+            self.trading_service = TradingService(
+                market_data_provider=self.market_data_provider,
+                config_manager=config_manager,
+                resource_manager=self.resource_manager,
+            )
+
+            bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
+            if not bot_token:
+                logger.error("TELEGRAM_BOT_TOKEN is not configured. Cannot start bot.")
+            
+            from utils.background_manager import BackgroundTaskManager
+            self.background_tasks_manager = BackgroundTaskManager()
+
+            admin_chat_id = SecretsManager.ADMIN_CHAT_ID
+            if not admin_chat_id:
+                logger.critical("CRITICAL: ADMIN_CHAT_ID is not configured. Bot interactions will be limited.")
+
+            if bot_token and admin_chat_id:
+                logger.info("Initializing Telegram bot handler...")
+                self.bot_handler = TelegramBotHandler(
+                    bot_token=bot_token,
+                    admin_chat_id=admin_chat_id,
+                    config_manager=config_manager,
+                    trading_service=self.trading_service,
+                    background_tasks=self.background_tasks_manager,
+                )
+
+                logger.info("Starting Telegram bot...")
+                
+                await self.bot_handler.application.initialize()
+                
+                await self.bot_handler.application.start()
+                await self.bot_handler.application.updater.start_polling()
+                
+                logger.info("Telegram bot started successfully.")
+            else:
+                logger.warning("Telegram bot not started due to missing token or admin chat ID.")
+
+            await self.shutdown_event.wait()
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"A component timed out during initialization: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error during application run: {e}", exc_info=True)
+        finally:
+            logger.info("Shutdown event set. Cleaning up resources...")
+            
+            if self.bot_handler and self.bot_handler.application and hasattr(self.bot_handler.application, 'updater') and self.bot_handler.application.updater.running:
+                try:
+                    await self.bot_handler.application.updater.stop()
+                    await self.bot_handler.application.stop()
+                    await self.bot_handler.application.shutdown()
+                except Exception as e:
+                    logger.error(f"Error stopping bot: {e}")
+
+            if self.background_tasks_manager:
+                await self.background_tasks_manager.cancel_all()
+
+            if self.trading_service:
+                try:
+                    await self.trading_service.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up trading service: {e}")
+                    
+            if self.resource_manager:
+                try:
+                    await self.resource_manager.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up resource manager: {e}")
+                    
+            logger.info("Application has been shut down gracefully.")
+
+
+if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    app = MainApp()
+    try:
+        asyncio.run(app.run())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Application interrupted by user. Shutting down.")
