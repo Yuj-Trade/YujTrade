@@ -107,6 +107,7 @@ class MarketAnalysis:
     volume_confirmation: bool
     hurst_exponent: Optional[float] = None
     volume_trend_score: Optional[float] = None
+    volume_ratio: Optional[float] = None
     adx: Optional[float] = None
     candle_patterns: List[str] = field(default_factory=list)
 
@@ -146,6 +147,7 @@ class TradingSignal:
     macro_data: Optional[MacroEconomicData] = None
     trending_data: Optional[TrendingData] = None
     market_indices: Optional[Dict[str, Any]] = None
+    ml_confidence: Optional[float] = None
     expiry_time: Optional[datetime] = None
     position_size: Optional[float] = None
     data_collection_timestamp: Optional[datetime] = None

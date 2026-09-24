@@ -8,11 +8,14 @@ from common.constants import LONG_TERM_CONFIG
 
 
 class DataQualityChecker:
+    """مرجع واحد قواعد کیفی (شکاف ۲۳) با سه نقش جدا:
+    - Provider: یکپارچگی Source/Data (انتخاب بهترین Source با امتیاز مثبت).
+    - Signal: آمادگی تحلیل (validate_data_quality روی OHLCV).
+    - Model: نیازهای خاص مدل (حداقل طول داده در fit/predict).
+    آستانه حداقل نقاط از LONG_TERM_CONFIG خوانده می‌شود (تک‌منبع)."""
 
     def __init__(self):
-        self.min_data_points_map = LONG_TERM_CONFIG.get(
-            "min_data_points", {"1h": 500, "4h": 400, "1d": 200, "1w": 150, "1M": 100}
-        )
+        self.min_data_points_map = LONG_TERM_CONFIG.get("min_data_points", {})
 
     def validate_data_quality(
         self, data: pd.DataFrame, timeframe: str

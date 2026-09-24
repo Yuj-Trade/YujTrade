@@ -5,6 +5,8 @@ from config.logger import logger
 
 
 class BackgroundTaskManager:
+    """مالک تسک‌های پس‌زمینه (شکاف ۲۵): ساخت با create_task و لغو دسته‌جمعی
+    با cancel_all در shutdown اپلیکیشن. شامل حلقه ScheduledAnalysis هم می‌شود."""
     def __init__(self):
         self._tasks: Set[asyncio.Task] = set()
 

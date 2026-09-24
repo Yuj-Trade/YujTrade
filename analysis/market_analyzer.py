@@ -23,7 +23,9 @@ class MarketConditionAnalyzer:
             hurst = 0.5
 
         volume_analysis = self.volume_analyzer.analyze_volume_pattern(data)
-        volume_ratio = volume_analysis.get("volume_ratio", 1.0)
+        volume_ratio = volume_analysis.get("volume_ratio")
+        if volume_ratio is None:
+            volume_ratio = 1.0
         volume_trend = "increasing" if volume_ratio > 1.1 else "decreasing"
         volume_confirmation = (
             trend == TrendDirection.BULLISH and volume_trend == "increasing"
@@ -67,6 +69,7 @@ class MarketConditionAnalyzer:
             trend_acceleration=trend_acceleration,
             volume_confirmation=volume_confirmation,
             volume_trend_score=volume_trend_score,
+            volume_ratio=float(volume_ratio),
             adx=self._calculate_adx(data),
             candle_patterns=candle_patterns,
             **kwargs,

@@ -62,14 +62,18 @@ class SecretsManager:
         default="redis-15986.c334.asia-southeast2-1.gce.redns.redis-cloud.com"
     )
     REDIS_PORT = decouple_config("REDIS_PORT", default=15986, cast=int)
-    REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="W3YjqQDruV76xtVusIfreP5KgQlk3Spr")
+    REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="")
+    if not REDIS_PASSWORD:
+        logger.warning(
+            "REDIS_TOKEN is not set. Caching will be disabled; "
+            "no default secret is embedded (شکاف ۲۷)."
+        )
 
 
 class ConfigManager:
     DEFAULT_CONFIG = {
         "symbols": SYMBOLS,
         "timeframes": TIME_FRAMES,
-        "min_confidence_score": 0,
         "signal_threshold": 50,
         "max_signals_per_timeframe": 1,
         "enable_scheduled_analysis": False,

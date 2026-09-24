@@ -160,7 +160,10 @@ class SignalGenerator:
             reasons=all_reasons,
             risk_reward_ratio=rr_ratio,
             predicted_profit=abs(levels["primary_exit"] - levels["primary_entry"]),
-            volume_analysis={"volume_trend": market_context.volume_trend},
+            volume_analysis={
+                "volume_trend": market_context.volume_trend,
+                "volume_ratio": market_context.volume_ratio,
+            },
             market_context=market_context.__dict__,
             dynamic_levels=levels,
             analysis_timestamp=analysis_timestamp,
@@ -171,6 +174,7 @@ class SignalGenerator:
             macro_data=external_data.get("macro"),
             trending_data=external_data.get("trending"),
             market_indices=external_data.get("market_indices"),
+            ml_confidence=float(ml_confidence),
         )
 
         return signal

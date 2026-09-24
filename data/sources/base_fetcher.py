@@ -14,6 +14,9 @@ from config.settings import ConfigManager
 
 
 class BaseFetcher:
+    """قرارداد مالکیت Cache (شکاف ۲۴): هر Fetcher فقط کش دامنه خودش را با
+    کلید source_name خودش مدیریت می‌کند. کش یکپارچه OHLCV متعلق به
+    MarketDataProvider است و هیچ Fetcher آن را دوباره کش نمی‌کند."""
     def __init__(
         self,
         redis_client: Optional[redis.Redis] = None,

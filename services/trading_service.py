@@ -45,6 +45,16 @@ async def create_trading_stack(
 
 
 class TradingService(ModelDataProvider):
+    """ترتیب واحد Quality Pipeline (شکاف ۲۱/۲۹) — بدون Rule جدید:
+    1. SignalGenerator: signal_threshold + min_risk_reward_ratio
+    2. MultiTimeframeAnalyzer: score ‎>= 0.3 و بدون direction_conflict
+    3. _passes_quality_gates: min_confidence_threshold (per-tf) →
+       min_trend_strength → min_volume_surge
+    4. SignalRanking + محدودیت‌ها: ابتدا سقف هر تایم‌فریم
+       (max_signals_per_timeframe، شکاف ۲۲) سپس سقف کل
+       (max_signals_per_run)."""
+
+    _TREND_STRENGTH_RANK = {"WEAK": 0, "MODERATE": 1, "STRONG": 2}
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
@@ -140,7 +150,8 @@ class TradingService(ModelDataProvider):
 
         logger.info(f"Analyzing {symbol} on {timeframe} timeframe...")
         try:
-            min_data_points = self.config_manager.get("min_data_points", {})
+            # همان منبع DataQualityChecker (شکاف ۲۳): LONG_TERM_CONFIG.
+            min_data_points = LONG_TERM_CONFIG.get("min_data_points", {})
             limit = min_data_points.get(timeframe, 600)
             ohlcv_data = await self.market_data_provider.fetch_ohlcv_data(
                 symbol, timeframe, limit=limit
@@ -163,6 +174,12 @@ class TradingService(ModelDataProvider):
                 if multi_tf_score < 0.3 or direction_conflict:
                     logger.info(
                         f"Signal for {symbol}-{timeframe} rejected due to multi-timeframe conflict."
+                    )
+                    return None
+
+                if not self._passes_quality_gates(signal):
+                    logger.info(
+                        f"Signal for {symbol}-{timeframe} rejected by quality gates."
                     )
                     return None
 
@@ -211,6 +228,50 @@ class TradingService(ModelDataProvider):
             logger.error(f"Error analyzing {symbol} on {timeframe}: {e}", exc_info=True)
             return None
 
+    def _passes_quality_gates(self, signal: TradingSignal) -> bool:
+        """گیت‌های مرحله ۳ Pipeline (شکاف ۲۱) — فقط Ruleهای موجود."""
+        # 3a. حداقل اطمینان هر تایم‌فریم
+        thresholds = LONG_TERM_CONFIG.get("min_confidence_threshold", {})
+        threshold = thresholds.get(signal.timeframe)
+        if threshold is not None and signal.confidence_score < threshold:
+            logger.debug(
+                f"Gate confidence: {signal.confidence_score:.1f} < {threshold} "
+                f"for {signal.symbol}-{signal.timeframe}"
+            )
+            return False
+
+        # 3b. حداقل قدرت روند
+        required = str(
+            LONG_TERM_CONFIG.get("min_trend_strength", "MODERATE")
+        ).upper()
+        strength = signal.market_context.get("trend_strength")
+        strength_name = getattr(strength, "value", strength)
+        strength_name = str(strength_name).upper() if strength_name else "WEAK"
+        if self._TREND_STRENGTH_RANK.get(
+            strength_name, 0
+        ) < self._TREND_STRENGTH_RANK.get(required, 1):
+            logger.debug(
+                f"Gate trend strength: {strength_name} < {required} "
+                f"for {signal.symbol}-{signal.timeframe}"
+            )
+            return False
+
+        # 3c. حداقل جهش حجم (از ratio حملی سیگنال، نه محاسبه مجدد)
+        min_surge = LONG_TERM_CONFIG.get("min_volume_surge")
+        ratio = (signal.volume_analysis or {}).get("volume_ratio")
+        if min_surge is not None and ratio is not None:
+            try:
+                if float(ratio) < float(min_surge):
+                    logger.debug(
+                        f"Gate volume surge: {float(ratio):.2f} < {min_surge} "
+                        f"for {signal.symbol}-{signal.timeframe}"
+                    )
+                    return False
+            except (TypeError, ValueError):
+                pass
+
+        return True
+
     async def run_analysis_for_all_symbols(self) -> List[TradingSignal]:
         symbols = self.config_manager.get("symbols", [])
         focus_timeframes = LONG_TERM_CONFIG.get("focus_timeframes", ["1d", "1w", "1M"])
@@ -238,8 +299,23 @@ class TradingService(ModelDataProvider):
 
         ranked_signals = SignalRanking.rank_signals(signals)
 
+        # مرحله ۴ Pipeline (شکاف ۲۲): هر دو سقف موجود فعال‌اند —
+        # اول سقف هر تایم‌فریم، بعد سقف کل خروجی (ترتیب رتبه حفظ می‌شود).
+        per_tf_cap = self.config_manager.get("max_signals_per_timeframe", 1)
+        try:
+            per_tf_cap = max(1, int(per_tf_cap))
+        except (TypeError, ValueError):
+            per_tf_cap = 1
+        seen_per_tf: dict = {}
+        capped_signals = []
+        for sig in ranked_signals:
+            count = seen_per_tf.get(sig.timeframe, 0)
+            if count < per_tf_cap:
+                capped_signals.append(sig)
+                seen_per_tf[sig.timeframe] = count + 1
+
         max_signals = LONG_TERM_CONFIG.get("max_signals_per_run", 3)
-        final_signals = ranked_signals[:max_signals]
+        final_signals = capped_signals[:max_signals]
 
         if final_signals:
             logger.info(
@@ -275,6 +351,8 @@ class TradingService(ModelDataProvider):
         return [res for res in results if isinstance(res, TradingSignal)]
 
     async def cleanup(self):
+        """مالک ModelManager در سطح سرویس (شکاف ۲۵). Provider و ResourceManager
+        متعلق به Application/Container‌اند و اینجا cleanup نمی‌شوند."""
         logger.info("Cleaning up TradingService resources.")
         if self.model_manager:
             await self.model_manager.shutdown()

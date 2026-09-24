@@ -21,14 +21,18 @@ def run():
     encryptor = KeyEncryptor(password)
     config = Config(RepositoryEnv(str(env_file)))
 
+    # فهرست یکسان با SecretsManager (شکاف ۲۶): همه کلیدهای get_secret باید
+    # اینجا هم قابل‌رمزنگاری باشند. نام محیطی REDIS_TOKEN معادل REDIS_PASSWORD است.
     keys_to_encrypt = [
-        "CRYPTOPANIC_KEY",
         "TELEGRAM_BOT_TOKEN",
+        "ADMIN_CHAT_ID",
+        "CRYPTOPANIC_KEY",
         "ALPHA_VANTAGE_KEY",
-        "COINDESK_API_KEY",
         "COINGECKO_KEY",
+        "COINDESK_API_KEY",
         "MESSARI_API_KEY",
         "SENTRY_DSN",
+        "REDIS_TOKEN",
     ]
 
     new_env_content = ""
@@ -49,13 +53,19 @@ def run():
             else:
                 new_env_content += line
 
-    new_env_content += f'\nENCRYPTION_PASSWORD="{password}"\n'
-
     with open(env_file, "w") as f:
         f.write(new_env_content)
 
     logger.info("Encryption complete. .env file has been updated.")
     logger.warning("Please remove the original plain-text keys if they are no longer needed.")
+    # ENCRYPTION_PASSWORD عمداً در .env نوشته نمی‌شود (شکاف ۲۶): رمز باید
+    # خارج از فایل (key manager یا متغیر محیطی امن) نگهداری شود، چون
+    # SecretsManager آن را از همان مسیرها می‌خواند.
+    logger.warning(
+        "ENCRYPTION_PASSWORD was NOT written to .env. Store it securely "
+        "(OS key manager or protected env var) — SecretsManager reads it "
+        "via get_password_from_key_manager() or ENCRYPTION_PASSWORD env."
+    )
     logger.info(f"Keys updated: {', '.join(updated_keys)}")
 
 

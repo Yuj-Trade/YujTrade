@@ -398,6 +398,8 @@ class ModelManager:
             model.calibrator.add_prediction(model_name, confidence, success)
 
     async def shutdown(self):
+        """مالک مدل‌ها و executorها (شکاف ۲۵). کش مدل‌ها و ThreadPoolها اینجا
+        آزاد می‌شوند (idempotent)؛ منابع بیرونی (Redis/session) نه."""
         if self._is_closed:
             return
 

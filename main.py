@@ -22,6 +22,46 @@ class MainApp:
             logger.info(f"Shutdown signal {sig} received. Initiating graceful shutdown...")
             self.shutdown_event.set()
 
+    @staticmethod
+    def _parse_schedule_hour(value) -> float:
+        """schedule_hour با قالب "*/N" یعنی هر N ساعت؛ عدد ساده هم ساعت است.
+        خروجی ثانیه؛ نامعتبر → پیش‌فرض ۱ ساعت."""
+        try:
+            text = str(value).strip()
+            if text.startswith("*/"):
+                hours = float(text[2:])
+            else:
+                hours = float(text)
+            if hours <= 0:
+                raise ValueError
+            return hours * 3600.0
+        except (TypeError, ValueError):
+            logger.warning(
+                f"Invalid schedule_hour={value!r}, falling back to 1 hour."
+            )
+            return 3600.0
+
+    async def _scheduled_analysis_loop(self, config_manager):
+        interval = self._parse_schedule_hour(
+            config_manager.get("schedule_hour", "*/1")
+        )
+        logger.info(
+            f"Scheduled analysis enabled every {interval / 3600:.2f}h."
+        )
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self.shutdown_event.wait(), timeout=interval
+                )
+            except asyncio.TimeoutError:
+                pass
+            if self.shutdown_event.is_set():
+                break
+            try:
+                await self.bot_handler.run_scheduled_analysis()
+            except Exception as e:
+                logger.error(f"Scheduled analysis failed: {e}", exc_info=True)
+
     async def run(self):
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -37,6 +77,9 @@ class MainApp:
                 self.market_data_provider,
                 self.trading_service,
             ) = await create_trading_stack()
+            logger.info(
+                f"YujTrade v{config_manager.get('app_version', '?')} initialized."
+            )
 
             bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
             if not bot_token:
@@ -67,6 +110,14 @@ class MainApp:
                 await self.bot_handler.application.updater.start_polling()
                 
                 logger.info("Telegram bot started successfully.")
+
+                # اجرای دوره‌ای تحلیل با مکانیزم موجود (شکاف ۱۹):
+                # BackgroundTaskManager + run_scheduled_analysis، بدون Scheduler جدید.
+                if config_manager.get("enable_scheduled_analysis", False):
+                    self.background_tasks_manager.create_task(
+                        self._scheduled_analysis_loop(config_manager),
+                        name="ScheduledAnalysis",
+                    )
             else:
                 logger.warning("Telegram bot not started due to missing token or admin chat ID.")
 

@@ -40,6 +40,12 @@ from common.core import (
 
 
 class MarketDataProvider:
+    """قرارداد مالکیت Cache (شکاف ۲۴) — بدون double caching هم‌کلید:
+    - Provider فقط کلید یکپارچه OHLCV (ohlcv_key با source="unified") را کش می‌کند.
+    - هر Fetcher فقط کش دامنه خودش (derivatives/macro/indices/news/
+      fundamental/trending/...) را با کلید نام‌منبع خودش مدیریت می‌کند.
+    - متدهای get_*_data خروجی Fetcherها را دوباره کش نمی‌کنند؛ نتیجه
+      تجمیعی MarketIndicesFetcher هم کش نمی‌شود (اجزا قبلاً کش شده‌اند)."""
     def __init__(
         self,
         resource_manager: ResourceManager,
@@ -175,6 +181,9 @@ class MarketDataProvider:
         logger.info("MarketDataProvider initialization completed.")
 
     async def close(self):
+        """مالک Fetcherها (شکاف ۲۵): همه Fetcherهای self.fetchers را می‌بندد
+        (idempotent). session و Redis متعلق به ResourceManager‌اند و اینجا
+        بسته نمی‌شوند."""
         if self._is_closed:
             return
         self._is_closed = True
@@ -212,6 +221,10 @@ class MarketDataProvider:
     async def fetch_ohlcv_data(
         self, symbol: str, timeframe: str, limit: int = 1000
     ) -> Optional[pd.DataFrame]:
+        """نقش Provider در کیفیت داده (شکاف ۲۳): یکپارچگی Source/Data —
+        فقط بهترین Source با امتیاز مثبت برگردانده می‌شود، وگرنه
+        InsufficientDataError. آمادگی تحلیل (Signal) و نیازهای مدل (Model)
+        در لایه‌های خودشان بررسی می‌شوند، نه اینجا."""
         if self._is_closed:
             raise ObjectClosedError("MarketDataProvider is closed")
 
@@ -301,7 +314,7 @@ class MarketDataProvider:
                 best_score = score
                 best_df = res_df
 
-        if best_df is not None and not best_df.empty:
+        if best_df is not None and not best_df.empty and best_score > 0:
             if self.redis:
                 try:
                     df_to_cache = best_df.reset_index()
