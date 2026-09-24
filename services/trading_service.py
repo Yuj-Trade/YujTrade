@@ -27,12 +27,17 @@ class TradingService(ModelDataProvider):
         self.config_manager = config_manager
         self.resource_manager = resource_manager
         self.invalid_symbols: Set[str] = set()
+        self._initialized = False
 
-        redis_client = self.resource_manager.get_redis_client()
+        # NOTE: ResourceManager.get_redis_client() is async؛ فراخوانی آن در
+        # __init__ هم‌زمان (sync) یک coroutine برمی‌گرداند نه کلاینت.
+        # برای جلوگیری از عبور coroutine به‌جای Redis، اتصال در
+        # initialize() برقرار می‌شود. تا قبل از آن redis=None است.
+        self._redis_client = getattr(resource_manager, "_redis_client", None)
 
         self.model_manager = ModelManager(
             data_provider=self,
-            redis_client=redis_client,
+            redis_client=self._redis_client,
             model_path=self.config_manager.get("model_path", "models"),
         )
 
@@ -44,9 +49,22 @@ class TradingService(ModelDataProvider):
 
         self.multi_tf_analyzer = MultiTimeframeAnalyzer(
             market_data_provider=market_data_provider,
-            redis_client=redis_client,
+            redis_client=self._redis_client,
             config_manager=self.config_manager,
         )
+
+    async def initialize(self) -> None:
+        """اتصال Redis را برقرار و به زیرکامپوننت‌ها تزریق می‌کند. Idempotent."""
+        if self._initialized:
+            return
+        try:
+            redis_client = await self.resource_manager.get_redis_client()
+        except Exception:
+            redis_client = None
+        self._redis_client = redis_client
+        self.model_manager.redis_client = redis_client
+        self.multi_tf_analyzer.redis = redis_client
+        self._initialized = True
 
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False

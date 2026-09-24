@@ -13,6 +13,8 @@ from data.sources.messari_fetcher import MessariFetcher
 from data.sources.news_fetcher import NewsFetcher
 from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
 from data.sources.alternativeme_fetcher import AlternativeMeFetcher
+from data.sources.defillama_fetcher import DeFiLlamaFetcher
+from data.sources.yfinance_fetcher import YFinanceFetcher
 
 from common.exceptions import (
     InsufficientDataError,
@@ -55,6 +57,8 @@ class MarketDataProvider:
         self.alphavantage_fetcher: Optional[AlphaVantageFetcher] = None
         self.messari_fetcher: Optional[MessariFetcher] = None
         self.news_fetcher: Optional[NewsFetcher] = None
+        self.defillama_fetcher: Optional[DeFiLlamaFetcher] = None
+        self.yfinance_fetcher: Optional[YFinanceFetcher] = None
 
         self.fetchers: List[Any] = []
 
@@ -121,8 +125,18 @@ class MarketDataProvider:
                 api_key=SecretsManager.MESSARI_API_KEY, **common_args
             )
 
+        # Source of Truth: DeFiLlama (on-chain TVL / DeFi) و YFinance
+        # (شاخص‌های سنتی) همیشه ساخته می‌شوند چون کلید API لازم ندارند
+        # و توسط MarketIndicesFetcher مصرف می‌شوند. ساخت صریح آن‌ها در
+        # اینجا از نمونه‌سازی پنهان/تکراری داخل MarketIndicesFetcher
+        # جلوگیری می‌کند و چرخه عمرشان زیر نظر MarketDataProvider است.
+        self.defillama_fetcher = DeFiLlamaFetcher(**common_args)
+        self.yfinance_fetcher = YFinanceFetcher(**common_args)
+
         self.market_indices_fetcher = MarketIndicesFetcher(
             coingecko_fetcher=self.coingecko_fetcher,
+            defillama_fetcher=self.defillama_fetcher,
+            yfinance_fetcher=self.yfinance_fetcher,
             alphavantage_fetcher=self.alphavantage_fetcher,
             **common_args,
         )
@@ -151,6 +165,8 @@ class MarketDataProvider:
                 self.alphavantage_fetcher,
                 self.messari_fetcher,
                 self.news_fetcher,
+                self.defillama_fetcher,
+                self.yfinance_fetcher,
             ]
             if f is not None
         ]
@@ -398,4 +414,22 @@ class MarketDataProvider:
                 return await self.news_fetcher.fetch_sentiment_analysis(currencies)
             except Exception as e:
                 logger.error(f"Error fetching news sentiment: {e}")
+        return None
+
+    async def get_market_indices(self) -> Optional[Dict[str, Any]]:
+        """شاخص‌های کریپتو (TOTAL/BTC.D/DEFI_TVL/...) از مسیر موجود MarketIndicesFetcher."""
+        if self.market_indices_fetcher:
+            try:
+                return await self.market_indices_fetcher.get_crypto_indices()
+            except Exception as e:
+                logger.error(f"Error fetching market indices: {e}")
+        return None
+
+    async def get_all_indices(self) -> Optional[Dict[str, Any]]:
+        """ترکیب شاخص‌های کریپتو + سنتی + ماکرو از همان Aggregator موجود."""
+        if self.market_indices_fetcher:
+            try:
+                return await self.market_indices_fetcher.get_all_indices()
+            except Exception as e:
+                logger.error(f"Error fetching all indices: {e}")
         return None

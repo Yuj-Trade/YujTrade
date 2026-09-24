@@ -108,6 +108,7 @@ class MarketAnalysis:
     hurst_exponent: Optional[float] = None
     volume_trend_score: Optional[float] = None
     adx: Optional[float] = None
+    candle_patterns: List[str] = field(default_factory=list)
 
 
 @dataclass

@@ -52,6 +52,7 @@ class MainApp:
                 config_manager=config_manager,
                 resource_manager=self.resource_manager,
             )
+            await self.trading_service.initialize()
 
             bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
             if not bot_token:

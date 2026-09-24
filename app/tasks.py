@@ -47,6 +47,7 @@ class TaskServiceContainer:
             config_manager=self.config_manager,
             resource_manager=self.resource_manager,
         )
+        await self.trading_service.initialize()
 
         logger.info("TaskServiceContainer initialized successfully.")
 

@@ -538,7 +538,7 @@ class XGBoostModel(BaseModel):
     def predict(self, data: pd.DataFrame) -> Optional[Tuple[np.ndarray, float]]:
         self._check_if_closed()
         if not self.is_trained or self.model is None:
-            selflogger.debug(
+            self.logger.debug(
                 f"Prediction skipped for XGBoost {self.symbol}-{self.timeframe}: model not trained"
             )
             return None

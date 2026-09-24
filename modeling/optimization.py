@@ -79,6 +79,7 @@ class HyperparameterOptimizer:
                 config_manager=config_manager,
                 resource_manager=resource_manager,
             )
+            await trading_service.initialize()
 
             if self.model_type == "lstm":
                 params = self._define_lstm_search_space(trial)
