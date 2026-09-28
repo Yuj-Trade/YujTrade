@@ -51,22 +51,23 @@ class BacktraderStrategy(bt.Strategy):
         if not trade.isclosed:
             return
         self.log(f"OPERATION PROFIT, GROSS {trade.pnl:.2f}, NET {trade.pnlcomm:.2f}")
-        # نتیجه واقعی معامله → چرخه رهگیری (شکاف ۱۲/۱۳/۱۴). فراخوانی‌های
-        # async کالیبراتور بعد از پایان cerebro.run به‌صورت async flush می‌شوند
-        # تا callback همگام backtrader با lifecycle async تولید تداخل نکند.
+        # نتیجه واقعی معامله → چرخه رهگیری (شکاف ۱۲/۱۳/۱۴). resolve و
+        # فراخوانی‌های کالیبراتور بعد از پایان cerebro.run به‌صورت همگام
+        # flush می‌شوند تا callback همگام backtrader با lifecycle async
+        # تولید تداخل نکند.
         if self._open_trade and self.owner_engine is not None:
             try:
+                # شکاف ۳۷: فراخوانی بدون await، coroutine را دور می‌ریزد و
+                # هیچ سیگنالی resolve نمی‌شود؛ resolve در _flush_calibration
+                # انجام می‌شود (تنها نقطه قابل await در بک‌تست).
                 self.owner_engine.pending_outcomes.append(
                     {
                         "signal_id": self._open_trade["signal_id"],
                         "success": trade.pnl > 0,
                         "confidence": self._open_trade.get("confidence", 0.0),
+                        "pnl": trade.pnl,
+                        "pnlcomm": trade.pnlcomm,
                     }
-                )
-                self.owner_engine.signal_tracker.resolve(
-                    self._open_trade["signal_id"],
-                    trade.pnl > 0,
-                    {"pnl": trade.pnl, "pnlcomm": trade.pnlcomm},
                 )
             except Exception as e:
                 logger.debug(f"Trade outcome tracking skipped: {e}")
@@ -205,17 +206,33 @@ class BacktestingEngine:
         return signals_df
 
     async def _flush_calibration(self):
-        """حلقه بازخورد کالیبراسیون (شکاف ۱۲) + آستانه تطبیقی (گروه C):
-        نتیجه واقعی هر سیگنال به calibrator مدل‌ها و به threshold_manager
-        برمی‌گردد. چون تفکیک confidence به‌ازای هر مدل در قرارداد فعلی
-        plumbing نشده، از confidence ترکیبی سیگنال به‌عنوان proxy استفاده
-        می‌شود (بدون مکانیزم جدید)."""
+        """حلقه بازخورد کالیبراسیون (شکاف ۱۲) + lifecycle رهگیری (شکاف ۱۳):
+        هر نتیجه pending اول resolve می‌شود (record → resolved؛ record/resolve
+        async‌اند و callback همگام backtrader قابل await نیست، پس این تنها
+        نقطه صحیح resolve در بک‌تست است) و سپس نتیجه واقعی به calibrator
+        مدل‌ها و threshold_manager برمی‌گردد. چون تفکیک confidence به‌ازای
+        هر مدل در قرارداد فعلی plumbing نشده، از confidence ترکیبی سیگنال
+        به‌عنوان proxy استفاده می‌شود (بدون مکانیزم جدید)."""
         threshold_manager = (
             self.trading_service.signal_generator.threshold_manager
         )
         for outcome in self.pending_outcomes:
             success = bool(outcome.get("success", False))
             confidence = outcome.get("confidence", 0.0) or 0.0
+            signal_id = outcome.get("signal_id")
+            if signal_id:
+                try:
+                    await self.signal_tracker.resolve(
+                        signal_id,
+                        success,
+                        {
+                            "pnl": outcome.get("pnl"),
+                            "pnlcomm": outcome.get("pnlcomm"),
+                            "resolution_source": "backtest_flush",
+                        },
+                    )
+                except Exception as e:
+                    logger.debug(f"Trade outcome resolve skipped: {e}")
             if confidence > 0:
                 for model_type in ("lstm", "xgboost"):
                     try:

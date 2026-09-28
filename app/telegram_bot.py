@@ -443,15 +443,25 @@ class TelegramBotHandler:
 
         if signal.dynamic_levels:
             levels = signal.dynamic_levels
+            # شکاف ۳۸: هر مقدار قبل از رندر در متغیر محلی جداگانه استخراج
+            # می‌شود؛ f-string تودرتو با همان کوتیشن فقط از Python 3.12+
+            # (PEP 701) مجاز است و زیر آن کل ماژول import نمی‌شود.
+            prim_entry = escape_markdown_v2(f"{levels.get('primary_entry', 0):.8f}")
+            sec_entry = escape_markdown_v2(f"{levels.get('secondary_entry', 0):.8f}")
+            prim_exit = escape_markdown_v2(f"{levels.get('primary_exit', 0):.8f}")
+            sec_exit = escape_markdown_v2(f"{levels.get('secondary_exit', 0):.8f}")
+            t_stop = escape_markdown_v2(f"{levels.get('tight_stop', 0):.8f}")
+            w_stop = escape_markdown_v2(f"{levels.get('wide_stop', 0):.8f}")
+            breakeven = escape_markdown_v2(f"{levels.get('breakeven_point', 0):.8f}")
             levels_info = (
                 f"*🎯 DYNAMIC LEVELS*\n"
-                f"├ 🟢 Primary Entry: `{escape_markdown_v2(f'{levels.get('primary_entry', 0):.8f}')}`\n"
-                f"├ 🟡 Secondary Entry: `{escape_markdown_v2(f'{levels.get('secondary_entry', 0):.8f}')}`\n"
-                f"├ 🎯 Primary Exit: `{escape_markdown_v2(f'{levels.get('primary_exit', 0):.8f}')}`\n"
-                f"├ 🎯 Secondary Exit: `{escape_markdown_v2(f'{levels.get('secondary_exit', 0):.8f}')}`\n"
-                f"├ 🛑 Tight Stop: `{escape_markdown_v2(f'{levels.get('tight_stop', 0):.8f}')}`\n"
-                f"├ 🛑 Wide Stop: `{escape_markdown_v2(f'{levels.get('wide_stop', 0):.8f}')}`\n"
-                f"└ ⚖️ Breakeven: `{escape_markdown_v2(f'{levels.get('breakeven_point', 0):.8f}')}`"
+                f"├ 🟢 Primary Entry: `{prim_entry}`\n"
+                f"├ 🟡 Secondary Entry: `{sec_entry}`\n"
+                f"├ 🎯 Primary Exit: `{prim_exit}`\n"
+                f"├ 🎯 Secondary Exit: `{sec_exit}`\n"
+                f"├ 🛑 Tight Stop: `{t_stop}`\n"
+                f"├ 🛑 Wide Stop: `{w_stop}`\n"
+                f"└ ⚖️ Breakeven: `{breakeven}`"
             )
             messages.append(levels_info)
 

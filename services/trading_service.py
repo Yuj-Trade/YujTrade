@@ -1,5 +1,6 @@
 import asyncio
-from typing import List, Optional, Set, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -195,8 +196,13 @@ class TradingService(ModelDataProvider):
                     f"Generated signal for {symbol} on {timeframe}: {signal.signal_type.value} with confidence {signal.confidence_score:.2f}"
                 )
                 # شروع lifecycle رهگیری: generated → pending (شکاف ۱۳).
+                # record الان async است — بدون await هیچ سیگنالی ذخیره
+                # نمی‌شود (coroutine بدون await دور ریخته می‌شود).
+                # created_at/threshold_used/threshold_regime برای
+                # reconciliation دوره‌ای و تغذیه کالیبراسیون ذخیره می‌شوند
+                # (شکاف ۳۱).
                 try:
-                    self.signal_tracker.record(
+                    await self.signal_tracker.record(
                         make_signal_id(
                             signal.symbol,
                             signal.timeframe,
@@ -210,6 +216,9 @@ class TradingService(ModelDataProvider):
                             "signal_type": signal.signal_type.value,
                             "confidence": signal.confidence_score,
                             "entry": signal.entry_price,
+                            "created_at": signal.timestamp.isoformat(),
+                            "threshold_used": signal.threshold_used,
+                            "threshold_regime": signal.threshold_regime,
                         },
                     )
                 except Exception as e:
@@ -278,6 +287,14 @@ class TradingService(ModelDataProvider):
         return True
 
     async def run_analysis_for_all_symbols(self) -> List[TradingSignal]:
+        # Reconciliation دوره‌ای pendingهای منقضی (شکاف ۳۱): مشابه
+        # BacktestingEngine._flush_calibration اما برای مسیر Production.
+        # خطای آن هرگز اجرای تحلیل را نمی‌شکند (قرارداد شکاف ۳۰).
+        try:
+            await self.reconcile_pending_signals()
+        except Exception as e:
+            logger.debug(f"Pending-signal reconciliation skipped: {e}")
+
         symbols = self.config_manager.get("symbols", [])
         focus_timeframes = LONG_TERM_CONFIG.get("focus_timeframes", ["1d", "1w", "1M"])
         all_timeframes = self.config_manager.get("timeframes", [])
@@ -355,6 +372,106 @@ class TradingService(ModelDataProvider):
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         return self._partition_results(results)
+
+    async def reconcile_pending_signals(self) -> int:
+        """Reconciliation دوره‌ای سیگنال‌های زنده (شکاف ۳۱): pendingهای
+        منقضی‌شده (طبق SIGNAL_EXPIRY_BY_TIMEFRAME) با قیمت واقعی مقایسه و
+        resolve می‌شوند و حلقه کالیبراسیون (calibrator مدل‌ها +
+        threshold_manager) از همین مسیر تغذیه می‌شود — مشابه
+        BacktestingEngine._flush_calibration اما برای مسیر Production.
+        تعداد resolveشده‌ها برمی‌گردد؛ خطای هر مورد طبق شکاف ۳۰ لاگ و رد
+        می‌شود و تحلیل را نمی‌شکند."""
+        expired = await self.signal_tracker.get_pending_expired()
+        if not expired:
+            return 0
+
+        resolved_count = 0
+        for item in expired:
+            signal_id = item["signal_id"]
+            details = item["details"]
+            symbol = details.get("symbol")
+            timeframe = details.get("timeframe")
+            entry = details.get("entry")
+            if not symbol or not timeframe or entry is None:
+                logger.debug(f"Reconciliation skipped (missing fields): {signal_id}")
+                continue
+            try:
+                price = await self._get_reference_price(symbol, timeframe)
+                if price is None:
+                    logger.debug(f"Reconciliation skipped (no price): {signal_id}")
+                    continue
+                signal_type = str(details.get("signal_type", "")).lower()
+                success = (
+                    price > float(entry)
+                    if signal_type == "buy"
+                    else price < float(entry)
+                    if signal_type == "sell"
+                    else False
+                )
+                await self.signal_tracker.resolve(
+                    signal_id,
+                    success,
+                    {
+                        "resolved_price": price,
+                        "resolution_source": "live_reconciliation",
+                        "resolved_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                resolved_count += 1
+                await self._record_live_calibration(symbol, timeframe, details, success)
+            except Exception as e:
+                logger.debug(f"Signal reconciliation skipped: {e}")
+
+        if resolved_count:
+            logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
+        return resolved_count
+
+    async def _get_reference_price(
+        self, symbol: str, timeframe: str
+    ) -> Optional[float]:
+        """قیمت مرجع برای reconciliation (شکاف ۳۱): آخرین close از Provider
+        در لحظه اجرا. None یعنی قیمت در دسترس نیست (skip، نه Exception)."""
+        try:
+            df = await self.market_data_provider.fetch_ohlcv_data(
+                symbol, timeframe, limit=2
+            )
+            if df is None or df.empty:
+                return None
+            return float(df["close"].iloc[-1])
+        except Exception as e:
+            logger.debug(
+                f"Reference price fetch failed for {symbol}-{timeframe}: {e}"
+            )
+            return None
+
+    async def _record_live_calibration(
+        self, symbol: str, timeframe: str, details: Dict[str, Any], success: bool
+    ) -> None:
+        """تغذیه حلقه کالیبراسیون از نتیجه سیگنال زنده (شکاف ۳۱) — همان
+        قرارداد BacktestingEngine._flush_calibration: confidence ترکیبی
+        سیگنال به‌عنوان proxy مشترک lstm/xgboost (تفکیک per-model در
+        قرارداد فعلی plumbing نشده)، و آستانه تطبیقی فقط با هر سه جزء
+        (رژیم کامل + آستانه > 0)."""
+        try:
+            confidence = float(details.get("confidence", 0.0) or 0.0)
+            if confidence > 0:
+                for model_type in ("lstm", "xgboost"):
+                    try:
+                        await self.model_manager.record_signal_performance(
+                            model_type, symbol, timeframe, confidence, success
+                        )
+                    except Exception as e:
+                        logger.debug(f"Calibration flush skipped: {e}")
+            # مسیر نوشتن آستانه تطبیقی — همان partition("|") بک‌تست.
+            regime = str(details.get("threshold_regime") or "")
+            vol_regime, _, hurst_range = regime.partition("|")
+            threshold = float(details.get("threshold_used", 0.0) or 0.0)
+            if vol_regime and hurst_range and threshold > 0:
+                self.signal_generator.threshold_manager.record_performance(
+                    vol_regime, hurst_range, threshold, success
+                )
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.debug(f"Live calibration feedback skipped: {e}")
 
     async def cleanup(self):
         """مالک ModelManager در سطح سرویس (شکاف ۲۵). Provider و ResourceManager

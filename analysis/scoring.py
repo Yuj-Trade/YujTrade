@@ -474,8 +474,15 @@ class AnalysisScorer:
 
         for model_name, pred_data in predictions.items():
             pred_price = pred_data.get("prediction", 0)
+            # قرارداد مقادیر ModelManager (شکاف ۳۳): "confidence" همان
+            # final_confidence است = calibrated_confidence × (1 - uncertainty²)
+            # یعنی هم کالیبراسیون هم تعدیل عدم‌قطعیت را در بر دارد. خواندن
+            # "calibrated_confidence" به‌جای آن، تعدیل uncertainty را از
+            # امتیاز حذف می‌کرد؛ پس "confidence" اولویت دارد و
+            # "calibrated_confidence" فقط برای callerهایی که فقط آن را
+            # می‌فرستند fallback می‌شود.
             confidence = pred_data.get(
-                "calibrated_confidence", pred_data.get("confidence", 0)
+                "confidence", pred_data.get("calibrated_confidence", 0)
             )
 
             if pred_price == 0:
