@@ -179,9 +179,15 @@ class ModelManager:
                 )
                 async with self._lock:
                     key = f"{model_type}-{symbol}-{timeframe}"
-                    # Ensure the newly trained model is in the cache
-                    if key in self._cache:
-                        self._cache[key].cleanup()
+                    # Ensure the newly trained model is in the cache.
+                    # Regression (P1): وقتی get_model همان نمونه کش‌شده را
+                    # برگرداند، cleanup نمونه‌ی کش یعنی بستن مدلی که همین
+                    # الان fit شد و گذاشتن نسخه بسته در cache (وزن‌های
+                    # آموزش‌دیده دور ریخته می‌شد). فقط نمونه متفاوت
+                    # جایگزین/بسته می‌شود.
+                    existing = self._cache.get(key)
+                    if existing is not None and existing is not model:
+                        existing.cleanup()
                     self._cache[key] = model
                 return True
             else:

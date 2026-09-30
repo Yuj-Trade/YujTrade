@@ -207,9 +207,13 @@ class MarketDataProvider:
 
         score = 100.0
 
+        # قرارداد detect_data_gaps (عنصر اول) «has_gaps» است — همان
+        #‌گونه که calculate_overall_quality_score آن را مصرف می‌کند. قبلاً
+        # برعکس خوانده می‌شد: داده بدون گپ -۳۰ می‌گرفت و داده گپ‌دار
+        # جریمه نمی‌شد (Regression P1 — تست‌های فاز ۸ آن را آشکار کردند).
         try:
-            no_gaps, _ = self.data_quality_checker.detect_data_gaps(df)
-            if no_gaps is False:
+            has_gaps, _ = self.data_quality_checker.detect_data_gaps(df)
+            if has_gaps:
                 score -= 30.0
         except ValueError:
             return 0.0

@@ -615,8 +615,14 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> Dict[str, An
     else:
         volatility_regime = "normal"
 
+    # Regression (P1/فاز ۱۲): import نسبی «..» از ماژول top-level همیشه
+    # ImportError می‌داد → except خام آن را می‌خورد → hurst هرگز تعریف
+    # نمی‌شد → UnboundLocalError در سطر return، یعنی crash مسیر زنده
+    # SignalGenerator.generate_signal. import مطلق + مقداردهی اولیه
+    # hurst=None؛ fallback رفتاری بدون تغییر می‌ماند.
+    hurst = None
     try:
-        from ..analysis.market_analyzer import MarketConditionAnalyzer
+        from analysis.market_analyzer import MarketConditionAnalyzer
 
         analyzer = MarketConditionAnalyzer()
         hurst = analyzer._calculate_hurst_exponent(recent_data["close"])
@@ -630,8 +636,9 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> Dict[str, An
                 trend_persistence = "random_walk"
         else:
             trend_persistence = "unknown"
-    except:
+    except Exception:
         trend_persistence = "unknown"
+        hurst = None
 
     if market_type == "trending" and trend_persistence == "persistent":
         recommended_strategy = "trend_following"
