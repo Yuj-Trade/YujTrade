@@ -126,7 +126,9 @@ class AnalysisScorer:
         خروجی‌های MarketConditionAnalyzer به‌عنوان تعدیل‌های محدود (±) اثر
         می‌گذارند. support/resistance در scoring مصرف نمی‌شوند چون ورودی
         calculate_dynamic_levels هستند (مصرف‌شان در ساخت Signal است، نه امتیاز).
-        detect_divergence ابزار کمکی داخلی است، جزو قرارداد نیست.
+        detect_divergence به analyze_market_condition وصل است (شکاف ۳۵) و
+        برچسب‌هایش در candle_patterns می‌آیند؛ چون با الگوی "(bullish)" هم‌پوشانی
+        ندارند، روی امتیاز اثری ندارند.
         """
         score = 0.0
         reasons = []

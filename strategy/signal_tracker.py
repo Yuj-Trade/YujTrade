@@ -52,7 +52,24 @@ class SignalTracker:
         through this helper instead of calling record under the lock."""
         # شکاف ۳۷: نوشتن فایل با lock سری می‌شود تا record/resolve هم‌زمان
         # رقابت نکنند؛ I/O در executor اجرا می‌شود تا event loop بلاک نشود.
-        self.history[signal_id] = {"outcome": outcome, "details": details}
+        # شکاف ۴۰: تحلیل مجدد همان کندل همان id را می‌سازد (id کندل‌محور است)؛
+        # اگر این id قبلاً resolve شده (outcome is not None)، record مجدد با
+        # outcome=None نباید آن را به pending برگرداند (شمارش دوباره در
+        # کالیبراسیون). details ادغام می‌شود ولی outcome حفظ می‌شود.
+        existing = self.history.get(signal_id)
+        if (
+            existing is not None
+            and existing.get("outcome") is not None
+            and outcome is None
+        ):
+            merged_details = dict(existing.get("details", {}))
+            merged_details.update(details)
+            self.history[signal_id] = {
+                "outcome": existing["outcome"],
+                "details": merged_details,
+            }
+        else:
+            self.history[signal_id] = {"outcome": outcome, "details": details}
         await self._save_history()
 
     async def resolve(self, signal_id: str, outcome: bool, details: Dict[str, Any] = None):
@@ -134,12 +151,20 @@ class SignalTracker:
 
 
 class AdaptiveThresholdManager:
+    # شکاف ۴۶: کلید داخلی tuple است (volatility_regime, hurst_range) تا با
+    # رژیم‌های دارای "_" (مثلاً "high_vol") تداخل نکند. فرمت نمایشی رژیم در
+    # threshold_regime همچنان "vol|hurst" می‌ماند (قرارداد بک‌تست)؛ تبدیل
+    # در نقطه مصرف (partition("|")) انجام می‌شود، نه روی کلید داخلی.
     def __init__(self):
-        self.performance_history: Dict[str, List[Dict]] = {}
+        self.performance_history: Dict[tuple, List[Dict]] = {}
         self.min_samples = 50
 
+    @staticmethod
+    def _key(volatility_regime: str, hurst_range: str) -> tuple:
+        return (str(volatility_regime), str(hurst_range))
+
     def record_performance(self, volatility_regime: str, hurst_range: str, threshold: float, signal_success: bool):
-        key = f"{volatility_regime}_{hurst_range}"
+        key = self._key(volatility_regime, hurst_range)
         if key not in self.performance_history:
             self.performance_history[key] = []
         self.performance_history[key].append({"threshold": threshold, "success": signal_success, "timestamp": datetime.now(timezone.utc)})
@@ -147,7 +172,7 @@ class AdaptiveThresholdManager:
             self.performance_history[key] = self.performance_history[key][-100:]
 
     def get_optimal_threshold(self, volatility_regime: str, hurst_range: str, default_threshold: float) -> float:
-        key = f"{volatility_regime}_{hurst_range}"
+        key = self._key(volatility_regime, hurst_range)
         if key not in self.performance_history or len(self.performance_history[key]) < self.min_samples:
             return default_threshold
         history = self.performance_history[key]

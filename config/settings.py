@@ -57,11 +57,12 @@ class SecretsManager:
     TF_CPP_MIN_LOG_LEVEL = decouple_config("TF_CPP_MIN_LOG_LEVEL", default="3")
     TF_ENABLE_ONEDNN_OPTS = decouple_config("TF_ENABLE_ONEDNN_OPTS", default="0")
 
-    REDIS_HOST = decouple_config(
-        "REDIS_HOST", 
-        default="redis-15986.c334.asia-southeast2-1.gce.redns.redis-cloud.com"
-    )
-    REDIS_PORT = decouple_config("REDIS_PORT", default=15986, cast=int)
+    # شکاف ۳۹: هیچ هاست/پورت پیش‌فرض embedded وجود ندارد (مشابه شکاف ۲۷
+    # برای secret). در نبود REDIS_HOST/REDIS_PORT/REDIS_TOKEN، کش غیرفعال
+    # است (ResourceManager.get_redis_client → None). مقداردهی این فیلدها
+    # فقط از محیط/فایل .env انجام می‌شود.
+    REDIS_HOST = decouple_config("REDIS_HOST", default="")
+    REDIS_PORT = decouple_config("REDIS_PORT", default=6379, cast=int)
     REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="")
     if not REDIS_PASSWORD:
         logger.warning(

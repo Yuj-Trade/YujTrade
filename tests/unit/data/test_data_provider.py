@@ -270,13 +270,15 @@ class TestGetDataQualityScore:
             score = provider._get_data_quality_score(valid_1h_ohlcv, "1h")
         assert score == 0.0
 
-    def test_gap36_contrast_overall_quality_score_propagates(self, valid_1h_ohlcv):
-        """شکاف ۳۶ (قرارداد متضاد): calculate_overall_quality_score (یتیم،
-        بدون caller در production) ValueError را propagate می‌کند."""
+    def test_gap36_contrast_overall_quality_score_catches_valueerror(self, valid_1h_ohlcv):
+        """شکاف ۳۶ (پس از اصلاح): calculate_overall_quality_score دیگر
+        ValueError را propagate نمی‌کند — مثل Provider حداکثر جریمه گپ را
+        اعمال می‌کند و امتیازی در بازه ۰ تا ۱ برمی‌گرداند."""
         checker = DataQualityChecker()
         with patch.object(checker, "detect_data_gaps", side_effect=ValueError("gap too large")):
-            with pytest.raises(ValueError):
-                checker.calculate_overall_quality_score(valid_1h_ohlcv, "1h")
+            score = checker.calculate_overall_quality_score(valid_1h_ohlcv, "1h")
+        assert 0.0 <= score <= 1.0
+        assert score < 1.0  # جریمه گپ اعمال شده
 
     def test_volume_penalty(self, provider, valid_1h_ohlcv):
         with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \

@@ -88,6 +88,11 @@ class DataQualityChecker:
     def calculate_overall_quality_score(
         self, data: pd.DataFrame, timeframe: str, volatility: float = None
     ) -> float:
+        """امتیاز کیفی ترکیبی در مقیاس ۰ تا ۱ (خلاف _get_data_quality_score
+        در Provider که ۰ تا ۱۰۰ است — مقیاس‌ها عمداً متفاوت و مستندند).
+        شکاف ۳۶: فراخوانی detect_data_gaps داخل try/except است؛ گپ بزرگ
+        (ValueError) به‌جای انتشار، حداکثر جریمه گپ را اعمال می‌کند — همان
+        رفتار _get_data_quality_score که 0.0 برمی‌گرداند."""
         score = 1.0
 
         is_valid, msg = self.validate_data_quality(data, timeframe)
@@ -97,7 +102,11 @@ class DataQualityChecker:
         weighted_null_ratio = self._calculate_weighted_null_ratio(data)
         score *= 1 - weighted_null_ratio
 
-        has_gaps, gap_penalty = self.detect_data_gaps(data)
+        try:
+            has_gaps, gap_penalty = self.detect_data_gaps(data)
+        except ValueError:
+            # گپ بزرگ‌تر از آستانه: حداکثر جریمه، بدون انتشار خطا.
+            has_gaps, gap_penalty = True, 0.5
         if has_gaps:
             score *= 1 - gap_penalty * 0.5
 

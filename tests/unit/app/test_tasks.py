@@ -1,20 +1,11 @@
 """
-P1 Tests for app/tasks.py — gap 32.
+P1 Tests for app/tasks.py — gap 32 (CONNECTED).
 
-Gap 32 has two parts:
-
-  a) main.py and app/telegram_bot.py NEVER import/call app.tasks — the periodic
-     path goes through bot_handler.run_scheduled_analysis (which does deliver
-     via send_signals_to_telegram). Locked here with static AST import-graph
-     checks so a future regression fails loudly.
-
-  b) run_full_analysis_task / run_quick_scan_task generate signals through the
-     shared TradingService but NEVER send any message to Telegram — chat_id and
-     message_id are only logged, never delivered. This is the documented
-     delivery gap; per the test plan these behavioral locks assert the CURRENT
-     state (signals generated, nothing sent), while the "desired delivery"
-     tests are marked xfail with reason until the team decision is made
-     (delete app/tasks.py or wire it to send_signals_to_telegram).
+Gap 32 resolution: run_full_analysis_task / run_quick_scan_task now deliver
+through deliver_task_signals(bot_token, chat_id, signals, summary) — the
+chat_id that used to be log-only is consumed by the delivery path.
+Static checks lock that main.py / app/telegram_bot.py still never import
+app.tasks (the periodic path stays with run_scheduled_analysis).
 """
 
 import ast
@@ -24,7 +15,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.tasks import TaskServiceContainer, run_full_analysis_task, run_quick_scan_task
+from app.tasks import (
+    TaskServiceContainer,
+    deliver_task_signals,
+    run_full_analysis_task,
+    run_quick_scan_task,
+)
 from app.telegram_bot import TelegramBotHandler
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -90,17 +86,13 @@ def reset_container_singleton():
 
 
 @pytest.fixture
-def send_spies():
-    """Spy روی مسیرهای ارسال TelegramBotHandler — مسیر واقعی delivery."""
-    with patch.object(
-        TelegramBotHandler, "send_signals_to_telegram", new_callable=AsyncMock
-    ) as spy_send_signals, patch.object(
-        TelegramBotHandler, "run_scheduled_analysis", new_callable=AsyncMock
-    ) as spy_scheduled:
-        yield {
-            "send_signals_to_telegram": spy_send_signals,
-            "run_scheduled_analysis": spy_scheduled,
-        }
+def deliver_spy():
+    """Spy روی مسیر تحویل tasks — بدون ساخت Bot واقعی."""
+    with patch(
+        "app.tasks.deliver_task_signals", new_callable=AsyncMock
+    ) as spy_deliver:
+        spy_deliver.return_value = 1
+        yield spy_deliver
 
 
 class TestTaskServiceContainer:
@@ -186,9 +178,8 @@ class TestTaskServiceContainer:
         await inst.cleanup()  # باید بدون خطا کامل شود
 
 
-class TestTaskDeliveryGap32:
-    """شکاف ۳۲ (بخش b): با وجود تولید سیگنال، هیچ پیامی به تلگرام ارسال
-    نمی‌شود — chat_id/message_id فقط لاگ می‌شوند."""
+class TestTaskDeliveryGap32Connected:
+    """شکاف ۳۲ (وصل شد): سیگنال تولیدشده به chat_id تحویل داده می‌شود."""
 
     SIGNALS = [
         {"symbol": "BTC/USDT", "timeframe": "1h", "signal_type": "BUY"},
@@ -196,37 +187,45 @@ class TestTaskDeliveryGap32:
     ]
 
     @pytest.mark.asyncio
-    async def test_gap32_full_analysis_never_sends_despite_signals(self, send_spies):
+    async def test_gap32_full_analysis_delivers_to_chat_id(self, deliver_spy):
         container = _make_mock_container(self.SIGNALS, last_errors=0)
+        container.bot_token = "fake_token:fake"
         with patch.object(
             TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
         ):
-            await run_full_analysis_task(chat_id=123, message_id=456)
+            result = await run_full_analysis_task(chat_id=123, message_id=456)
 
         # سیگنال تولید شده (TradingService صدا زده شده)
         container.trading_service.run_analysis_for_all_symbols.assert_awaited_once()
 
-        # شکاف ۳۲: هیچ ارسالی رخ نداده است
-        send_spies["send_signals_to_telegram"].assert_not_called()
-        send_spies["run_scheduled_analysis"].assert_not_called()
+        # شکاف ۳۲ (وصل شد): تحویل با همان chat_id انجام شده است
+        deliver_spy.assert_awaited_once()
+        call = deliver_spy.await_args
+        assert call.args[0] == "fake_token:fake"
+        assert call.args[1] == 123
+        assert list(call.args[2]) == self.SIGNALS
+        assert result == self.SIGNALS
 
     @pytest.mark.asyncio
-    async def test_gap32_quick_scan_never_sends_despite_signals(self, send_spies):
+    async def test_gap32_quick_scan_delivers_to_chat_id(self, deliver_spy):
         container = _make_mock_container(self.SIGNALS, last_errors=0)
+        container.bot_token = "fake_token:fake"
         with patch.object(
             TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
         ):
-            await run_quick_scan_task(chat_id=789, message_id=101)
+            result = await run_quick_scan_task(chat_id=789, message_id=101)
 
         container.trading_service.run_quick_analysis.assert_awaited_once()
 
-        send_spies["send_signals_to_telegram"].assert_not_called()
-        send_spies["run_scheduled_analysis"].assert_not_called()
+        deliver_spy.assert_awaited_once()
+        call = deliver_spy.await_args
+        assert call.args[1] == 789
+        assert result == self.SIGNALS
 
     @pytest.mark.asyncio
-    async def test_gap32_analysis_failure_swallowed(self, send_spies):
-        """هر Exception ای در task swallow می‌شود (try/except کامل) — به
-        Telegram هم چیزی ارسال نمی‌شود."""
+    async def test_gap32_analysis_failure_swallowed(self, deliver_spy):
+        """هر Exception ای در task swallow می‌شود (try/except کامل) و چیزی
+        تحویل داده نمی‌شود."""
         container = _make_mock_container([])
         container.trading_service.run_analysis_for_all_symbols = AsyncMock(
             side_effect=RuntimeError("pipeline exploded")
@@ -235,41 +234,35 @@ class TestTaskDeliveryGap32:
             TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
         ):
             # نباید exception به بیرون نشت کند
-            await run_full_analysis_task(chat_id=1, message_id=2)
+            result = await run_full_analysis_task(chat_id=1, message_id=2)
 
-        send_spies["send_signals_to_telegram"].assert_not_called()
+        assert result == []
+        deliver_spy.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_gap32_instance_failure_swallowed(self, send_spies):
+    async def test_gap32_instance_failure_swallowed(self, deliver_spy):
         with patch.object(
             TaskServiceContainer,
             "instance",
             new=AsyncMock(side_effect=RuntimeError("init failed")),
         ):
-            await run_quick_scan_task(chat_id=1, message_id=2)  # بدون raise
+            result = await run_quick_scan_task(chat_id=1, message_id=2)  # بدون raise
 
-        send_spies["send_signals_to_telegram"].assert_not_called()
+        assert result == []
+        deliver_spy.assert_not_called()
 
-    @pytest.mark.xfail(
-        reason=(
-            "Gap 32 still open: run_full_analysis_task generates signals but is "
-            "never wired to send_signals_to_telegram. Stays red until the team "
-            "decides (delete app/tasks.py or connect it to the delivery path)."
-        ),
-        strict=False,
-    )
     @pytest.mark.asyncio
-    async def test_gap32_desired_full_analysis_delivers_signals(self, send_spies):
-        """رفتار مطلوب (هنوز پیاده‌سازی نشده): سیگنال تولیدشده باید به تلگرام
-        برسد. با اتصال tasks.py به مسیر ارسال، این تست XPASS می‌شود."""
-        signals = [{"symbol": "BTC/USDT", "timeframe": "1d"}]
-        container = _make_mock_container(signals)
+    async def test_gap32_delivery_failure_swallowed(self, deliver_spy):
+        """خطای تحویل هم کل task را نمی‌شکند — [] برمی‌گردد."""
+        container = _make_mock_container(self.SIGNALS)
+        container.bot_token = "fake_token:fake"
+        deliver_spy.side_effect = RuntimeError("telegram down")
         with patch.object(
             TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
         ):
-            await run_full_analysis_task(chat_id=123, message_id=456)
+            result = await run_full_analysis_task(chat_id=1, message_id=2)
 
-        assert send_spies["send_signals_to_telegram"].await_count >= 1
+        assert result == []
 
 
 class TestStaticImportGraph32:
@@ -303,16 +296,31 @@ class TestStaticImportGraph32:
             for node in ast.walk(bot_tree)
         ), "TelegramBotHandler must define send_signals_to_telegram (the real delivery path)"
 
-    def test_tasks_module_has_no_send_references(self):
-        """قفل ماژولی شکاف ۳۲: هیچ ارجاع send_ای در خود app/tasks.py وجود
-        ندارد — کل ماژول ارسال ندارد."""
+    def test_tasks_module_wires_delivery(self):
+        """قفل ماژولی شکاف ۳۲ (وصل شد): app/tasks.py مسیر تحویل
+        deliver_task_signals را تعریف می‌کند و هر دو task آن را صدا می‌زنند —
+        chat_id دیگر فقط لاگ نمی‌شود."""
         tree = _parse(TASKS_PY)
-        send_refs = [
-            node
+        func_names = {
+            node.name
             for node in ast.walk(tree)
-            if (isinstance(node, ast.Attribute) and node.attr.startswith("send"))
-            or (isinstance(node, ast.Name) and node.id.startswith("send"))
-        ]
-        assert send_refs == [], (
-            f"app/tasks.py gained send references: {[ast.dump(n) for n in send_refs]}"
-        )
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        assert "deliver_task_signals" in func_names
+
+        for task_name in ("run_full_analysis_task", "run_quick_scan_task"):
+            task_node = next(
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == task_name
+            )
+            called = {
+                node.func.id
+                for node in ast.walk(task_node)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+            }
+            assert "deliver_task_signals" in called, (
+                f"{task_name} must call deliver_task_signals (gap 32 wiring)"
+            )

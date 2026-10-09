@@ -1,0 +1,13 @@
+[project]
+name = "yujtrade"
+version = "6.0.0"
+description = "Long-term crypto trading signal bot with Telegram delivery"
+requires-python = ">=3.10,<3.14"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "talib: test requires TA-Lib",
+    "integration: integration test",
+    "slow: slow test",
+]

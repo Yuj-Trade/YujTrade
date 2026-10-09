@@ -55,6 +55,29 @@ class MarketConditionAnalyzer:
         trend_acceleration = self._calculate_trend_acceleration(data)
         
         candle_patterns = self.pattern_analyzer.detect_patterns(data)
+
+        # شکاف ۳۵: detect_divergence به analyze_market_condition وصل است —
+        # واگرایی RSI روی همان داده محاسبه و به candle_patterns اضافه می‌شود.
+        # برچسب‌ها ("bullish_divergence_A" و...) عمداً با الگوی "(bullish)" در
+        # scorer هم‌پوشانی ندارند، پس امتیاز موجود تغییر نمی‌کند؛ فقط در خروجی
+        # قابل مشاهده‌اند.
+        try:
+            import talib as _talib
+
+            rsi_series = pd.Series(
+                _talib.RSI(data["close"].to_numpy(dtype=np.float64), timeperiod=14),
+                index=data.index,
+            ).dropna()
+            if not rsi_series.empty:
+                # هم‌ترازی موقعیتی: detect_divergence روی آرایه‌های numpy با
+                # ایندکس موقعیتی کار می‌کند، پس داده هم به طول RSI برش می‌خورد.
+                aligned = data.tail(len(rsi_series))
+                divergences = self.pattern_analyzer.detect_divergence(aligned, rsi_series)
+                candle_patterns = list(candle_patterns) + [
+                    d for d in divergences if d not in candle_patterns
+                ]
+        except Exception:
+            pass
         
         return MarketAnalysis(
             trend=trend,

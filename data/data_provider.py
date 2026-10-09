@@ -227,12 +227,15 @@ class MarketDataProvider:
 
     @async_retry(attempts=3, delay=5, exceptions=(NetworkError, DataError))
     async def fetch_ohlcv_data(
-        self, symbol: str, timeframe: str, limit: int = 1000
+        self, symbol: str, timeframe: str, limit: int = 1000,
+        bypass_cache: bool = False,
     ) -> Optional[pd.DataFrame]:
         """نقش Provider در کیفیت داده (شکاف ۲۳): یکپارچگی Source/Data —
         فقط بهترین Source با امتیاز مثبت برگردانده می‌شود، وگرنه
         InsufficientDataError. آمادگی تحلیل (Signal) و نیازهای مدل (Model)
-        در لایه‌های خودشان بررسی می‌شوند، نه اینجا."""
+        در لایه‌های خودشان بررسی می‌شوند، نه اینجا.
+        bypass_cache=True (شکاف ۴۴): خواندن/نوشتن کش Redis دور زده می‌شود؛
+        برای قیمت مرجع reconciliation که باید تازه باشد، نه کهنه از TTL."""
         if self._is_closed:
             raise ObjectClosedError("MarketDataProvider is closed")
 
@@ -242,7 +245,7 @@ class MarketDataProvider:
         cache_ttl = self.config_manager.get_cache_ttl("ohlcv", timeframe)
 
         cache_key = CacheKeyBuilder.ohlcv_key("unified", symbol, timeframe, limit)
-        if self.redis:
+        if self.redis and not bypass_cache:
             try:
                 cached = await self.redis.get(cache_key)
                 if cached:
@@ -323,7 +326,7 @@ class MarketDataProvider:
                 best_df = res_df
 
         if best_df is not None and not best_df.empty and best_score > 0:
-            if self.redis:
+            if self.redis and not bypass_cache:
                 try:
                     df_to_cache = best_df.reset_index()
                     df_to_cache["timestamp"] = (

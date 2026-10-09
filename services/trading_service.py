@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
@@ -8,7 +8,7 @@ from config.settings import ConfigManager
 from common.core import TradingSignal
 from data.data_provider import MarketDataProvider
 from config.logger import logger
-from common.constants import LONG_TERM_CONFIG
+from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME
 from strategy.signal_generator import SignalGenerator
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.signal_ranking import SignalRanking
@@ -198,6 +198,10 @@ class TradingService(ModelDataProvider):
                 # شروع lifecycle رهگیری: generated → pending (شکاف ۱۳).
                 # record الان async است — بدون await هیچ سیگنالی ذخیره
                 # نمی‌شود (coroutine بدون await دور ریخته می‌شود).
+                # شکاف ۴۱: created_at زمان تولید (UTC) است، نه زمان کندل؛
+                # زمان کندل جدا در candle_time می‌ماند (id همچنان کندل‌محور
+                # است تا پیوند Generator↔Backtest حفظ شود). stop/target هم
+                # ذخیره می‌شوند تا resolve روی کندل‌ها قضاوت کند (شکاف ۴۲).
                 # created_at/threshold_used/threshold_regime برای
                 # reconciliation دوره‌ای و تغذیه کالیبراسیون ذخیره می‌شوند
                 # (شکاف ۳۱).
@@ -216,7 +220,10 @@ class TradingService(ModelDataProvider):
                             "signal_type": signal.signal_type.value,
                             "confidence": signal.confidence_score,
                             "entry": signal.entry_price,
-                            "created_at": signal.timestamp.isoformat(),
+                            "stop": signal.stop_loss,
+                            "target": signal.exit_price,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "candle_time": signal.timestamp.isoformat(),
                             "threshold_used": signal.threshold_used,
                             "threshold_regime": signal.threshold_regime,
                         },
@@ -278,6 +285,27 @@ class TradingService(ModelDataProvider):
                 if float(ratio) < float(min_surge):
                     logger.debug(
                         f"Gate volume surge: {float(ratio):.2f} < {min_surge} "
+                        f"for {signal.symbol}-{signal.timeframe}"
+                    )
+                    return False
+            except (TypeError, ValueError):
+                pass
+
+        # 3d. اطمینان مدل (شکاف ۳۴): ml_confidence در گیت خوانده می‌شود.
+        # مقیاس صفر تا یک است و فقط وقتی ML واقعاً اجرا شده (مقدار > 0) اعمال
+        # می‌شود تا مسیر بک‌تست (include_ml=False → ml_confidence=0.0) رد نشود.
+        # کف پیش‌فرض 0.0 یعنی بدون پیکربندی، هیچ سیگنالی از این گیت رد نمی‌شود
+        # (رفتار موجود حفظ می‌شود؛ با تنظیم min_ml_confidence فعال می‌شود).
+        min_ml_conf = LONG_TERM_CONFIG.get("min_ml_confidence", 0.0)
+        ml_conf = getattr(signal, "ml_confidence", None)
+        if ml_conf is not None and min_ml_conf:
+            try:
+                conf = float(ml_conf)
+                if conf > 1.0:
+                    conf /= 100.0
+                if 0.0 < conf < float(min_ml_conf):
+                    logger.debug(
+                        f"Gate ml confidence: {conf:.3f} < {min_ml_conf} "
                         f"for {signal.symbol}-{signal.timeframe}"
                     )
                     return False
@@ -360,7 +388,15 @@ class TradingService(ModelDataProvider):
     ) -> List[TradingSignal]:
         """تعریف واحد Quick Analysis (شکاف ۱۷): اسکن فقط تایم‌فریم‌های داده‌شده
         (پیش‌فرض ["1h"]) بدون رتبه‌بندی/محدودسازی نهایی. هم Telegram و هم
-        TaskService از همین implementation استفاده می‌کنند."""
+        TaskService از همین implementation استفاده می‌کنند.
+        شکاف ۴۳: reconcile مستقل از مسیر Full است — اگر فقط اسکن دستی/سریع
+        اجرا شود، pendingها باز هم resolve می‌شوند."""
+        # Reconciliation دوره‌ای (شکاف ۴۳) — خطای آن اسکن را نمی‌شکند.
+        try:
+            await self.reconcile_pending_signals()
+        except Exception as e:
+            logger.debug(f"Pending-signal reconciliation skipped: {e}")
+
         symbols = self.config_manager.get("symbols", [])
         timeframes_to_run = timeframes or ["1h"]
 
@@ -379,8 +415,10 @@ class TradingService(ModelDataProvider):
         resolve می‌شوند و حلقه کالیبراسیون (calibrator مدل‌ها +
         threshold_manager) از همین مسیر تغذیه می‌شود — مشابه
         BacktestingEngine._flush_calibration اما برای مسیر Production.
-        تعداد resolveشده‌ها برمی‌گردد؛ خطای هر مورد طبق شکاف ۳۰ لاگ و رد
-        می‌شود و تحلیل را نمی‌شکند."""
+        شکاف ۴۲: قضاوت روی کندل‌های بین created_at و انقضا با لحاظ stop و
+        target انجام می‌شود، نه فقط قیمت لحظه اجرا (قیمت لحظه‌ای فقط
+        fallback است). تعداد resolveشده‌ها برمی‌گردد؛ خطای هر مورد طبق
+        شکاف ۳۰ لاگ و رد می‌شود و تحلیل را نمی‌شکند."""
         expired = await self.signal_tracker.get_pending_expired()
         if not expired:
             return 0
@@ -396,23 +434,20 @@ class TradingService(ModelDataProvider):
                 logger.debug(f"Reconciliation skipped (missing fields): {signal_id}")
                 continue
             try:
-                price = await self._get_reference_price(symbol, timeframe)
-                if price is None:
+                created_at = SignalTracker._extract_created_at(signal_id, details)
+                expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
+                outcome = await self._decide_expired_outcome(
+                    symbol, timeframe, details, created_at, expiry_hours
+                )
+                if outcome is None:
                     logger.debug(f"Reconciliation skipped (no price): {signal_id}")
                     continue
-                signal_type = str(details.get("signal_type", "")).lower()
-                success = (
-                    price > float(entry)
-                    if signal_type == "buy"
-                    else price < float(entry)
-                    if signal_type == "sell"
-                    else False
-                )
+                success, resolved_price = outcome
                 await self.signal_tracker.resolve(
                     signal_id,
                     success,
                     {
-                        "resolved_price": price,
+                        "resolved_price": resolved_price,
                         "resolution_source": "live_reconciliation",
                         "resolved_at": datetime.now(timezone.utc).isoformat(),
                     },
@@ -426,14 +461,91 @@ class TradingService(ModelDataProvider):
             logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
         return resolved_count
 
+    async def _decide_expired_outcome(
+        self,
+        symbol: str,
+        timeframe: str,
+        details: Dict[str, Any],
+        created_at: Optional[datetime],
+        expiry_hours: Optional[float],
+    ) -> Optional[Tuple[bool, float]]:
+        """قضاوت نتیجه سیگنال منقضی (شکاف ۴۲): اول کندل‌های پنجره
+        [created_at, created_at+expiry] بررسی می‌شوند —
+        برخورد به stop یعنی شکست، برخورد به target یعنی موفقیت (اگر هر دو
+        در یک کندل باشند، stop محافظه‌کارانه مقدم است). اگر stop/target ثبت
+        نشده یا کندلی در دسترس نیست، fallback همان مقایسه قیمت لحظه با entry
+        است. None یعنی قیمت در دسترس نیست (skip، نه Exception)."""
+        try:
+            entry = float(details.get("entry"))
+        except (TypeError, ValueError):
+            return None
+        signal_type = str(details.get("signal_type", "")).lower()
+        if signal_type not in ("buy", "sell"):
+            return None
+
+        try:
+            stop = details.get("stop")
+            stop = float(stop) if stop is not None else None
+        except (TypeError, ValueError):
+            stop = None
+        try:
+            target = details.get("target")
+            target = float(target) if target is not None else None
+        except (TypeError, ValueError):
+            target = None
+
+        if stop is not None and target is not None and created_at is not None:
+            try:
+                df = await self.market_data_provider.fetch_ohlcv_data(
+                    symbol, timeframe, limit=500, bypass_cache=True
+                )
+            except Exception as e:
+                logger.debug(f"Resolution candles fetch failed: {e}")
+                df = None
+            if df is not None and not df.empty:
+                window = df[df.index >= created_at]
+                if expiry_hours:
+                    window = window[
+                        window.index
+                        <= created_at + timedelta(hours=expiry_hours)
+                    ]
+                for _, candle in window.iterrows():
+                    try:
+                        high = float(candle["high"])
+                        low = float(candle["low"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if signal_type == "buy":
+                        if low <= stop:
+                            return False, stop
+                        if high >= target:
+                            return True, target
+                    else:
+                        if high >= stop:
+                            return False, stop
+                        if low <= target:
+                            return True, target
+
+        price = await self._get_reference_price(symbol, timeframe)
+        if price is None:
+            return None
+        success = (
+            price > entry
+            if signal_type == "buy"
+            else price < entry
+        )
+        return success, price
+
     async def _get_reference_price(
         self, symbol: str, timeframe: str
     ) -> Optional[float]:
         """قیمت مرجع برای reconciliation (شکاف ۳۱): آخرین close از Provider
-        در لحظه اجرا. None یعنی قیمت در دسترس نیست (skip، نه Exception)."""
+        در لحظه اجرا. شکاف ۴۴: با bypass_cache=True تا قیمت کهنه از کش Redis
+        (TTL تایم‌فریم) برنگردد. None یعنی قیمت در دسترس نیست (skip، نه
+        Exception)."""
         try:
             df = await self.market_data_provider.fetch_ohlcv_data(
-                symbol, timeframe, limit=2
+                symbol, timeframe, limit=2, bypass_cache=True
             )
             if df is None or df.empty:
                 return None
@@ -444,16 +556,32 @@ class TradingService(ModelDataProvider):
             )
             return None
 
+    @staticmethod
+    def _normalize_confidence_0_100(confidence: Any) -> float:
+        """قرارداد مقیاس confidence (شکاف ۴۵): calibrator بازه ۰ تا ۱۰۰
+        می‌خواهد (bin = int(conf*10/100)). confidence_score سیگنال ۰ تا ۱۰۰
+        است و مستقیم مصرف می‌شود؛ اگر مقداری در بازه ۰ تا ۱ رسید (مثلاً
+        ml_confidence که ۰ تا ۱ است)، به ۰ تا ۱۰۰ نگاشت می‌شود تا همه نمونه‌ها
+        در bin صفر نیفتند."""
+        try:
+            conf = float(confidence or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+        if 0.0 < conf <= 1.0:
+            conf *= 100.0
+        return max(0.0, min(100.0, conf))
+
     async def _record_live_calibration(
         self, symbol: str, timeframe: str, details: Dict[str, Any], success: bool
     ) -> None:
         """تغذیه حلقه کالیبراسیون از نتیجه سیگنال زنده (شکاف ۳۱) — همان
         قرارداد BacktestingEngine._flush_calibration: confidence ترکیبی
         سیگنال به‌عنوان proxy مشترک lstm/xgboost (تفکیک per-model در
-        قرارداد فعلی plumbing نشده)، و آستانه تطبیقی فقط با هر سه جزء
-        (رژیم کامل + آستانه > 0)."""
+        قرارداد فعلی plumbing نشده — شکاف ۴۷، محدودیت مستند)، و آستانه
+        تطبیقی فقط با هر سه جزء (رژیم کامل + آستانه > 0). شکاف ۴۵: ورودی
+        calibrator با _normalize_confidence_0_100 نرمال می‌شود."""
         try:
-            confidence = float(details.get("confidence", 0.0) or 0.0)
+            confidence = self._normalize_confidence_0_100(details.get("confidence", 0.0))
             if confidence > 0:
                 for model_type in ("lstm", "xgboost"):
                     try:

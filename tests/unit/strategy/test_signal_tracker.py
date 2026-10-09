@@ -285,7 +285,7 @@ class TestAdaptiveThresholdManager:
 
     def test_get_optimal_threshold_bin_total_less_than_10_ignored(self, threshold_manager):
         """Bins with total < 10 are ignored."""
-        threshold_manager.performance_history["low_persistent"] = [
+        threshold_manager.performance_history[("low", "persistent")] = [
             {"threshold": 70.0, "success": True, "timestamp": datetime.now(timezone.utc)}
             for _ in range(5)  # Only 5 samples
         ] + [
@@ -300,7 +300,7 @@ class TestAdaptiveThresholdManager:
     def test_get_optimal_threshold_accuracy_ci_above_55(self, threshold_manager):
         """Threshold selected only if accuracy - CI > 0.55."""
         # Create history where 70% threshold has 90% accuracy with enough samples
-        threshold_manager.performance_history["high_mean_reverting"] = [
+        threshold_manager.performance_history[("high", "mean_reverting")] = [
             {"threshold": 70.0, "success": True, "timestamp": datetime.now(timezone.utc)}
             for _ in range(90)
         ] + [
@@ -315,20 +315,27 @@ class TestAdaptiveThresholdManager:
 
     def test_threshold_regime_format_matches_backtest_flush(self, threshold_manager):
         """
-        Contract test: threshold_regime format must be "vol|hurst"
-        because BacktestingEngine._flush_calibration uses partition("|").
+        Contract test (gap 46): the internal key is a (vol, hurst) tuple so
+        regimes containing "_" (e.g. "high_vol") cannot collide, while the
+        display regime stays "vol|hurst" for BacktestingEngine partition("|").
         """
         threshold_manager.record_performance("high", "persistent", 70.0, True)
 
-        key = f"high_persistent"
-        assert key in threshold_manager.performance_history
+        assert ("high", "persistent") in threshold_manager.performance_history
 
-        # The key format must match what BacktestingEngine expects
-        # BacktestingEngine does: vol_regime, _, hurst_range = regime.partition("|")
-        # So threshold_regime from SignalGenerator must be "high|persistent"
-        # not "high_persistent"
-        expected_format = "high|persistent"
-        # This test documents the required format contract
+    def test_gap46_underscore_regimes_do_not_collide(self, threshold_manager):
+        """Regression (gap 46): ("high_vol", "x") and ("high", "vol_x") are
+        distinct keys — impossible with the old f"{vol}_{hurst}" join."""
+        threshold_manager.record_performance("high_vol", "x", 70.0, True)
+        threshold_manager.record_performance("high", "vol_x", 72.0, False)
+
+        assert ("high_vol", "x") in threshold_manager.performance_history
+        assert ("high", "vol_x") in threshold_manager.performance_history
+        assert threshold_manager.get_optimal_threshold("high_vol", "x", 50.0) == 50.0
+        # The display regime format is unchanged for the backtest flush path.
+        regime = "high_vol|x"
+        vol_regime, _, hurst_range = regime.partition("|")
+        assert (vol_regime, hurst_range) == ("high_vol", "x")
 
 
 class TestMLConfidenceCalibrator:
@@ -378,6 +385,53 @@ class TestMLConfidenceCalibrator:
         # Should still work without error
         result = calibrator.get_calibrated_confidence("test_model", 50.0)
         assert 0 <= result <= 100
+
+
+class TestSignalTrackerGap40:
+    """Regression (gap 40): re-record of an already-resolved id with
+    outcome=None must NOT flip it back to pending (no double counting in
+    live calibration)."""
+
+    @pytest.fixture
+    def tracker(self):
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write('{}')
+            temp_path = f.name
+        tracker = SignalTracker(storage_path=temp_path)
+        yield tracker
+        Path(temp_path).unlink(missing_ok=True)
+
+    @pytest.mark.asyncio
+    async def test_gap40_rerecord_preserves_resolved_outcome(self, tracker):
+        signal_id = make_signal_id(
+            "BTC/USDT", "1d", datetime.now(timezone.utc), "BUY"
+        )
+        await tracker.record(signal_id, None, {"entry": 50000})
+        await tracker.resolve(signal_id, True, {"resolved_price": 51000})
+
+        # Same candle re-analyzed → same id, outcome=None
+        await tracker.record(signal_id, None, {"entry": 50000})
+
+        summary = tracker.get_performance_summary()
+        assert summary["total"] == 1
+        assert summary["pending"] == 0
+        assert summary["win_rate"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_gap40_rerecord_merges_details_keeps_outcome(self, tracker):
+        signal_id = make_signal_id(
+            "BTC/USDT", "1d", datetime.now(timezone.utc), "BUY"
+        )
+        await tracker.record(signal_id, None, {"entry": 50000})
+        await tracker.resolve(signal_id, False, {"resolved_price": 49000})
+        await tracker.record(signal_id, None, {"extra": "info"})
+
+        with open(tracker.storage_path, 'r') as f:
+            history = json.load(f)
+
+        assert history[signal_id]["outcome"] is False
+        assert history[signal_id]["details"]["extra"] == "info"
+        assert history[signal_id]["details"]["resolved_price"] == 49000
 
 
 class TestMakeSignalId:

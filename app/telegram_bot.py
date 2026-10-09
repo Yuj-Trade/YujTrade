@@ -296,6 +296,19 @@ class TelegramBotHandler:
             f"💰 *Predicted Profit:* `{predicted_profit_str}`"
         )
 
+        # شکاف ۳۴: ml_confidence در پیام نمایش داده می‌شود (مقیاس ۰ تا ۱
+        # به درصد). None یعنی ML اجرا نشده و خطی اضافه نمی‌شود.
+        try:
+            ml_conf = getattr(signal, "ml_confidence", None)
+            if ml_conf is not None:
+                ml_pct = float(ml_conf)
+                if ml_pct <= 1.0:
+                    ml_pct *= 100.0
+                ml_str = escape_markdown_v2(f"{ml_pct:.1f}")
+                main_info += f"\n🤖 *ML Confidence:* `{ml_str}%`"
+        except (TypeError, ValueError):
+            pass
+
         messages.append(header + main_info)
 
         ctx = signal.market_context

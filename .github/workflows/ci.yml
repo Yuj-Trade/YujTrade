@@ -1,0 +1,51 @@
+name: CI
+
+# شکاف T1: همین سه فایل تست (tasks / data_provider / signal_generator) در
+# collection به talib وابسته‌اند (common/utils.py:9 سطح‌بالا). اگر TA-Lib در
+# CI نصب نشود، دوباره با ModuleNotFoundError می‌شکنند — پس نصب آن صریح و
+# جداگانه اینجاست، نه پنهان داخل requirements.
+# Runner ویندوز است چون TA-Lib روی PyPI wheel ویندوزی دارد (تأییدشده: cp313).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"] # حداقل و آخرین نسخه پشتیبانی‌شده (شکاف ۳۸)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install TA-Lib (required at import/collection time, gap T1)
+        run: python -m pip install TA-Lib
+
+      - name: Verify TA-Lib import
+        run: python -c "import talib; print(talib.__version__)"
+
+      - name: Install test dependencies
+        run: >
+          python -m pip install pytest pytest-asyncio pytest-mock
+          numpy pandas python-decouple loguru cryptography redis aiohttp
+          python-telegram-bot yfinance xgboost scikit-learn tensorflow-cpu
+
+      - name: Run tests (no real network / no real Redis)
+        env:
+          REDIS_HOST: fake-redis-host
+          REDIS_PORT: "6379"
+          REDIS_TOKEN: ""
+          TELEGRAM_BOT_TOKEN: fake_token:fake
+          TELEGRAM_ADMIN_CHAT_ID: "123456789"
+        run: python -m pytest tests/ -q
