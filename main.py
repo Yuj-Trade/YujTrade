@@ -1,12 +1,14 @@
 import asyncio
 import signal
 import sys
+from datetime import datetime, timezone
 
 from services.trading_service import TradingService
 from config.settings import SecretsManager
 from config.logger import logger
 from utils.resource_manager import ResourceManager
 from app.telegram_bot import TelegramBotHandler
+from utils.scheduler_store import SchedulerStore
 
 
 class MainApp:
@@ -16,6 +18,7 @@ class MainApp:
         self.trading_service: TradingService | None = None
         self.bot_handler: TelegramBotHandler | None = None
         self.background_tasks_manager = None
+        self.scheduler_store = None
 
     def _handle_shutdown(self, sig, frame):
         if not self.shutdown_event.is_set():
@@ -48,19 +51,40 @@ class MainApp:
         logger.info(
             f"Scheduled analysis enabled every {interval / 3600:.2f}h."
         )
+        self.scheduler_store = SchedulerStore(
+            config_manager.get("scheduler_db_path", "runs/scheduler.db")
+        )
+        first_iteration = True
         while not self.shutdown_event.is_set():
-            try:
-                await asyncio.wait_for(
-                    self.shutdown_event.wait(), timeout=interval
-                )
-            except asyncio.TimeoutError:
-                pass
+            if not first_iteration:
+                try:
+                    await asyncio.wait_for(
+                        self.shutdown_event.wait(), timeout=interval
+                    )
+                except asyncio.TimeoutError:
+                    pass
+            first_iteration = False
             if self.shutdown_event.is_set():
                 break
+            now = datetime.now(timezone.utc)
+            if not self.scheduler_store.is_due("scheduled_analysis", now, interval):
+                continue
+            started = datetime.now(timezone.utc)
             try:
                 await self.bot_handler.run_scheduled_analysis()
             except Exception as e:
+                self.scheduler_store.record(
+                    "scheduled_analysis", now, started, datetime.now(timezone.utc), "failed", str(e)
+                )
                 logger.error(f"Scheduled analysis failed: {e}", exc_info=True)
+            else:
+                self.scheduler_store.record(
+                    "scheduled_analysis",
+                    now,
+                    started,
+                    datetime.now(timezone.utc),
+                    "success",
+                )
 
     async def run(self):
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -68,7 +92,7 @@ class MainApp:
 
         try:
             logger.info("Initializing application components...")
-            # همان Composition Root اصلی (شکاف ۱۸) — بدون graph موازی.
+            # همان Composition Root اصلی (قاعده ۱۸) — بدون graph موازی.
             from services.trading_service import create_trading_stack
 
             (
@@ -77,6 +101,13 @@ class MainApp:
                 self.market_data_provider,
                 self.trading_service,
             ) = await create_trading_stack()
+            from common.metrics import init_sentry, start_metrics_server
+
+            start_metrics_server(
+                enabled=bool(config_manager.get("metrics_enabled", False)),
+                port=int(config_manager.get("METRICS_PORT", 9108)),
+            )
+            init_sentry(str(SecretsManager.SENTRY_DSN or ""))
             logger.info(
                 f"YujTrade v{config_manager.get('app_version', '?')} initialized."
             )
@@ -111,7 +142,7 @@ class MainApp:
                 
                 logger.info("Telegram bot started successfully.")
 
-                # اجرای دوره‌ای تحلیل با مکانیزم موجود (شکاف ۱۹):
+                # اجرای دوره‌ای تحلیل با مکانیزم موجود (قاعده ۱۹):
                 # BackgroundTaskManager + run_scheduled_analysis، بدون Scheduler جدید.
                 if config_manager.get("enable_scheduled_analysis", False):
                     self.background_tasks_manager.create_task(
@@ -140,6 +171,8 @@ class MainApp:
 
             if self.background_tasks_manager:
                 await self.background_tasks_manager.cancel_all()
+            if self.scheduler_store:
+                self.scheduler_store.close()
 
             if self.trading_service:
                 try:

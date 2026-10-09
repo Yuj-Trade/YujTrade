@@ -58,7 +58,7 @@ def _to_cache_payload(df: pd.DataFrame) -> str:
 # ─── fetch_ohlcv_data Tests ───
 
 class TestFetchOHLCVData:
-    """شکاف ۲۳: fetch_ohlcv_data — انتخاب بهترین منبع، کش، و شکست یکپارچه."""
+    """قاعده ۲۳: fetch_ohlcv_data — انتخاب بهترین منبع، کش، و شکست یکپارچه."""
 
     @pytest.mark.asyncio
     async def test_cache_hit_returns_data_without_fetching(self, valid_1h_ohlcv):
@@ -248,8 +248,8 @@ class TestFetchOHLCVData:
 # ─── _get_data_quality_score Tests (gap 23 + gap 36) ───
 
 class TestGetDataQualityScore:
-    """_get_data_quality_score منطق امتیازدهی واحد Provider (شکاف ۲۳) و
-    مدیریت ValueError از detect_data_gaps (شکاف ۳۶)."""
+    """_get_data_quality_score منطق امتیازدهی واحد Provider (قاعده ۲۳) و
+    مدیریت ValueError از detect_data_gaps (قاعده ۳۶)."""
 
     @pytest.fixture
     def provider(self):
@@ -263,7 +263,7 @@ class TestGetDataQualityScore:
         assert provider._get_data_quality_score(missing_columns_ohlcv, "1h") == 0.0
 
     def test_gap36_detect_data_gaps_valueerror_caught_returns_zero(self, provider, valid_1h_ohlcv):
-        """شکاف ۳۶: ValueError از detect_data_gaps در Provider گرفته و 0.0
+        """قاعده ۳۶: ValueError از detect_data_gaps در Provider گرفته و 0.0
         برگردانده می‌شود — برخلاف calculate_overall_quality_score یتیم."""
         with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
              patch.object(provider.data_quality_checker, "detect_data_gaps", side_effect=ValueError("gap too large")):
@@ -271,7 +271,7 @@ class TestGetDataQualityScore:
         assert score == 0.0
 
     def test_gap36_contrast_overall_quality_score_catches_valueerror(self, valid_1h_ohlcv):
-        """شکاف ۳۶ (پس از اصلاح): calculate_overall_quality_score دیگر
+        """قاعده ۳۶ (پس از اصلاح): calculate_overall_quality_score دیگر
         ValueError را propagate نمی‌کند — مثل Provider حداکثر جریمه گپ را
         اعمال می‌کند و امتیازی در بازه ۰ تا ۱ برمی‌گرداند."""
         checker = DataQualityChecker()
@@ -336,7 +336,7 @@ ENRICHMENT_METHODS = [
 
 
 class TestEnrichmentErrorContract30:
-    """شکاف ۳۰: متدهای get_* enrichment اختیاری‌اند — fetcher None یا خطا →
+    """قاعده ۳۰: متدهای get_* enrichment اختیاری‌اند — fetcher None یا خطا →
     None (نه Exception). تحلیل با degradation ادامه می‌یابد."""
 
     @pytest.fixture
@@ -431,7 +431,7 @@ class TestGetDerivativesData:
 # ─── close() Tests (gap 24/25) ───
 
 class TestClose:
-    """شکاف ۲۵ (مالکیت): close() فقط Fetcherها را می‌بندد (idempotent)؛
+    """قاعده ۲۵ (مالکیت): close() فقط Fetcherها را می‌بندد (idempotent)؛
     session و Redis متعلق به ResourceManager‌اند."""
 
     @pytest.mark.asyncio

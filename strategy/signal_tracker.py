@@ -6,17 +6,13 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
+from domain.signal_id import make_signal_id as _make_signal_id
 
 
 def make_signal_id(
     symbol: str, timeframe: str, timestamp: datetime, signal_type: str
 ) -> str:
-    """Signal ID for Generator <-> Backtest linkage."""
-    if isinstance(timestamp, datetime):
-        ts = timestamp.isoformat()
-    else:
-        ts = str(timestamp)
-    return f"{symbol}|{timeframe}|{ts}|{signal_type}"
+    return _make_signal_id(symbol, timeframe, timestamp, signal_type)
 
 
 class SignalTracker:
@@ -50,9 +46,9 @@ class SignalTracker:
         """Write the outcome and persist it. The caller must already hold
         self._lock — asyncio.Lock is not reentrant, so resolve must route
         through this helper instead of calling record under the lock."""
-        # شکاف ۳۷: نوشتن فایل با lock سری می‌شود تا record/resolve هم‌زمان
+        # قاعده ۳۷: نوشتن فایل با lock سری می‌شود تا record/resolve هم‌زمان
         # رقابت نکنند؛ I/O در executor اجرا می‌شود تا event loop بلاک نشود.
-        # شکاف ۴۰: تحلیل مجدد همان کندل همان id را می‌سازد (id کندل‌محور است)؛
+        # قاعده ۴۰: تحلیل مجدد همان کندل همان id را می‌سازد (id کندل‌محور است)؛
         # اگر این id قبلاً resolve شده (outcome is not None)، record مجدد با
         # outcome=None نباید آن را به pending برگرداند (شمارش دوباره در
         # کالیبراسیون). details ادغام می‌شود ولی outcome حفظ می‌شود.
@@ -87,7 +83,7 @@ class SignalTracker:
         passed (SIGNAL_EXPIRY_BY_TIMEFRAME). The lock is taken so the snapshot
         cannot race with concurrent record/resolve calls; callers use it for
         live reconciliation (gap 31)."""
-        # شکاف ۳۱: pendingهای منقضی‌شده برای reconciliation دوره‌ای در مسیر
+        # قاعده ۳۱: pendingهای منقضی‌شده برای reconciliation دوره‌ای در مسیر
         # Production. ساعت انقضا از SIGNAL_EXPIRY_BY_TIMEFRAME (منبع واحد).
         now = now or datetime.now(timezone.utc)
         async with self._lock:
@@ -151,7 +147,7 @@ class SignalTracker:
 
 
 class AdaptiveThresholdManager:
-    # شکاف ۴۶: کلید داخلی tuple است (volatility_regime, hurst_range) تا با
+    # قاعده ۴۶: کلید داخلی tuple است (volatility_regime, hurst_range) تا با
     # رژیم‌های دارای "_" (مثلاً "high_vol") تداخل نکند. فرمت نمایشی رژیم در
     # threshold_regime همچنان "vol|hurst" می‌ماند (قرارداد بک‌تست)؛ تبدیل
     # در نقطه مصرف (partition("|")) انجام می‌شود، نه روی کلید داخلی.

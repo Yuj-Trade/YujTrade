@@ -21,7 +21,7 @@ def run():
     encryptor = KeyEncryptor(password)
     config = Config(RepositoryEnv(str(env_file)))
 
-    # فهرست یکسان با SecretsManager (شکاف ۲۶): همه کلیدهای get_secret باید
+    # فهرست یکسان با SecretsManager (قاعده ۲۶): همه کلیدهای get_secret باید
     # اینجا هم قابل‌رمزنگاری باشند. نام محیطی REDIS_TOKEN معادل REDIS_PASSWORD است.
     keys_to_encrypt = [
         "TELEGRAM_BOT_TOKEN",
@@ -58,13 +58,9 @@ def run():
 
     logger.info("Encryption complete. .env file has been updated.")
     logger.warning("Please remove the original plain-text keys if they are no longer needed.")
-    # ENCRYPTION_PASSWORD عمداً در .env نوشته نمی‌شود (شکاف ۲۶): رمز باید
-    # خارج از فایل (key manager یا متغیر محیطی امن) نگهداری شود، چون
-    # SecretsManager آن را از همان مسیرها می‌خواند.
     logger.warning(
-        "ENCRYPTION_PASSWORD was NOT written to .env. Store it securely "
-        "(OS key manager or protected env var) — SecretsManager reads it "
-        "via get_password_from_key_manager() or ENCRYPTION_PASSWORD env."
+        "SECRET_ENCRYPTION_PASSWORD was NOT written to .env. Store it securely "
+        "(mounted secret or protected environment variable)."
     )
     logger.info(f"Keys updated: {', '.join(updated_keys)}")
 

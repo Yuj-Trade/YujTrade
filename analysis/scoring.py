@@ -121,12 +121,12 @@ class AnalysisScorer:
     def score_market_context(self, context: MarketAnalysis) -> Tuple[float, List[str]]:
         """
         Scores the overall market context.
-        قرارداد MarketAnalysis (شکاف ۸): trend/trend_strength/market_condition/
+        قرارداد MarketAnalysis (قاعده ۸): trend/trend_strength/market_condition/
         volume_trend_score هسته امتیاز هستند (فرمول قبلی بدون تغییر)؛ بقیه
         خروجی‌های MarketConditionAnalyzer به‌عنوان تعدیل‌های محدود (±) اثر
         می‌گذارند. support/resistance در scoring مصرف نمی‌شوند چون ورودی
         calculate_dynamic_levels هستند (مصرف‌شان در ساخت Signal است، نه امتیاز).
-        detect_divergence به analyze_market_condition وصل است (شکاف ۳۵) و
+        detect_divergence به analyze_market_condition وصل است (قاعده ۳۵) و
         برچسب‌هایش در candle_patterns می‌آیند؛ چون با الگوی "(bullish)" هم‌پوشانی
         ندارند، روی امتیاز اثری ندارند.
         """
@@ -256,11 +256,11 @@ class AnalysisScorer:
         self, data: Dict[str, Any], market_context: MarketAnalysis, symbol: str
     ) -> Tuple[float, List[str]]:
         """
-        زنجیره واحد (شکاف ۳):
+        زنجیره واحد (قاعده ۳):
             MarketDataProvider (DerivativesAnalysis و...) → SignalGenerator
             (ذخیره خام در external_data) → این متد (خوانش خام).
         هیچ Adapter موازی برای یک داده وجود ندارد.
-        همه منابع جمع‌شده (شکاف ۴ و ۵: Fundamental، On-chain، OrderBook،
+        همه منابع جمع‌شده (قاعده ۴ و ۵: Fundamental، On-chain، OrderBook،
         Macro، Trending، MarketIndices) در امتیاز/دلایل اثر می‌گذارند.
         """
         score = 0.0
@@ -476,7 +476,7 @@ class AnalysisScorer:
 
         for model_name, pred_data in predictions.items():
             pred_price = pred_data.get("prediction", 0)
-            # قرارداد مقادیر ModelManager (شکاف ۳۳): "confidence" همان
+            # قرارداد مقادیر ModelManager (قاعده ۳۳): "confidence" همان
             # final_confidence است = calibrated_confidence × (1 - uncertainty²)
             # یعنی هم کالیبراسیون هم تعدیل عدم‌قطعیت را در بر دارد. خواندن
             # "calibrated_confidence" به‌جای آن، تعدیل uncertainty را از

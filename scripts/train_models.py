@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 class TrainingDataProvider(ModelDataProvider):
     """A dedicated data provider for the training script.
 
-    قرارداد واحد با TradingService.get_data_for_model (شکاف ۱۰):
+    قرارداد واحد با TradingService.get_data_for_model (قاعده ۱۰):
     محدودیت‌ها فقط از Config خوانده می‌شوند؛ تفاوت صرفاً parameter است."""
 
     def __init__(

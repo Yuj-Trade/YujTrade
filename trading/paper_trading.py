@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from common.core import Order, OrderSide, OrderStatus, OrderType, Position, PositionSide, RiskDecision, SignalType, TradingSignal
 from trading.portfolio import PortfolioManager
 from trading.risk_manager import RiskManager
+from domain.outcome import resolve_outcome
 
 
 class PaperTradingEngine:
@@ -100,6 +101,31 @@ class PaperTradingEngine:
                 pnl = self.portfolio.close_position(position_id, exit_price, fee)
                 closed.append({"position_id": position_id, "symbol": position.symbol, "exit": exit_price, "pnl": pnl, "reason": "stop" if hit_stop else "target"})
         return closed
+
+    def resolve_position_with_candles(
+        self, position_id: str, candles: List[Dict[str, object]]
+    ) -> Optional[Dict]:
+        position = self.portfolio.positions.get(position_id)
+        if position is None:
+            return None
+        side = "buy" if position.side == PositionSide.LONG else "sell"
+        outcome = resolve_outcome(
+            candles,
+            side,
+            position.entry_price,
+            position.stop_loss,
+            position.take_profit,
+        )
+        if outcome is None:
+            return None
+        fee = outcome.exit_price * position.quantity * self.fee_rate
+        pnl = self.portfolio.close_position(position_id, outcome.exit_price, fee)
+        return {
+            "position_id": position_id,
+            "exit": outcome.exit_price,
+            "pnl": pnl,
+            "reason": outcome.reason,
+        }
 
     def cancel_order(self, order_id: str) -> bool:
         order = self.orders.get(order_id)

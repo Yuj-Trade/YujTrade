@@ -8,7 +8,7 @@ from common.constants import LONG_TERM_CONFIG
 
 
 class DataQualityChecker:
-    """مرجع واحد قواعد کیفی (شکاف ۲۳) با سه نقش جدا:
+    """مرجع واحد قواعد کیفی (قاعده ۲۳) با سه نقش جدا:
     - Provider: یکپارچگی Source/Data (انتخاب بهترین Source با امتیاز مثبت).
     - Signal: آمادگی تحلیل (validate_data_quality روی OHLCV).
     - Model: نیازهای خاص مدل (حداقل طول داده در fit/predict).
@@ -62,6 +62,48 @@ class DataQualityChecker:
 
         return True, "Data quality OK"
 
+    def repair_ohlcv(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        if data is None or data.empty or not isinstance(data.index, pd.DatetimeIndex):
+            return data
+        ordered = data.sort_index()
+        frequency = {
+            "1h": "1h",
+            "4h": "4h",
+            "1d": "1D",
+            "1w": "1W",
+            "1M": "30D",
+        }.get(timeframe)
+        if frequency is None or len(ordered) < 2:
+            return ordered
+        expected = pd.date_range(
+            start=ordered.index[0],
+            end=ordered.index[-1],
+            freq=frequency,
+            tz=ordered.index.tz,
+        )
+        missing = expected.difference(ordered.index)
+        if len(missing) > 3:
+            raise ValueError(
+                f"OHLCV gap exceeds repair tolerance: {len(missing)} candles"
+            )
+        if missing.empty:
+            return data if ordered.index.equals(data.index) else ordered
+        repaired = ordered.reindex(expected)
+        price_columns = [column for column in ("open", "high", "low", "close") if column in repaired]
+        repaired[price_columns] = repaired[price_columns].interpolate(
+            method="time", limit_direction="both"
+        )
+        if "volume" in repaired:
+            repaired["volume"] = repaired["volume"].interpolate(
+                method="time", limit_direction="both"
+            )
+        repaired["high"] = repaired[["open", "high", "close"]].max(axis=1)
+        repaired["low"] = repaired[["open", "low", "close"]].min(axis=1)
+        logger.warning(
+            f"Repaired {len(missing)} OHLCV gap candle(s) for timeframe {timeframe}."
+        )
+        return repaired
+
     def _check_data_freshness(self, data: pd.DataFrame, timeframe: str) -> bool:
         if not isinstance(data.index, pd.DatetimeIndex) or data.empty:
             return False
@@ -90,7 +132,7 @@ class DataQualityChecker:
     ) -> float:
         """امتیاز کیفی ترکیبی در مقیاس ۰ تا ۱ (خلاف _get_data_quality_score
         در Provider که ۰ تا ۱۰۰ است — مقیاس‌ها عمداً متفاوت و مستندند).
-        شکاف ۳۶: فراخوانی detect_data_gaps داخل try/except است؛ گپ بزرگ
+        قاعده ۳۶: فراخوانی detect_data_gaps داخل try/except است؛ گپ بزرگ
         (ValueError) به‌جای انتشار، حداکثر جریمه گپ را اعمال می‌کند — همان
         رفتار _get_data_quality_score که 0.0 برمی‌گرداند."""
         score = 1.0

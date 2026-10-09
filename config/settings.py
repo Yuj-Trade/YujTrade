@@ -22,7 +22,8 @@ class SecretsManager:
             _encryptor = KeyEncryptor(ENCRYPTION_PASSWORD)
         except Exception:
             logger.critical(
-                "Failed to create encryptor. Check your ENCRYPTION_PASSWORD or key manager."
+                "Failed to create encryptor. Check your SECRET_ENCRYPTION_PASSWORD "
+                "or mounted secret."
             )
             _encryptor = None
 
@@ -55,7 +56,7 @@ class SecretsManager:
     TF_CPP_MIN_LOG_LEVEL = decouple_config("TF_CPP_MIN_LOG_LEVEL", default="3")
     TF_ENABLE_ONEDNN_OPTS = decouple_config("TF_ENABLE_ONEDNN_OPTS", default="0")
 
-    # شکاف ۳۹: هیچ هاست/پورت پیش‌فرض embedded وجود ندارد (مشابه شکاف ۲۷
+    # قاعده ۳۹: هیچ هاست/پورت پیش‌فرض embedded وجود ندارد (مشابه قاعده ۲۷
     # برای secret). در نبود REDIS_HOST/REDIS_PORT/REDIS_TOKEN، کش غیرفعال
     # است (ResourceManager.get_redis_client → None). مقداردهی این فیلدها
     # فقط از محیط/فایل .env انجام می‌شود.
@@ -65,7 +66,7 @@ class SecretsManager:
     if not REDIS_PASSWORD:
         logger.warning(
             "REDIS_TOKEN is not set. Caching will be disabled; "
-            "no default secret is embedded (شکاف ۲۷)."
+            "no default secret is embedded (قاعده ۲۷)."
         )
 
 
@@ -79,7 +80,7 @@ class ConfigManager:
         "schedule_hour": "*/1",
         "app_version": "6.0.0",
         "timeframe_based_weights": True,
-        # قرارداد واحد داده مدل (شکاف ۱۰): هم Training و هم Prediction
+        # قرارداد واحد داده مدل (قاعده ۱۰): هم Training و هم Prediction
         # محدودیت‌ها را فقط از همین‌جا می‌خوانند.
         "model_data_limits": {
             "1h": 2000,
@@ -92,6 +93,7 @@ class ConfigManager:
         "model_auto_train_on_predict": False,
         "metrics_enabled": False,
         "METRICS_PORT": 9108,
+        "scheduler_db_path": "runs/scheduler.db",
     }
 
     DEFAULT_WEIGHTS_CONFIG = {

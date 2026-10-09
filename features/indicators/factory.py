@@ -28,6 +28,9 @@ class IndicatorFactory:
 
         indicator_class = self._indicator_classes.get(name_lower)
         if indicator_class:
+            # Handle special cases: sma and ema need a period parameter
+            if name_lower in ("sma", "ema"):
+                return indicator_class(period=20, ma_type=name_lower)
             return indicator_class()
 
         return None

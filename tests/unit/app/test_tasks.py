@@ -104,7 +104,7 @@ class TestTaskServiceContainer:
 
     @pytest.mark.asyncio
     async def test_instance_returns_same_singleton(self):
-        """instance() یکتا است — دو فراخوانی، یک شیء (شکاف ۱۸: همان Composition
+        """instance() یکتا است — دو فراخوانی، یک شیء (قاعده ۱۸: همان Composition
         Root اصلی، بدون graph موازی)."""
         fake_stack = (MagicMock(), MagicMock(), MagicMock(), MagicMock())
         with patch(
@@ -179,7 +179,7 @@ class TestTaskServiceContainer:
 
 
 class TestTaskDeliveryGap32Connected:
-    """شکاف ۳۲ (وصل شد): سیگنال تولیدشده به chat_id تحویل داده می‌شود."""
+    """قاعده ۳۲ (وصل شد): سیگنال تولیدشده به chat_id تحویل داده می‌شود."""
 
     SIGNALS = [
         {"symbol": "BTC/USDT", "timeframe": "1h", "signal_type": "BUY"},
@@ -198,7 +198,7 @@ class TestTaskDeliveryGap32Connected:
         # سیگنال تولید شده (TradingService صدا زده شده)
         container.trading_service.run_analysis_for_all_symbols.assert_awaited_once()
 
-        # شکاف ۳۲ (وصل شد): تحویل با همان chat_id انجام شده است
+        # قاعده ۳۲ (وصل شد): تحویل با همان chat_id انجام شده است
         deliver_spy.assert_awaited_once()
         call = deliver_spy.await_args
         assert call.args[0] == "fake_token:fake"
@@ -266,7 +266,7 @@ class TestTaskDeliveryGap32Connected:
 
 
 class TestStaticImportGraph32:
-    """شکاف ۳۲ (بخش a): مسیر دوره‌ای از bot_handler.run_scheduled_analysis
+    """قاعده ۳۲ (بخش a): مسیر دوره‌ای از bot_handler.run_scheduled_analysis
     می‌گذرد؛ app.tasks هرگز از main.py یا app/telegram_bot.py import نمی‌شود."""
 
     def test_main_never_imports_app_tasks(self):
@@ -297,7 +297,7 @@ class TestStaticImportGraph32:
         ), "TelegramBotHandler must define send_signals_to_telegram (the real delivery path)"
 
     def test_tasks_module_wires_delivery(self):
-        """قفل ماژولی شکاف ۳۲ (وصل شد): app/tasks.py مسیر تحویل
+        """قفل ماژولی قاعده ۳۲ (وصل شد): app/tasks.py مسیر تحویل
         deliver_task_signals را تعریف می‌کند و هر دو task آن را صدا می‌زنند —
         chat_id دیگر فقط لاگ نمی‌شود."""
         tree = _parse(TASKS_PY)

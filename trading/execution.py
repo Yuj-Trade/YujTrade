@@ -51,6 +51,34 @@ class ExchangeAdapter:
             return ExecutionResult(ok=False, error=str(e))
 
 
+class FakeAdapter(ExchangeAdapter):
+    def __init__(self, prices: Optional[Dict[str, float]] = None, fee_rate: float = 0.001):
+        super().__init__(exchange=None, dry_run=True, fee_rate=fee_rate)
+        self.prices = prices or {}
+
+    async def fetch_price(self, symbol: str) -> Optional[float]:
+        return self.prices.get(symbol)
+
+    async def create_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        price: Optional[float] = None,
+        order_type: OrderType = OrderType.MARKET,
+    ) -> ExecutionResult:
+        fill_price = price if price is not None else self.prices.get(symbol)
+        if fill_price is None:
+            return ExecutionResult(ok=False, error="no_fake_price")
+        return ExecutionResult(
+            ok=True,
+            order_id=f"fake-{uuid.uuid4().hex[:12]}",
+            price=float(fill_price),
+            quantity=float(quantity),
+            fee=float(fill_price * quantity * self.fee_rate),
+        )
+
+
 class ExecutionEngine:
     def __init__(self, adapter: Optional[ExchangeAdapter] = None, max_deviation_pct: float = 2.0, max_spread_pct: float = 0.5):
         self.adapter = adapter or ExchangeAdapter()

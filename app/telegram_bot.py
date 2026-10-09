@@ -24,7 +24,7 @@ from services.trading_service import TradingService
 from trading.risk_manager import build_risk_config
 
 
-# تعریف واحد Full Analysis (شکاف ۱۶): همان focus_timeframes سرویس.
+# تعریف واحد Full Analysis (قاعده ۱۶): همان focus_timeframes سرویس.
 # برچسب‌ها از همین‌جا ساخته می‌شوند تا UI و Service drift نکنند.
 def _focus_label() -> str:
     focus = LONG_TERM_CONFIG.get("focus_timeframes", [])
@@ -140,7 +140,7 @@ class TelegramBotHandler:
             chat_id = self.admin_chat_id
             
         async def analysis_task():
-            # تعریف واحد Quick Analysis (شکاف ۱۷) — همان implementation سرویس.
+            # تعریف واحد Quick Analysis (قاعده ۱۷) — همان implementation سرویس.
             signals = await self.trading_service.run_quick_analysis(
                 QUICK_TIMEFRAMES
             )
@@ -182,7 +182,7 @@ class TelegramBotHandler:
         )
 
     def _no_signals_text(self, base_text: str) -> str:
-        """تفکیک معنایی شکاف ۳۰: اگر آخرین اجرا خطا داشته، «بدون سیگنال»
+        """تفکیک معنایی قاعده ۳۰: اگر آخرین اجرا خطا داشته، «بدون سیگنال»
         با «تحلیل ناقص» قاطی نمی‌شود."""
         if getattr(self.trading_service, "last_errors", 0):
             return (
@@ -389,7 +389,7 @@ class TelegramBotHandler:
             f"💰 *Predicted Profit:* `{predicted_profit_str}`"
         )
 
-        # شکاف ۳۴: ml_confidence در پیام نمایش داده می‌شود (مقیاس ۰ تا ۱
+        # قاعده ۳۴: ml_confidence در پیام نمایش داده می‌شود (مقیاس ۰ تا ۱
         # به درصد). None یعنی ML اجرا نشده و خطی اضافه نمی‌شود.
         try:
             ml_conf = getattr(signal, "ml_confidence", None)
@@ -398,7 +398,7 @@ class TelegramBotHandler:
                 if ml_pct <= 1.0:
                     ml_pct *= 100.0
                 ml_str = escape_markdown_v2(f"{ml_pct:.1f}")
-                main_info += f"\n🤖 *ML Confidence:* `{ml_str}%`"
+                main_info += f"\n🤖 *Heuristic Confidence:* `{ml_str}%`"
         except (TypeError, ValueError):
             pass
 
@@ -549,7 +549,7 @@ class TelegramBotHandler:
 
         if signal.dynamic_levels:
             levels = signal.dynamic_levels
-            # شکاف ۳۸: هر مقدار قبل از رندر در متغیر محلی جداگانه استخراج
+            # قاعده ۳۸: هر مقدار قبل از رندر در متغیر محلی جداگانه استخراج
             # می‌شود؛ f-string تودرتو با همان کوتیشن فقط از Python 3.12+
             # (PEP 701) مجاز است و زیر آن کل ماژول import نمی‌شود.
             prim_entry = escape_markdown_v2(f"{levels.get('primary_entry', 0):.8f}")

@@ -503,13 +503,24 @@ class XGBoostModel(BaseModel):
                 )
                 return False
 
-            self.model.fit(
-                X_train.values,
-                y_train.values,
-                eval_set=[(X_val.values, y_val.values)],
-                verbose=False,
-                early_stopping_rounds=10,
-            )
+            fit_kwargs = {
+                "eval_set": [(X_val.values, y_val.values)],
+                "verbose": False,
+            }
+            try:
+                self.model.fit(
+                    X_train.values,
+                    y_train.values,
+                    early_stopping_rounds=10,
+                    **fit_kwargs,
+                )
+            except TypeError as exc:
+                if "early_stopping_rounds" not in str(exc):
+                    raise
+                self.logger.debug(
+                    "XGBoost API does not support early stopping; fitting without it."
+                )
+                self.model.fit(X_train.values, y_train.values, **fit_kwargs)
 
             self.is_trained = True
             self.last_training_date = pd.Timestamp.now(tz="UTC")

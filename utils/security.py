@@ -1,6 +1,8 @@
 import base64
 import hashlib
+import hmac
 import os
+from pathlib import Path
 from typing import Optional
 
 from cryptography.fernet import Fernet
@@ -67,21 +69,36 @@ class KeyEncryptor:
 
 def hash_data(data: str, salt: str = None) -> str:
     salt_val = salt or os.urandom(16).hex()
-    hashed = hashlib.pbkdf2_hmac("sha256", data.encode(), salt_val.encode(), 100000)
+    hashed = hashlib.pbkdf2_hmac("sha256", data.encode(), salt_val.encode(), 480000)
     return f"{salt_val}${hashed.hex()}"
 
 
 def verify_hashed_data(stored_hash: str, provided_data: str) -> bool:
     try:
         salt, h = stored_hash.split("$")
-        return h == hashlib.pbkdf2_hmac("sha256", provided_data.encode(), salt.encode(), 100000).hex()
+        candidate = hashlib.pbkdf2_hmac(
+            "sha256", provided_data.encode(), salt.encode(), 480000
+        ).hex()
+        return hmac.compare_digest(h, candidate)
     except (ValueError, TypeError):
         return False
 
+
 def get_password_from_key_manager() -> Optional[str]:
+    secret_path = Path("/run/secrets/SECRET_ENCRYPTION_PASSWORD")
+    try:
+        password = secret_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        password = ""
+    except OSError as exc:
+        logger.warning(f"Unable to read encryption password secret: {exc}")
+        password = ""
+    if password:
+        logger.info("Loaded encryption password from mounted secret.")
+        return password
+
     password = os.environ.get("SECRET_ENCRYPTION_PASSWORD")
     if password:
-        logger.info("Loaded encryption password from secure key manager (placeholder).")
+        logger.info("Loaded encryption password from protected environment variable.")
         return password
     return None
-

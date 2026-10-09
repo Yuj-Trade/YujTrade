@@ -46,9 +46,12 @@ class SourceHealthMonitor:
         elif s.fail_count >= 10:
             s.ok = False
         if not s.ok:
+            previous = self._cooldowns.get(name)
             self._cooldowns[name] = min(
                 3600.0,
-                max(self._cooldown_seconds, self._cooldowns.get(name, self._cooldown_seconds) * 2),
+                self._cooldown_seconds
+                if previous is None
+                else max(self._cooldown_seconds, previous * 2),
             )
 
     def is_healthy(self, name: str) -> bool:
@@ -60,6 +63,20 @@ class SourceHealthMonitor:
         ):
             return True
         return s.ok
+
+    def can_probe(self, name: str) -> bool:
+        status = self._sources.get(name)
+        if status is None or status.ok:
+            return False
+        return self._clock() - status.last_check >= self._cooldowns.get(
+            name, self._cooldown_seconds
+        )
+
+    def begin_probe(self, name: str) -> bool:
+        if not self.can_probe(name):
+            return False
+        self._sources[name].last_check = self._clock()
+        return True
 
     def probe_result(self, name: str, ok: bool, error: str = "") -> None:
         if ok:

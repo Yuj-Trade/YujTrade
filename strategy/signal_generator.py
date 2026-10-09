@@ -22,6 +22,10 @@ from common.utils import (
     detect_market_regime,
 )
 from common.constants import LONG_TERM_CONFIG, AnalysisComponent
+from application.decide import decide
+from application.snapshot import build_snapshot
+from domain.types import Candle, GateConfig, Reject
+from data.warehouse import IndicatorHistoryWarehouse
 
 
 class SignalGenerator:
@@ -35,7 +39,12 @@ class SignalGenerator:
         self.model_manager = model_manager
         self.config_manager = config_manager
 
-        self.feature_engineer = FeatureEngineer(self.config_manager)
+        history_path = self.config_manager.get(
+            "indicator_history_path", "runs/indicator_history.db"
+        )
+        self.feature_engineer = FeatureEngineer(
+            self.config_manager, IndicatorHistoryWarehouse(history_path)
+        )
         self.market_analyzer = MarketConditionAnalyzer()
         self.scorer = AnalysisScorer(self.config_manager)
         self.data_validator = DataQualityChecker()
@@ -63,13 +72,13 @@ class SignalGenerator:
         include_external: bool = True,
         include_ml: bool = True,
     ) -> Optional[TradingSignal]:
-        """قرارداد خطای واحد (شکاف ۳۰):
+        """قرارداد خطای واحد (قاعده ۳۰):
         - بازگرداندن None یعنی «سیگنالی نیست» (HOLD، رد RR، رد multi-TF ندارد
           — آن در TradingService است): تصمیم سالم تحلیل، نه خطا.
         - raise یعنی «تحلیل شکست خورد» (داده بی‌کیفیت، خطای دیتا/محاسبه) و
           باید به جمع‌کننده برسد، نه اینکه به None تبدیل شود.
         include_external/include_ml: برای بک‌تست تاریخی False می‌شوند تا
-        داده لحظه‌ای (live) وارد تحلیل گذشته نشود (شکاف ۱۴). تولید زنده
+        داده لحظه‌ای (live) وارد تحلیل گذشته نشود (قاعده ۱۴). تولید زنده
         همیشه True است و رفتار آن بدون تغییر می‌ماند."""
         analysis_timestamp = datetime.now(timezone.utc)
 
@@ -77,7 +86,7 @@ class SignalGenerator:
             data, timeframe
         )
         if not is_valid:
-            # نقش Signal (شکاف ۲۳): داده آماده تحلیل نیست → شکست تحلیل، نه «بدون سیگنال».
+            # نقش Signal (قاعده ۲۳): داده آماده تحلیل نیست → شکست تحلیل، نه «بدون سیگنال».
             raise InsufficientDataError(
                 f"Data quality check failed for {symbol}-{timeframe}: {quality_msg}"
             )
@@ -89,7 +98,7 @@ class SignalGenerator:
             data, timeframe
         )
 
-        # شکاف ۶: Market Data → Market Regime → Existing Weight Adjustment → Scoring
+        # قاعده ۶: Market Data → Market Regime → Existing Weight Adjustment → Scoring
         base_weights = self.config_manager.get_indicator_weights(timeframe) or {}
         regime_weights = self.adjust_weights_by_regime(
             dict(base_weights), market_regime
@@ -210,6 +219,49 @@ class SignalGenerator:
             threshold_used=float(threshold),
             threshold_regime=threshold_regime,
         )
+        signal.market_context["ml_predictions"] = ml_predictions
+
+        candles = [
+            Candle(
+                timestamp=timestamp.to_pydatetime()
+                if hasattr(timestamp, "to_pydatetime")
+                else timestamp,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row.get("volume", 0.0)),
+            )
+            for timestamp, row in data.tail(500).iterrows()
+        ]
+        gate_config = GateConfig(
+            min_confidence=0.0,
+            min_trend_strength="WEAK",
+            min_volume_surge=0.0,
+        )
+        decision = decide(
+            build_snapshot(
+                symbol,
+                timeframe,
+                candles,
+                score=float(final_score),
+                confidence=float(abs(final_score)),
+                side=signal_type.value,
+                entry=signal.entry_price,
+                stop=signal.stop_loss,
+                target=signal.exit_price,
+                trend_strength=str(getattr(market_context.trend_strength, "value", market_context.trend_strength)),
+                volume_surge=float(market_context.volume_ratio),
+                details={"ml_predictions": ml_predictions},
+            ),
+            gate_config,
+            min_score=float("-inf"),
+        )
+        if isinstance(decision, Reject):
+            logger.warning(
+                f"Application decision rejected malformed {symbol}-{timeframe}: "
+                f"{decision.reason.value}"
+            )
 
         return signal
 

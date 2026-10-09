@@ -154,7 +154,7 @@ BAD_RR_LEVELS = {
 # ─── generate_signal Core Tests ───
 
 class TestGenerateSignalErrorContract:
-    """قرارداد خطای واحد (شکاف ۳۰):
+    """قرارداد خطای واحد (قاعده ۳۰):
     - بازگرداندن None = «سیگنالی نیست» (HOLD، رد RR) — تصمیم سالم تحلیل.
     - raise = «تحلیل شکست خورد» (داده بی‌کیفیت) — باید به جمع‌کننده برسد.
     """
@@ -167,7 +167,7 @@ class TestGenerateSignalErrorContract:
     @pytest.mark.asyncio
     async def test_missing_columns_raises(self, generator):
         """فقدان ستون‌های الزامی (داده بلند، رد نشده به‌خاطر کمبود ردیف) →
-        raise — نه None (شکاف ۳۰)."""
+        raise — نه None (قاعده ۳۰)."""
         long_missing = pd.DataFrame(
             {"open": [50000.0] * 600, "high": [50500.0] * 600},
             index=pd.date_range(
@@ -332,7 +332,7 @@ class TestGenerateSignalErrorContract:
 # ─── adjust_weights_by_regime Tests (gap 6) ───
 
 class TestAdjustWeightsByRegime:
-    """شکاف ۶: وزن‌دهی بر اساس رژیم بازار."""
+    """قاعده ۶: وزن‌دهی بر اساس رژیم بازار."""
 
     BASE = {
         "rsi": 10.0, "stoch": 8.0, "cci": 6.0, "williams_r": 4.0,
@@ -590,7 +590,7 @@ class TestGatherExternalData:
 # ─── Market Regime Tests (فاز ۱۲ — common/utils.py::detect_market_regime) ───
 
 class TestMarketRegime:
-    """شکاف ۶/۱۲: کلیدهای خروجی detect_market_regime دقیقا همان چیزی است که
+    """قاعده ۶/۱۲: کلیدهای خروجی detect_market_regime دقیقا همان چیزی است که
     adjust_weights_by_regime (market_type) و مسیر آستانه (volatility_regime)
     در SignalGenerator می‌خوانند.
 
@@ -621,7 +621,7 @@ class TestMarketRegime:
 
     def test_output_feeds_adjust_weights_by_regime(self, generator, valid_1h_ohlcv):
         """خروجی واقعی detect_market_regime مستقیم به‌عنوان ورودی
-        adjust_weights_by_regime مصرف می‌شود (شکاف ۶) — بدون هیچ transform."""
+        adjust_weights_by_regime مصرف می‌شود (قاعده ۶) — بدون هیچ transform."""
         for lookback in (50, 150):
             regime = detect_market_regime(valid_1h_ohlcv, lookback=lookback)
             assert regime["market_type"] in ("trending", "ranging", "transitional")

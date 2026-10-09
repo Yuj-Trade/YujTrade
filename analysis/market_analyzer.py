@@ -56,7 +56,7 @@ class MarketConditionAnalyzer:
         
         candle_patterns = self.pattern_analyzer.detect_patterns(data)
 
-        # شکاف ۳۵: detect_divergence به analyze_market_condition وصل است —
+        # قاعده ۳۵: detect_divergence به analyze_market_condition وصل است —
         # واگرایی RSI روی همان داده محاسبه و به candle_patterns اضافه می‌شود.
         # برچسب‌ها ("bullish_divergence_A" و...) عمداً با الگوی "(bullish)" در
         # scorer هم‌پوشانی ندارند، پس امتیاز موجود تغییر نمی‌کند؛ فقط در خروجی

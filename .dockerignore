@@ -1,0 +1,16 @@
+.env
+secret.salt
+*.db
+*.pkl
+*.keras
+calibration.json
+signal_history.json
+models/
+artifacts/
+runs/
+reports/
+.git/
+.pytest_cache/
+__pycache__/
+skills/
+Main/

@@ -40,13 +40,13 @@ from common.core import (
 
 
 class MarketDataProvider:
-    """قرارداد مالکیت Cache (شکاف ۲۴) — بدون double caching هم‌کلید:
+    """قرارداد مالکیت Cache (قاعده ۲۴) — بدون double caching هم‌کلید:
     - Provider فقط کلید یکپارچه OHLCV (ohlcv_key با source="unified") را کش می‌کند.
     - هر Fetcher فقط کش دامنه خودش (derivatives/macro/indices/news/
       fundamental/trending/...) را با کلید نام‌منبع خودش مدیریت می‌کند.
     - متدهای get_*_data خروجی Fetcherها را دوباره کش نمی‌کنند؛ نتیجه
       تجمیعی MarketIndicesFetcher هم کش نمی‌شود (اجزا قبلاً کش شده‌اند).
-    قرارداد خطا (شکاف ۳۰):
+    قرارداد خطا (قاعده ۳۰):
     - fetch_ohlcv_data در شکست یکپارچگی raise می‌کند (InsufficientDataError).
     - متدهای get_* enrichment اختیاری‌اند: None یعنی «در دسترس نیست»
       (تحلیل با degradation ادامه می‌یابد)، نه «شکست»."""
@@ -185,7 +185,7 @@ class MarketDataProvider:
         logger.info("MarketDataProvider initialization completed.")
 
     async def close(self):
-        """مالک Fetcherها (شکاف ۲۵): همه Fetcherهای self.fetchers را می‌بندد
+        """مالک Fetcherها (قاعده ۲۵): همه Fetcherهای self.fetchers را می‌بندد
         (idempotent). session و Redis متعلق به ResourceManager‌اند و اینجا
         بسته نمی‌شوند."""
         if self._is_closed:
@@ -230,11 +230,11 @@ class MarketDataProvider:
         self, symbol: str, timeframe: str, limit: int = 1000,
         bypass_cache: bool = False,
     ) -> Optional[pd.DataFrame]:
-        """نقش Provider در کیفیت داده (شکاف ۲۳): یکپارچگی Source/Data —
+        """نقش Provider در کیفیت داده (قاعده ۲۳): یکپارچگی Source/Data —
         فقط بهترین Source با امتیاز مثبت برگردانده می‌شود، وگرنه
         InsufficientDataError. آمادگی تحلیل (Signal) و نیازهای مدل (Model)
         در لایه‌های خودشان بررسی می‌شوند، نه اینجا.
-        bypass_cache=True (شکاف ۴۴): خواندن/نوشتن کش Redis دور زده می‌شود؛
+        bypass_cache=True (قاعده ۴۴): خواندن/نوشتن کش Redis دور زده می‌شود؛
         برای قیمت مرجع reconciliation که باید تازه باشد، نه کهنه از TTL."""
         if self._is_closed:
             raise ObjectClosedError("MarketDataProvider is closed")
@@ -255,8 +255,15 @@ class MarketDataProvider:
                             df["timestamp"], unit="ms", utc=True
                         )
                         df.set_index("timestamp", inplace=True)
-                    is_valid, _ = self.data_quality_checker.validate_data_quality(
-                        df, timeframe
+                    try:
+                        df = self.data_quality_checker.repair_ohlcv(df, timeframe)
+                    except ValueError as exc:
+                        logger.warning(f"Cached OHLCV rejected: {exc}")
+                        df = None
+                    is_valid, _ = (
+                        self.data_quality_checker.validate_data_quality(df, timeframe)
+                        if df is not None
+                        else (False, "OHLCV repair failed")
                     )
                     if not is_valid:
                         logger.debug(
@@ -315,6 +322,14 @@ class MarketDataProvider:
                         f"No timestamp column in data from {source_name}, skipping"
                     )
                     continue
+
+            try:
+                res_df = self.data_quality_checker.repair_ohlcv(res_df, timeframe)
+            except ValueError as exc:
+                logger.warning(
+                    f"Source {source_name} rejected after OHLCV repair check: {exc}"
+                )
+                continue
 
             score = self._get_data_quality_score(res_df, timeframe)
             logger.debug(

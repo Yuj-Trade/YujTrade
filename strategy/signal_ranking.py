@@ -7,7 +7,7 @@ from common.core import SignalType, TradingSignal
 class SignalRanking:
     @staticmethod
     def _ml_multiplier(signal: TradingSignal) -> float:
-        """شکاف ۳۴: ml_confidence در رتبه‌بندی مصرف می‌شود — ضریب ملایم
+        """قاعده ۳۴: ml_confidence در رتبه‌بندی مصرف می‌شود — ضریب ملایم
         ‎±۵٪ حول خنثی. None (بدون ML) یعنی 1.0. مقیاس ml_confidence صفر تا
         یک است (میانگین confidence مدل‌ها)؛ اگر مقداری بالای ۱ رسید (۰ تا
         ۱۰۰)، تقسیم بر ۱۰۰ می‌شود."""

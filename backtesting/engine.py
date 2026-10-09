@@ -51,13 +51,13 @@ class BacktraderStrategy(bt.Strategy):
         if not trade.isclosed:
             return
         self.log(f"OPERATION PROFIT, GROSS {trade.pnl:.2f}, NET {trade.pnlcomm:.2f}")
-        # نتیجه واقعی معامله → چرخه رهگیری (شکاف ۱۲/۱۳/۱۴). resolve و
+        # نتیجه واقعی معامله → چرخه رهگیری (قاعده ۱۲/۱۳/۱۴). resolve و
         # فراخوانی‌های کالیبراتور بعد از پایان cerebro.run به‌صورت همگام
         # flush می‌شوند تا callback همگام backtrader با lifecycle async
         # تولید تداخل نکند.
         if self._open_trade and self.owner_engine is not None:
             try:
-                # شکاف ۳۷: فراخوانی بدون await، coroutine را دور می‌ریزد و
+                # قاعده ۳۷: فراخوانی بدون await، coroutine را دور می‌ریزد و
                 # هیچ سیگنالی resolve نمی‌شود؛ resolve در _flush_calibration
                 # انجام می‌شود (تنها نقطه قابل await در بک‌تست).
                 self.owner_engine.pending_outcomes.append(
@@ -129,9 +129,9 @@ class BacktraderStrategy(bt.Strategy):
 
 
 class BacktestingEngine:
-    """موتور بک‌تست هم‌مسیر با Production (شکاف ۱۵): کاملاً async و بدون
+    """موتور بک‌تست هم‌مسیر با Production (قاعده ۱۵): کاملاً async و بدون
     run_until_complete؛ از همان lifecycle سیستم استفاده می‌کند.
-    سیگنال‌های تاریخی در حالت خالص محاسبه می‌شوند (شکاف ۱۴):
+    سیگنال‌های تاریخی در حالت خالص محاسبه می‌شوند (قاعده ۱۴):
     بدون external لحظه‌ای و بدون ML زنده."""
 
     def __init__(self, trading_service):
@@ -157,7 +157,7 @@ class BacktestingEngine:
         """
         Generates signals for the entire dataset at once to speed up backtesting.
         حالت تاریخی خالص: include_external=False و include_ml=False تا داده
-        لحظه‌ای Production وارد تحلیل گذشته نشود (شکاف ۱۴).
+        لحظه‌ای Production وارد تحلیل گذشته نشود (قاعده ۱۴).
         """
         if self.full_data is None:
             return pd.DataFrame()
@@ -177,7 +177,7 @@ class BacktestingEngine:
             )
 
         signals = await asyncio.gather(*tasks, return_exceptions=True)
-        # قرارداد شکاف ۳۰: None یعنی «سیگنالی نیست» (رد می‌شود)، Exception
+        # قرارداد قاعده ۳۰: None یعنی «سیگنالی نیست» (رد می‌شود)، Exception
         # یعنی «تحلیل شکست خورد» (لاگ می‌شود) — فقط سیگنال‌های واقعی می‌مانند.
         genuine = []
         for s in signals:
@@ -206,7 +206,7 @@ class BacktestingEngine:
         return signals_df
 
     async def _flush_calibration(self):
-        """حلقه بازخورد کالیبراسیون (شکاف ۱۲) + lifecycle رهگیری (شکاف ۱۳):
+        """حلقه بازخورد کالیبراسیون (قاعده ۱۲) + lifecycle رهگیری (قاعده ۱۳):
         هر نتیجه pending اول resolve می‌شود (record → resolved؛ record/resolve
         async‌اند و callback همگام backtrader قابل await نیست، پس این تنها
         نقطه صحیح resolve در بک‌تست است) و سپس نتیجه واقعی به calibrator

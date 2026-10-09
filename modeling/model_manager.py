@@ -11,6 +11,7 @@ import redis
 from config.logger import logger
 from common.exceptions import ObjectClosedError
 from modeling.models import BaseModel, LSTMModel, XGBoostModel
+from modeling.artifacts import ArtifactRegistry
 
 
 class ModelDataProvider(Protocol):
@@ -25,12 +26,12 @@ class ModelManager:
         data_provider: ModelDataProvider,
         model_path: str = "models",
         redis_client: Optional[redis.Redis] = None,
-        auto_train_on_predict: bool = True,
+        auto_train_on_predict: bool = False,
     ):
         self.model_path = Path(model_path)
         self.model_path.mkdir(parents=True, exist_ok=True)
         self.redis_client = redis_client
-        # شکاف ۱۱: مالکیت صریح Training. True = رفتار فعلی (آموزش ضمنی
+        # قاعده ۱۱: مالکیت صریح Training. True = رفتار فعلی (آموزش ضمنی
         # هنگام Prediction)؛ False = Prediction فقط از lifecycle موجود
         # تبعیت می‌کند و مالک آموزش مسیر صریح است.
         self.auto_train_on_predict = auto_train_on_predict
@@ -41,6 +42,7 @@ class ModelManager:
         self._training_executor = None
         self._prediction_executor = None
         self.data_provider = data_provider
+        self.artifacts = ArtifactRegistry(self.model_path.parent / "artifacts")
 
     def _check_if_closed(self):
         if self._is_closed:
@@ -97,6 +99,9 @@ class ModelManager:
 
         model_dir = self.model_path / model_type
         model_class = self._get_model_class(model_type)
+        artifact_dir = self.artifacts.current_dir(model_type, symbol, timeframe)
+        if artifact_dir is not None:
+            model_dir = artifact_dir
         model_path_str = str(model_dir)
 
         try:
@@ -120,6 +125,13 @@ class ModelManager:
                             await self._run_in_executor(
                                 model.load, executor_type="prediction"
                             )
+                            samples = self.artifacts.load_calibration(
+                                model_type, symbol, timeframe
+                            )
+                            if samples:
+                                model.calibrator.calibration_data[
+                                    f"{model_type}_{symbol}_{timeframe}"
+                                ] = samples
                             self.logger.info(
                                 f"Loaded existing {model_type.upper()} model for {key}"
                             )
@@ -174,6 +186,15 @@ class ModelManager:
                 model.fit, data, executor_type="training", **kwargs
             )
             if success:
+                model_file, scaler_file = model._get_model_paths(
+                    model_type, "keras" if model_type == "lstm" else "json"
+                )
+                self.artifacts.create_version(
+                    model_type,
+                    symbol,
+                    timeframe,
+                    [model_file, scaler_file],
+                )
                 self.logger.info(
                     f"Successfully trained {model_type.upper()} model for {symbol}-{timeframe}"
                 )
@@ -276,7 +297,7 @@ class ModelManager:
     async def predict_with_confidence(
         self, model_type: str, symbol: str, timeframe: str
     ) -> Optional[Dict[str, float]]:
-        """قرارداد شکاف ۳۰: None یعنی «مدل در دسترس نیست» (آموزش‌ندیده/بی‌داده/
+        """قرارداد قاعده ۳۰: None یعنی «مدل در دسترس نیست» (آموزش‌ندیده/بی‌داده/
         پیش‌بینی نامعتبر) و مؤلفه ML در Scorer به صفر degrade می‌شود — نه شکست
         تحلیل. خطاهای غیرمنتظره منتشر می‌شوند (به‌جز لغو task)."""
         self._check_if_closed()
@@ -316,7 +337,8 @@ class ModelManager:
         )
         if data is None or data.empty:
             self.logger.warning(
-                f"Empty data for prediction {model_type} on {symbol}-{timeframe}"
+                f"model_unavailable: empty data for prediction {model_type} "
+                f"on {symbol}-{timeframe}"
             )
             return None
 
@@ -325,6 +347,10 @@ class ModelManager:
                 model.predict, data, executor_type="prediction"
             )
             if prediction_result is None or len(prediction_result) != 2:
+                self.logger.warning(
+                    f"model_unavailable: invalid prediction result for {model_type} "
+                    f"on {symbol}-{timeframe}"
+                )
                 return None
 
             prediction, uncertainty = prediction_result
@@ -334,6 +360,10 @@ class ModelManager:
                 or np.isnan(prediction[0])
                 or np.isinf(prediction[0])
             ):
+                self.logger.warning(
+                    f"model_unavailable: invalid prediction for {model_type} "
+                    f"on {symbol}-{timeframe}"
+                )
                 return None
 
             current_price = data["close"].iloc[-1]
@@ -404,9 +434,15 @@ class ModelManager:
         if model and model.calibrator:
             model_name = f"{model_type}_{symbol}_{timeframe}"
             model.calibrator.add_prediction(model_name, confidence, success)
+            self.artifacts.save_calibration(
+                model_type,
+                symbol,
+                timeframe,
+                model.calibrator.calibration_data.get(model_name, []),
+            )
 
     async def shutdown(self):
-        """مالک مدل‌ها و executorها (شکاف ۲۵). کش مدل‌ها و ThreadPoolها اینجا
+        """مالک مدل‌ها و executorها (قاعده ۲۵). کش مدل‌ها و ThreadPoolها اینجا
         آزاد می‌شوند (idempotent)؛ منابع بیرونی (Redis/session) نه."""
         if self._is_closed:
             return

@@ -4,6 +4,29 @@ version = "6.0.0"
 description = "Long-term crypto trading signal bot with Telegram delivery"
 requires-python = ">=3.10,<3.14"
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = [
+    "app*",
+    "analysis*",
+    "application*",
+    "backtesting*",
+    "common*",
+    "config*",
+    "data*",
+    "domain*",
+    "features*",
+    "modeling*",
+    "services*",
+    "strategy*",
+    "trading*",
+    "utils*",
+]
+exclude = ["Main*", "skills*", "copyfile*", "logs*", "models*", "runs*", "tests*"]
+
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",

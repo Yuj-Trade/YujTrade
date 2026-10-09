@@ -1,10 +1,11 @@
 from typing import Dict, Any, Optional
 import pandas as pd
+from config.logger import logger
 import numpy as np
 
 
 class IndicatorCorrelationManager:
-    """تصمیم معماری (شکاف ۷): این ابزار بخشی از Pipeline زنده است، اما فقط
+    """تصمیم معماری (قاعده ۷): این ابزار بخشی از Pipeline زنده است، اما فقط
     با سری‌های تاریخی واقعی اندیکاتورها کار می‌کند. بدون history، ماتریس
     ساخته نمی‌شود و وزن‌ها خنثی (1.0) برمی‌گردند — هیچ داده مصنوعی/random
     تولید نمی‌شود. مسیر آفلاین/تحقیقاتی می‌تواند history واقعی بدهد."""
@@ -27,6 +28,10 @@ class IndicatorCorrelationManager:
         self.correlation_matrix = None
 
         if not history:
+            logger.warning(
+                "decorrelation_disabled: historical indicator series unavailable; "
+                "neutral weights applied."
+            )
             return
 
         aligned = {}

@@ -13,19 +13,20 @@ from features.indicators.factory import IndicatorFactory
 
 
 class FeatureEngineer:
-    """مرز دو مسیر (شکاف ۹):
+    """مرز دو مسیر (قاعده ۹):
     - مسیر Signal: get_last_indicator_results() → AnalysisScorer (بدون scaler).
     - مسیر ML: create_features() → scale_features() → create_sequences() → Model.
     هر دو مسیر از یک primitive واحد (_compute_indicator) استفاده می‌کنند تا
     مدیریت متناقض ابزار واحد رخ ندهد. scaler و feature_columns فقط متعلق
     به مسیر ML هستند و مسیر Signal به آنها دست نمی‌زند."""
 
-    def __init__(self, config_manager: ConfigManager = None):
+    def __init__(self, config_manager: ConfigManager = None, history_provider=None):
         self.config_manager = config_manager if config_manager else ConfigManager()
         self.indicator_factory = IndicatorFactory()
         self.scaler = MinMaxScaler(feature_range=(0, 1))
         self.feature_columns: Optional[List[str]] = None
         self.correlation_manager = IndicatorCorrelationManager()
+        self.history_provider = history_provider
 
     def _compute_indicator(
         self, indicator_name: str, data: pd.DataFrame
@@ -182,8 +183,20 @@ class FeatureEngineer:
                 continue
             results[name] = {"result": indicator_result}
 
-        # تصمیم شکاف ۷: همبستگی فقط با history واقعی؛ در مسیر زنده وزن خنثی.
-        self.correlation_manager.compute_correlations(results)
+        # تصمیم قاعده ۷: همبستگی فقط با history واقعی؛ در مسیر زنده وزن خنثی.
+        if self.history_provider is None:
+            history = None
+        elif hasattr(self.history_provider, "read"):
+            history = self.history_provider.read(results, 500)
+        else:
+            history = self.history_provider(list(results), 500)
+        self.correlation_manager.compute_correlations(results, history)
+        if self.history_provider is not None:
+            timestamp = data.index[-1].isoformat()
+            for name, item in results.items():
+                value = item["result"].value
+                if hasattr(self.history_provider, "write"):
+                    self.history_provider.write(name, timestamp, float(value))
         return results
 
     def get_decorrelation_weights(self, results: Dict[str, Any]) -> Dict[str, float]:

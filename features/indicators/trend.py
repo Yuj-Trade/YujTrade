@@ -195,7 +195,7 @@ class AroonIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
             raise InsufficientDataError(f"AroonIndicator requires at least {self.period} data points.")
-        aroon_df = aroon(close=data["close"], length=self.period)
+        aroon_df = aroon(high=data["high"], low=data["low"], length=self.period)
         if aroon_df is None or aroon_df.empty or aroon_df.iloc[-1].isna().any():
             raise InsufficientDataError("Aroon calculation resulted in NaN.")
 
