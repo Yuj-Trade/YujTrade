@@ -21,6 +21,7 @@ from common.core import TradingSignal
 from common.constants import LONG_TERM_CONFIG
 from config.logger import logger
 from services.trading_service import TradingService
+from trading.risk_manager import build_risk_config
 
 
 # تعریف واحد Full Analysis (شکاف ۱۶): همان focus_timeframes سرویس.
@@ -76,6 +77,12 @@ class TelegramBotHandler:
     def _register_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("status", self.status))
+        self.application.add_handler(CommandHandler("signals", self.signals_command))
+        self.application.add_handler(CommandHandler("paper", self.paper_command))
+        self.application.add_handler(CommandHandler("performance", self.performance_command))
+        self.application.add_handler(CommandHandler("risk", self.risk_command))
+        self.application.add_handler(CommandHandler("portfolio", self.portfolio_command))
+        self.application.add_handler(CommandHandler("health", self.health_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
@@ -191,6 +198,92 @@ class TelegramBotHandler:
             await update.message.reply_text(
                 escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
             )
+
+    async def signals_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        args = context.args or []
+        timeframe = args[0] if args else ""
+        try:
+            signals = await self.trading_service.run_quick_analysis([timeframe] if timeframe else ["1h"])
+        except Exception:
+            signals = []
+        if not signals:
+            await update.message.reply_text(escape_markdown_v2("No signals right now."), parse_mode=ParseMode.MARKDOWN_V2)
+            return
+        for signal in signals[:5]:
+            for message in self.format_signal_message(signal):
+                await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def paper_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        timeframe = (context.args or ["1h"])[0]
+        try:
+            signals = await self.trading_service.run_quick_analysis([timeframe])
+        except Exception:
+            signals = []
+        if not signals:
+            await update.message.reply_text(
+                escape_markdown_v2("No signals available for paper execution."),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+        for signal in signals[:5]:
+            result = await self.trading_service.execute_signal(signal, mode="paper")
+            status = "accepted" if result.get("ok") else "rejected"
+            await update.message.reply_text(
+                escape_markdown_v2(f"Paper order {status}: {signal.symbol} {signal.timeframe}"),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+
+    async def performance_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        try:
+            summary = self.trading_service.signal_tracker.get_performance_summary()
+        except Exception:
+            summary = {}
+        text = f"Total: {summary.get('total', 0)} | Win rate: {summary.get('win_rate', 0.0):.1f}% | Pending: {summary.get('pending', 0)}"
+        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def risk_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        try:
+            cfg = build_risk_config(self.config_manager)
+            text = f"Risk per trade: {cfg.risk_per_trade_pct}% | Max exposure: {cfg.max_portfolio_exposure_pct}% | Max positions: {cfg.max_concurrent_positions}"
+        except Exception:
+            text = "Risk config unavailable."
+        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def portfolio_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        try:
+            snap = await self.trading_service.portfolio_snapshot()
+            text = f"Equity: {snap.get('equity', 0):.2f} | Cash: {snap.get('cash', 0):.2f} | Exposure: {snap.get('exposure_pct', 0):.1f}% | Open: {snap.get('open_positions', 0)} | Unrealized: {snap.get('unrealized_pnl', 0):.2f} | Realized: {snap.get('realized_pnl', 0):.2f}"
+        except Exception:
+            text = "Portfolio unavailable."
+        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def health_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        errors = getattr(self.trading_service, "last_errors", 0)
+        try:
+            sources = self.trading_service.market_data_provider.source_health.snapshot()
+            n_ok = sum(1 for v in sources.values() if v.get("ok"))
+            src_text = f"Sources: {n_ok}/{len(sources)} healthy"
+        except Exception:
+            src_text = "Sources: n/a"
+        try:
+            snap = await self.trading_service.portfolio_snapshot()
+            pf_text = f"Equity: {snap.get('equity', 0):.0f} | Exposure: {snap.get('exposure_pct', 0):.1f}% | Open: {snap.get('open_positions', 0)}"
+        except Exception:
+            pf_text = "Portfolio: n/a"
+        text = f"Health OK. Last errors: {errors} | {src_text} | {pf_text}"
+        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._is_admin(update, context):

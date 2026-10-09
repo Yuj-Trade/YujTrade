@@ -283,16 +283,15 @@ class ModelManager:
 
         model = await self.get_model(model_type, symbol, timeframe)
         if not model:
-            self.logger.error(
-                f"Failed to get model for prediction: {model_type} on {symbol}-{timeframe}"
+            self.logger.warning(
+                f"model_unavailable: no artifact for {model_type} on {symbol}-{timeframe}"
             )
             return None
 
         if not model.is_trained:
             if not self.auto_train_on_predict:
                 self.logger.info(
-                    f"Model {model_type} for {symbol}-{timeframe} is not trained "
-                    "and auto_train_on_predict is disabled. Skipping prediction."
+                    f"model_unavailable: {model_type} for {symbol}-{timeframe} is not trained"
                 )
                 return None
             self.logger.info(

@@ -4,10 +4,35 @@ version = "6.0.0"
 description = "Long-term crypto trading signal bot with Telegram delivery"
 requires-python = ">=3.10,<3.14"
 
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.13.1",
+    "mypy==1.18.2",
+    "pre-commit==4.3.0",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 markers = [
     "talib: test requires TA-Lib",
     "integration: integration test",
     "slow: slow test",
+    "ml: test requires machine-learning artifacts",
 ]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["Main", "skills", "copyfile"]
+lint.select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["domain"]
+
+[[tool.mypy.overrides]]
+module = ["*"]
+ignore_errors = true

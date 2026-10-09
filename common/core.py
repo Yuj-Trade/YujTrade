@@ -1,7 +1,83 @@
-from dataclasses import dataclass, field
-from datetime import datetime
+﻿from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+
+class OrderSide(Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(Enum):
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+
+
+class OrderStatus(Enum):
+    PENDING = "pending"
+    OPEN = "open"
+    FILLED = "filled"
+    PARTIAL = "partial"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class PositionSide(Enum):
+    LONG = "long"
+    SHORT = "short"
+
+
+@dataclass
+class Order:
+    order_id: str
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    quantity: float
+    price: Optional[float] = None
+    stop_price: Optional[float] = None
+    status: OrderStatus = OrderStatus.PENDING
+    filled_quantity: float = 0.0
+    average_fill_price: float = 0.0
+    fee_paid: float = 0.0
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    signal_id: Optional[str] = None
+    timeframe: Optional[str] = None
+    paper: bool = True
+    notes: str = ""
+
+
+@dataclass
+class Position:
+    position_id: str
+    symbol: str
+    side: PositionSide
+    quantity: float
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    opened_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    signal_id: Optional[str] = None
+    timeframe: Optional[str] = None
+    leverage: float = 1.0
+    risk_amount: float = 0.0
+    fees_paid: float = 0.0
+
+
+@dataclass
+class RiskDecision:
+    allowed: bool
+    position_size: float = 0.0
+    risk_amount: float = 0.0
+    leverage: float = 1.0
+    reason: str = ""
+    checks: Dict[str, Any] = field(default_factory=dict)
+
 
 
 class SignalType(Enum):

@@ -16,6 +16,10 @@ from strategy.signal_tracker import SignalTracker, make_signal_id
 from modeling.model_manager import ModelManager, ModelDataProvider
 from common.exceptions import InvalidSymbolError
 from utils.resource_manager import ResourceManager
+from trading.risk_manager import RiskConfig, RiskManager, build_risk_config
+from trading.portfolio import PortfolioManager
+from trading.paper_trading import PaperTradingEngine
+from trading.execution import ExchangeAdapter, ExecutionEngine
 
 
 async def create_trading_stack(
@@ -82,7 +86,7 @@ class TradingService(ModelDataProvider):
             redis_client=self._redis_client,
             model_path=self.config_manager.get("model_path", "models"),
             auto_train_on_predict=self.config_manager.get(
-                "model_auto_train_on_predict", True
+                "model_auto_train_on_predict", False
             ),
         )
 
@@ -97,8 +101,11 @@ class TradingService(ModelDataProvider):
             redis_client=self._redis_client,
             config_manager=self.config_manager,
         )
-
-        # مالک lifecycle رهگیری سیگنال در Pipeline اصلی (شکاف ۱۳).
+        risk_cfg = build_risk_config(self.config_manager)
+        self.risk_manager = RiskManager(risk_cfg)
+        self.portfolio = PortfolioManager(float(self.config_manager.get("initial_cash", 10000.0)))
+        self.paper_engine = PaperTradingEngine(portfolio=self.portfolio, risk_manager=self.risk_manager)
+        self.execution_engine = ExecutionEngine(adapter=ExchangeAdapter(dry_run=bool(self.config_manager.get("execution_dry_run", True))))
         self.signal_tracker = SignalTracker()
 
     async def initialize(self) -> None:

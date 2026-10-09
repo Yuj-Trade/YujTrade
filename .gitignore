@@ -129,6 +129,15 @@ celerybeat.pid
 
 # Environments
 .env
+secret.salt
+reports/
+artifacts/
+runs/
+*.db
+*.keras
+*.pkl
+calibration.json
+signal_history.json
 .venv
 env/
 venv/

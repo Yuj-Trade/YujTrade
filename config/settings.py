@@ -14,9 +14,7 @@ from utils.security import KeyEncryptor, get_password_from_key_manager
 
 
 class SecretsManager:
-    ENCRYPTION_PASSWORD = get_password_from_key_manager() or decouple_config(
-        "ENCRYPTION_PASSWORD", default=None
-    )
+    ENCRYPTION_PASSWORD = get_password_from_key_manager()
 
     _encryptor = None
     if ENCRYPTION_PASSWORD:
@@ -91,11 +89,9 @@ class ConfigManager:
             "1M": 300,
         },
         "model_prediction_limit": 300,
-        # مالکیت Training (شکاف ۱۱): True یعنی Prediction در صورت نبود مدل
-        # آموزش را خودش انجام می‌دهد (رفتار فعلی)؛ False یعنی مالک آموزش
-        # فقط مسیر صریح (scripts/train_models.py) است و Prediction صرفاً
-        # از lifecycle موجود تبعیت می‌کند.
-        "model_auto_train_on_predict": True,
+        "model_auto_train_on_predict": False,
+        "metrics_enabled": False,
+        "METRICS_PORT": 9108,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {

@@ -1,4 +1,5 @@
 import sys
+import os
 
 from loguru import logger
 
@@ -7,10 +8,18 @@ log_file = f"{log_directory}/app.log"
 
 logger.remove()
 
+log_format = os.getenv("LOG_FORMAT", "text").lower()
+console_format = (
+    "{message}"
+    if log_format == "json"
+    else "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+)
+
 logger.add(
     sys.stdout,
     level="INFO",
-    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    format=console_format,
     colorize=True
 )
 
@@ -27,4 +36,3 @@ logger.add(
 )
 
 logger.info("Logger initialized.")
-
