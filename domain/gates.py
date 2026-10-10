@@ -1,6 +1,5 @@
 from .types import GateConfig, ReasonCode, SignalDraft
 
-
 _STRENGTH = {"WEAK": 0, "MODERATE": 1, "STRONG": 2}
 
 

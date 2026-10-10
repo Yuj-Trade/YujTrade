@@ -1,6 +1,6 @@
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable, Mapping
 
 
 @dataclass(frozen=True)
