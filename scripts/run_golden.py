@@ -1,20 +1,15 @@
+import asyncio
+import json
 import sys
+from pathlib import Path
+
+import pandas as pd
+
 sys.path.insert(0, "C:/ME/YujTrade")
 
-# Use real pandas_ta (already installed)
-print("Using real pandas_ta")
-
-# Now test imports
-import features.indicators.custom
-import features.indicators.all_indicators
-import features.feature_engineering
-print("All imports successful")
-
-# Now run the golden recording script logic
-from strategy.signal_generator import SignalGenerator
 from config.settings import ConfigManager
-from common.core import TradingSignal
 from data.data_validator import DataQualityChecker
+from strategy.signal_generator import SignalGenerator
 
 # Monkey-patch the freshness check to always pass for golden tests
 original_check_freshness = DataQualityChecker._check_data_freshness
@@ -43,10 +38,6 @@ class FakeModelManager:
     async def record_signal_performance(self, model_type, symbol, timeframe, confidence, success):
         pass
 
-import pandas as pd
-import asyncio
-import json
-from pathlib import Path
 
 async def record_signals_baseline():
     fixture_1h = pd.read_csv("tests/fixtures/ohlcv_1h.csv", index_col=0, parse_dates=True)
@@ -84,6 +75,8 @@ async def record_signals_baseline():
                 
                 if signal:
                     signal_dict = {
+                        "symbol": "BTC/USDT",
+                        "timeframe": timeframe,
                         "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
                         "signal_type": signal.signal_type.value,
                         "entry": signal.entry_price,
@@ -101,8 +94,9 @@ async def record_signals_baseline():
     output_path = Path("tests/golden/signals_baseline.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    with open(output_path, "w") as f:
-        json.dump(all_signals, f, indent=2)
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(all_signals, f, indent=2, sort_keys=True)
+        f.write("\n")
     
     print(f"Recorded {len(all_signals)} signals to {output_path}")
     return all_signals

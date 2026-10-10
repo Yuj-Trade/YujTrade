@@ -1,0 +1,27 @@
+{
+  "equity_start": 10000.0,
+  "final_capital": 10000.0,
+  "per_timeframe": {
+    "1d": {
+      "signals_evaluated": 0,
+      "trades_count": 0
+    },
+    "1h": {
+      "signals_evaluated": 0,
+      "trades_count": 0
+    }
+  },
+  "rejected": {
+    "no_outcome": 0,
+    "no_window": 0,
+    "size_zero": 0
+  },
+  "signals_evaluated": 0,
+  "simulator_config": {
+    "commission_rate": 0.001,
+    "exit_on_opposite_signal": false,
+    "risk_per_trade_pct": 1.0,
+    "slippage_rate": 0.0005
+  },
+  "trades_count": 0
+}

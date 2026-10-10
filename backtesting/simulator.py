@@ -1,8 +1,8 @@
 import csv
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
 
 from domain.outcome import resolve_outcome
 from domain.sizing import SizingConfig, calculate_position_size
@@ -34,6 +34,14 @@ class SimulatedTrade:
     r_multiple: float
 
 
+@dataclass(frozen=True)
+class RunStats:
+    signals_evaluated: int = 0
+    skipped_no_window: int = 0
+    skipped_size_zero: int = 0
+    skipped_no_outcome: int = 0
+
+
 class EventDrivenSimulator:
     def __init__(self, config: SimulatorConfig | None = None) -> None:
         self.config = config or SimulatorConfig()
@@ -44,12 +52,25 @@ class EventDrivenSimulator:
         signals: Iterable[Mapping[str, object]],
         equity: float,
     ) -> list[SimulatedTrade]:
+        trades, _ = self.run_with_stats(candles, signals, equity)
+        return trades
+
+    def run_with_stats(
+        self,
+        candles: Sequence[Mapping[str, object]],
+        signals: Iterable[Mapping[str, object]],
+        equity: float,
+    ) -> tuple[list[SimulatedTrade], RunStats]:
         bars = list(candles)
         by_time = {
             self._timestamp(candle): index for index, candle in enumerate(bars)
         }
         trades: list[SimulatedTrade] = []
         exposure = 0.0
+        evaluated = 0
+        no_window = 0
+        size_zero = 0
+        no_outcome = 0
         sizing = SizingConfig(
             self.config.risk_per_trade_pct,
             self.config.max_single_position_pct,
@@ -57,9 +78,11 @@ class EventDrivenSimulator:
             self.config.max_leverage,
         )
         for raw_signal in signals:
+            evaluated += 1
             signal_time = self._timestamp(raw_signal)
             index = by_time.get(signal_time)
             if index is None or index + 1 >= len(bars):
+                no_window += 1
                 continue
             side = str(raw_signal["side"]).lower()
             entry = float(bars[index + 1]["open"])
@@ -74,12 +97,14 @@ class EventDrivenSimulator:
                 equity, entry, stop, sizing, current_exposure=exposure
             )
             if result.quantity <= 0:
+                size_zero += 1
                 continue
             window = bars[index + 1 :]
             outcome = resolve_outcome(
                 window, side, entry, stop, target, created_at=None, expiry_hours=None
             )
             if outcome is None:
+                no_outcome += 1
                 continue
             exit_index = self._find_exit(window, outcome.exit_price, side, stop, target)
             exit_bar = window[exit_index]
@@ -113,7 +138,13 @@ class EventDrivenSimulator:
                 )
             )
             exposure += entry * result.quantity
-        return trades
+        stats = RunStats(
+            signals_evaluated=evaluated,
+            skipped_no_window=no_window,
+            skipped_size_zero=size_zero,
+            skipped_no_outcome=no_outcome,
+        )
+        return trades, stats
 
     @staticmethod
     def _timestamp(value: Mapping[str, object]) -> datetime:

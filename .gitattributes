@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Golden baselines must be byte-identical on every machine
+tests/golden/*.json text eol=lf

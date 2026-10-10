@@ -1,21 +1,19 @@
 import asyncio
-import sys
 import json
-import pandas as pd
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
+
+import pandas as pd
 
 # ============================================================
 # IMPORT MOCK FIRST - BEFORE ANY OTHER IMPORTS
 # ============================================================
 sys.path.insert(0, ".")
-import tests.mocks.pandas_ta_mock
 # ============================================================
 
-from strategy.signal_generator import SignalGenerator
 from config.settings import ConfigManager
-from common.core import TradingSignal
 from data.data_validator import DataQualityChecker
+from strategy.signal_generator import SignalGenerator
 
 # Monkey-patch the freshness check to always pass for golden tests
 original_check_freshness = DataQualityChecker._check_data_freshness
@@ -89,6 +87,8 @@ async def record_signals_baseline():
                 
                 if signal:
                     signal_dict = {
+                        "symbol": "BTC/USDT",
+                        "timeframe": timeframe,
                         "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
                         "signal_type": signal.signal_type.value,
                         "entry": signal.entry_price,
@@ -107,8 +107,9 @@ async def record_signals_baseline():
     output_path = Path("tests/golden/signals_baseline.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    with open(output_path, "w") as f:
-        json.dump(all_signals, f, indent=2)
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(all_signals, f, indent=2, sort_keys=True)
+        f.write("\n")
     
     print(f"\nRecorded {len(all_signals)} signals to {output_path}")
     return all_signals
