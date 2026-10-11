@@ -24,7 +24,19 @@ openspec validate <change-id> --strict
 openspec archive <change-id> --yes
 ```
 
-There is no test suite. Verify changes by running the relevant entrypoint and checking `logs/app.log`.
+There is a 197-test suite. Verify changes with the gates below, never by
+eyeballing entrypoints alone:
+
+```bash
+python -m pytest -m "not slow and not ml" -q   # default gate
+ruff check . && ruff format --check .           # must be zero
+mypy domain                                     # strict types on the pure core
+python -m pytest -m "not slow and not ml" -q --cov=domain --cov-fail-under=90
+```
+
+Golden baselines (`tests/golden/`) must be byte-identical across runs;
+`python -m pytest -m slow -q` proves determinism. Check `logs/app.log`
+only for runtime behavior, not as a substitute for tests.
 
 ## Architecture
 
@@ -37,14 +49,16 @@ Layer map:
 
 | Path | Role |
 |---|---|
+| `domain/` | Pure decision logic, stdlib only (`outcome`, `sizing`, `levels`, `gates`, `types`, `signal_id`). Import contract enforced by `tests/unit/test_architecture.py`. |
+| `application/` | Orchestration over `domain` only (`decide.py`, `snapshot.py`) |
 | `data/` | `MarketDataProvider`, `DataValidator`; `data/sources/` fetchers (binance, coingecko, yfinance, alphavantage, cryptopanic, coindesk, defillama, messari, news, marketindices, alternativeme) on `base_fetcher.py` |
 | `features/` | `feature_engineering.py`; `features/indicators/` — factory, base, trend, momentum, volatility, volume, cycle, custom, all_indicators |
-| `modeling/` | `ModelManager`, model definitions, optuna optimization |
-| `models/` | Trained artifacts: `models/lstm/scaler_lstm_<symbol>_<tf>.pkl`, `models/xgboost/xgboost_<symbol>_<tf>.json` (tracked in git) |
+| `modeling/` | `ModelManager`, model definitions, `ArtifactRegistry` (`artifacts/`), optuna optimization |
+| `backtesting/` | `EventDrivenSimulator` (resolves via `domain.outcome`), `WalkForwardValidator` + `HoldoutGuard`, Monte Carlo, legacy engine |
+| `trading/` | Paper execution, risk, append-only `PaperLedger` (unique `signal_id`) |
 | `strategy/` | `signal_generator`, `multi_timeframe`, `signal_ranking`, `signal_tracker` |
 | `analysis/` | `market_analyzer`, `correlation`, `scoring` |
-| `backtesting/` | Backtest engine |
-| `common/` | Domain dataclasses/enums (`core.py`), `constants.py`, cache, exceptions, utils |
+| `common/` | Shared models (`core.py`), `constants.py`, cache, exceptions, utils |
 | `config/` | `settings.py` (`SecretsManager`, `ConfigManager`), `logger.py` |
 | `app/` | `telegram_bot.py` (TelegramBotHandler), `tasks.py` |
 | `utils/` | `background_manager` (BackgroundTaskManager), `circuit_breaker`, `resource_manager` (ResourceManager), `security` (KeyEncryptor) |
@@ -57,7 +71,9 @@ Layer map:
 - **Logging**: always `from config.logger import logger` (loguru). Never `print()` or stdlib `logging`. Loguru writes to stdout (INFO) and `logs/app.log` (DEBUG, 10 MB rotation, 7-day retention).
 - **Async**: all I/O paths are async. Never call an async function from sync code — e.g. `ResourceManager.get_redis_client()` is async; Redis is connected in `initialize()` (idempotent), not in `__init__`.
 - **Windows**: every new entrypoint must set `asyncio.WindowsSelectorEventLoopPolicy()` on `win32` (see bottom of `main.py`). `pywin32` is platform-gated in requirements.txt.
-- **Comments referencing gaps**: Persian comments with "شکاف N" numbers document decisions from earlier refactor fixes. Keep them when editing nearby code.
+- **Comments referencing gaps**: forbidden for new code. Persian "شکاف N"
+  comments are legacy markers from earlier refactor passes — do not add new
+  ones; record decisions in `docs/` (ADRs, `open_issues.md`) instead.
 
 ## Rules
 
@@ -65,6 +81,10 @@ Layer map:
 - **Model data contract**: training and prediction both read data limits ONLY from `ConfigManager` (`model_data_limits`, `model_prediction_limit`). Never hardcode limits.
 - **Single composition root**: use `create_trading_stack()`; do not create parallel stack builders or duplicate dependency wiring.
 - **Config layering**: defaults live in `ConfigManager.DEFAULT_CONFIG`; runtime overrides in `config.json` (gitignored, generated at runtime). Indicator weights and cache TTLs in `indicator_weights.json` (tracked).
+- **Artifact policy**: trained models live in the `ArtifactRegistry`
+  (`artifacts/<symbol>/<timeframe>/<model_type>/`, pointer `current.json`).
+  `models/` on disk is untracked legacy output — never re-track it, never
+  depend on it in new code. Prediction never trains (`model_auto_train_on_predict=false`).
 - **`Main/` is a vendored Python environment (venv)**, not project code. Never read, edit, or search it; exclude it from greps/globs. (`.vscode/settings.json` references a stale `./venv/` path — the real venv is `Main/`, activated via `Main/Scripts/Activate.ps1`.)
 - **OpenSpec workflow**: open `openspec/AGENTS.md` whenever a request mentions planning, proposals, new capabilities, breaking changes, or architecture. Scaffold proposals under `openspec/changes/<verb-led-kebab-id>/` (`add-`, `update-`, `remove-`, `refactor-`), validate with `openspec validate <id> --strict`, and do not implement until the proposal is approved. Skip proposals for bug fixes, typos, config changes, and non-breaking dependency updates.
 
@@ -78,6 +98,12 @@ Layer map:
 
 ## Git Workflow
 
-- Single `main` branch; commits in short imperative summaries (recent style: "sync progress", "sync complete - start test").
-- `copyfile/full-trade.txt` is a generated full-code export that is regenerated (`python copyfile/copy.py`) and committed as part of each sync.
-- Always end commit messages with `Co-Authored-By: Claude Code <noreply@anthropic.com>`.
+- Single `main` branch. One concern per commit; messages name the concern
+  (`chore:`, `fix:`, `test:`, `style:`, `docs:`, `build:`, `ci:`). A commit
+  that changes runtime behavior carries a `[behavior-change]` tag and its
+  tests.
+- Pre-commit gate for every commit: full default pytest gate green plus
+  `sha256sum tests/golden/*.json` unchanged (unless the commit IS a
+  golden re-record with real data).
+- `copyfile/full-trade.txt` is gitignored; regenerate locally with
+  `python copyfile/copy.py` when a full review bundle is needed.
