@@ -14,6 +14,36 @@ A `blocked` entry never guesses missing content; it records the reason and moves
 - [ ] `LONG_TERM_CONFIG` thresholds and indicator formulas: frozen by directive
   (only causality fixes allowed in phase 4). No change recorded.
 
+## Pre-flight audit (directive v3.0, phase A — verified locally)
+
+- [x] `ci.yml` **exists** (`.github/workflows/ci.yml`): jobs `ruff check .`
+  (full-repo), `mypy domain`, `pytest -m "not slow and not ml"`. The v2.0
+  audit claim "CI absent" is stale. CI is currently RED because of the ruff
+  debt below; phase D must turn it green.
+- [x] Ruff baseline: **948 errors** (641 auto-fixable). Top rules: `UP006`
+  244, `E501` 198, `UP045` 185, `F401` 111, `UP035` 95, `I001` 71.
+- [x] Pytest baseline: **142 passed, 2 deselected** (`-m "not slow and not ml"`).
+- [x] Tracked binaries: 27 `.pkl` files under `models/lstm|models/xgboost`.
+  `calibration.json` is **not** tracked (the note in "Legacy tracked
+  artifacts" below is stale and will be corrected in phase G). No
+  default-marker test reads legacy `models/`; `ModelManager` predict path
+  goes through `ArtifactRegistry` (`artifacts/`). Untrack approved (phase B).
+- [x] Junk scripts `fix_test.py`, `tests/_fix_p1.py`, `tests/_probe_p1.py`,
+  `prompt` have no importers outside themselves. Removal approved (phase B).
+  Residual strays kept for now: `^` (0 bytes), `symtemp.txt`, `symbols.txt`
+  (no `.py` references found).
+- [x] Fixtures are exactly 1501 lines each (header + 1500 rows) but synthetic
+  per the v2.0 report; `signals_baseline.json` is `[]`. No warehouse DB on
+  disk and `config.json` carries no warehouse path → phase F is **blocked**
+  until the user supplies real warehouse data.
+- [x] Docs are stubs: ADRs 189–258 bytes, README 41 lines, runbook 27 lines;
+  `CLAUDE.md` claims "no test suite" (stale). Phase G required.
+- [x] Test gaps confirmed: `tests/unit/backtesting/` has only
+  `test_simulator.py` (no walk-forward/holdout tests); `tests/unit/modeling/`
+  has only `test_predict_no_autotrain.py`. Phase E required.
+- [x] Local `.gitignore` noise (duplicate `/copyfile` + `copyfile/copy.py`
+  lines) reverted to HEAD; the exporter script stays tracked.
+
 ## Legacy tracked artifacts (do NOT delete without backup + migration)
 
 The denylist in `.gitignore` covers `.env`, `secret.salt`, `*.keras`, `*.pkl`,
