@@ -6,9 +6,7 @@ from trading.execution import FakeAdapter
 
 
 def test_indicator_values_are_causal_across_300_candle_prefixes():
-    data = pd.read_csv(
-        "tests/fixtures/ohlcv_1h.csv", index_col=0, parse_dates=True
-    ).tail(300)
+    data = pd.read_csv("tests/fixtures/ohlcv_1h.csv", index_col=0, parse_dates=True).tail(300)
     engineer = FeatureEngineer()
     for end in range(80, len(data) + 1, 20):
         prefix = data.iloc[:end]

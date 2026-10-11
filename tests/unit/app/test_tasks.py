@@ -46,14 +46,14 @@ def _imports_module(tree: ast.Module, target: str) -> bool:
             module = node.module or ""
             if module == target or module.startswith(target + "."):
                 return True
-            if not node.level and module == top and any(
-                alias.name == rest for alias in node.names if alias.name
+            if (
+                not node.level
+                and module == top
+                and any(alias.name == rest for alias in node.names if alias.name)
             ):
                 return True
             if node.level:  # relative: `from . import tasks` / `from .tasks import x`
-                if module == rest or any(
-                    alias.name == rest for alias in node.names if alias.name
-                ):
+                if module == rest or any(alias.name == rest for alias in node.names if alias.name):
                     return True
     return False
 
@@ -62,9 +62,7 @@ def _make_mock_container(signals, last_errors: int = 0) -> MagicMock:
     """A TaskServiceContainer stand-in whose trading_service is fully mocked."""
     container = MagicMock(name="TaskServiceContainerMock")
     container.trading_service = MagicMock(name="TradingServiceMock")
-    container.trading_service.run_analysis_for_all_symbols = AsyncMock(
-        return_value=list(signals)
-    )
+    container.trading_service.run_analysis_for_all_symbols = AsyncMock(return_value=list(signals))
     container.trading_service.run_quick_analysis = AsyncMock(return_value=list(signals))
     container.trading_service.last_errors = last_errors
     return container
@@ -86,9 +84,7 @@ def reset_container_singleton():
 @pytest.fixture
 def deliver_spy():
     """Spy روی مسیر تحویل tasks — بدون ساخت Bot واقعی."""
-    with patch(
-        "app.tasks.deliver_task_signals", new_callable=AsyncMock
-    ) as spy_deliver:
+    with patch("app.tasks.deliver_task_signals", new_callable=AsyncMock) as spy_deliver:
         spy_deliver.return_value = 1
         yield spy_deliver
 
@@ -125,12 +121,15 @@ class TestTaskServiceContainer:
         # ConfigManager و BackgroundTaskManager هم باید patch شوند — وگرنه
         # _initialize یک ConfigManager واقعی می‌سازد و create_trading_stack با
         # آن (نه با mock) صدا زده می‌شود.
-        with patch("app.tasks.SecretsManager") as mock_secrets, patch(
-            "app.tasks.ConfigManager", return_value=cm
-        ), patch("app.tasks.BackgroundTaskManager"), patch(
-            "services.trading_service.create_trading_stack",
-            new=AsyncMock(return_value=(cm, rm, provider, ts)),
-        ) as mock_stack_fn:
+        with (
+            patch("app.tasks.SecretsManager") as mock_secrets,
+            patch("app.tasks.ConfigManager", return_value=cm),
+            patch("app.tasks.BackgroundTaskManager"),
+            patch(
+                "services.trading_service.create_trading_stack",
+                new=AsyncMock(return_value=(cm, rm, provider, ts)),
+            ) as mock_stack_fn,
+        ):
             mock_secrets.TELEGRAM_BOT_TOKEN = "fake_token:fake"
             await inst._initialize()
 
@@ -188,9 +187,7 @@ class TestTaskDeliveryGap32Connected:
     async def test_gap32_full_analysis_delivers_to_chat_id(self, deliver_spy):
         container = _make_mock_container(self.SIGNALS, last_errors=0)
         container.bot_token = "fake_token:fake"
-        with patch.object(
-            TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
-        ):
+        with patch.object(TaskServiceContainer, "instance", new=AsyncMock(return_value=container)):
             result = await run_full_analysis_task(chat_id=123, message_id=456)
 
         # سیگنال تولید شده (TradingService صدا زده شده)
@@ -208,9 +205,7 @@ class TestTaskDeliveryGap32Connected:
     async def test_gap32_quick_scan_delivers_to_chat_id(self, deliver_spy):
         container = _make_mock_container(self.SIGNALS, last_errors=0)
         container.bot_token = "fake_token:fake"
-        with patch.object(
-            TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
-        ):
+        with patch.object(TaskServiceContainer, "instance", new=AsyncMock(return_value=container)):
             result = await run_quick_scan_task(chat_id=789, message_id=101)
 
         container.trading_service.run_quick_analysis.assert_awaited_once()
@@ -228,9 +223,7 @@ class TestTaskDeliveryGap32Connected:
         container.trading_service.run_analysis_for_all_symbols = AsyncMock(
             side_effect=RuntimeError("pipeline exploded")
         )
-        with patch.object(
-            TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
-        ):
+        with patch.object(TaskServiceContainer, "instance", new=AsyncMock(return_value=container)):
             # نباید exception به بیرون نشت کند
             result = await run_full_analysis_task(chat_id=1, message_id=2)
 
@@ -255,9 +248,7 @@ class TestTaskDeliveryGap32Connected:
         container = _make_mock_container(self.SIGNALS)
         container.bot_token = "fake_token:fake"
         deliver_spy.side_effect = RuntimeError("telegram down")
-        with patch.object(
-            TaskServiceContainer, "instance", new=AsyncMock(return_value=container)
-        ):
+        with patch.object(TaskServiceContainer, "instance", new=AsyncMock(return_value=container)):
             result = await run_full_analysis_task(chat_id=1, message_id=2)
 
         assert result == []
@@ -316,8 +307,7 @@ class TestStaticImportGraph32:
             called = {
                 node.func.id
                 for node in ast.walk(task_node)
-                if isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             }
             assert "deliver_task_signals" in called, (
                 f"{task_name} must call deliver_task_signals (gap 32 wiring)"

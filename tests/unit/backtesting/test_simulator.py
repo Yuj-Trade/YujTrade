@@ -94,9 +94,7 @@ def test_gap_beyond_stop_exits_at_open():
 def test_zero_quantity_is_counted_as_size_zero():
     candles = [_candle(0, 99, 100, 98), _candle(1, 100, 101, 100)]
     entry = 100.0 * (1.0 + SimulatorConfig().slippage_rate)
-    trades, stats = EventDrivenSimulator().run_with_stats(
-        candles, [_signal(stop=entry)], 10000.0
-    )
+    trades, stats = EventDrivenSimulator().run_with_stats(candles, [_signal(stop=entry)], 10000.0)
     assert trades == []
     assert stats.skipped_size_zero == 1
 
@@ -116,9 +114,10 @@ def test_run_matches_run_with_stats_trades(tmp_path):
         _candle(2, 100.5, 125, 100),
     ]
     simulator = EventDrivenSimulator()
-    assert simulator.run(candles, [_signal()], 10000.0) == simulator.run_with_stats(
-        candles, [_signal()], 10000.0
-    )[0]
+    assert (
+        simulator.run(candles, [_signal()], 10000.0)
+        == simulator.run_with_stats(candles, [_signal()], 10000.0)[0]
+    )
     out = tmp_path / "trades.csv"
     write_trades_csv(out, simulator.run(candles, [_signal()], 10000.0))
     header = out.read_text(encoding="utf-8").splitlines()[0]

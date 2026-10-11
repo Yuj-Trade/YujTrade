@@ -70,27 +70,26 @@ def event_loop():
 
 # ─── OHLCV Fixtures ───
 
+
 @pytest.fixture
 def valid_1h_ohlcv() -> pd.DataFrame:
     """Valid 1h OHLCV data with >= min_data_points (600)."""
-    dates = pd.date_range(
-        end=datetime.now(timezone.utc),
-        periods=600,
-        freq="1h",
-        tz="UTC"
-    )
+    dates = pd.date_range(end=datetime.now(timezone.utc), periods=600, freq="1h", tz="UTC")
     np.random.seed(42)
     base = 50000
     returns = np.random.normal(0, 0.01, 600)
     prices = base * np.exp(np.cumsum(returns))
 
-    df = pd.DataFrame({
-        "open": prices * (1 + np.random.uniform(-0.002, 0.002, 600)),
-        "high": prices * (1 + np.random.uniform(0, 0.005, 600)),
-        "low": prices * (1 - np.random.uniform(0, 0.005, 600)),
-        "close": prices,
-        "volume": np.random.uniform(100, 10000, 600),
-    }, index=dates)
+    df = pd.DataFrame(
+        {
+            "open": prices * (1 + np.random.uniform(-0.002, 0.002, 600)),
+            "high": prices * (1 + np.random.uniform(0, 0.005, 600)),
+            "low": prices * (1 - np.random.uniform(0, 0.005, 600)),
+            "close": prices,
+            "volume": np.random.uniform(100, 10000, 600),
+        },
+        index=dates,
+    )
     df["high"] = df[["open", "high", "close"]].max(axis=1)
     df["low"] = df[["open", "low", "close"]].min(axis=1)
     return df
@@ -99,24 +98,22 @@ def valid_1h_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def valid_1d_ohlcv() -> pd.DataFrame:
     """Valid 1d OHLCV data with >= min_data_points (300)."""
-    dates = pd.date_range(
-        end=datetime.now(timezone.utc),
-        periods=300,
-        freq="1D",
-        tz="UTC"
-    )
+    dates = pd.date_range(end=datetime.now(timezone.utc), periods=300, freq="1D", tz="UTC")
     np.random.seed(42)
     base = 50000
     returns = np.random.normal(0, 0.02, 300)
     prices = base * np.exp(np.cumsum(returns))
 
-    df = pd.DataFrame({
-        "open": prices * (1 + np.random.uniform(-0.01, 0.01, 300)),
-        "high": prices * (1 + np.random.uniform(0, 0.02, 300)),
-        "low": prices * (1 - np.random.uniform(0, 0.02, 300)),
-        "close": prices,
-        "volume": np.random.uniform(1000, 100000, 300),
-    }, index=dates)
+    df = pd.DataFrame(
+        {
+            "open": prices * (1 + np.random.uniform(-0.01, 0.01, 300)),
+            "high": prices * (1 + np.random.uniform(0, 0.02, 300)),
+            "low": prices * (1 - np.random.uniform(0, 0.02, 300)),
+            "close": prices,
+            "volume": np.random.uniform(1000, 100000, 300),
+        },
+        index=dates,
+    )
     df["high"] = df[["open", "high", "close"]].max(axis=1)
     df["low"] = df[["open", "low", "close"]].min(axis=1)
     return df
@@ -125,43 +122,44 @@ def valid_1d_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def insufficient_ohlcv() -> pd.DataFrame:
     """OHLCV with fewer rows than min_data_points."""
-    dates = pd.date_range(
-        end=datetime.now(timezone.utc),
-        periods=50,
-        freq="1h",
-        tz="UTC"
-    )
+    dates = pd.date_range(end=datetime.now(timezone.utc), periods=50, freq="1h", tz="UTC")
     np.random.seed(42)
     base = 50000
     prices = base * np.exp(np.cumsum(np.random.normal(0, 0.01, 50)))
 
-    return pd.DataFrame({
-        "open": prices,
-        "high": prices * 1.01,
-        "low": prices * 0.99,
-        "close": prices,
-        "volume": np.random.uniform(100, 10000, 50),
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": prices * 1.01,
+            "low": prices * 0.99,
+            "close": prices,
+            "volume": np.random.uniform(100, 10000, 50),
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
 def missing_columns_ohlcv() -> pd.DataFrame:
     """OHLCV missing required columns."""
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
-    return pd.DataFrame({"open": [1]*100, "high": [1]*100}, index=dates)
+    return pd.DataFrame({"open": [1] * 100, "high": [1] * 100}, index=dates)
 
 
 @pytest.fixture
 def high_less_than_low_ohlcv() -> pd.DataFrame:
     """OHLCV with high < low (invalid)."""
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
-    return pd.DataFrame({
-        "open": [50000]*100,
-        "high": [49000]*100,
-        "low": [51000]*100,
-        "close": [50000]*100,
-        "volume": [1000]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": [50000] * 100,
+            "high": [49000] * 100,
+            "low": [51000] * 100,
+            "close": [50000] * 100,
+            "volume": [1000] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -171,13 +169,16 @@ def zero_or_negative_price_ohlcv() -> pd.DataFrame:
     prices = np.ones(100) * 50000
     prices[50] = 0
     prices[51] = -100
-    return pd.DataFrame({
-        "open": prices,
-        "high": prices * 1.01,
-        "low": prices * 0.99,
-        "close": prices,
-        "volume": [1000]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": prices * 1.01,
+            "low": prices * 0.99,
+            "close": prices,
+            "volume": [1000] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -186,26 +187,32 @@ def extreme_single_candle_ohlcv() -> pd.DataFrame:
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
     prices = np.ones(100) * 50000
     prices[50] = 10000  # 80% drop
-    return pd.DataFrame({
-        "open": prices,
-        "high": prices * 1.01,
-        "low": prices * 0.99,
-        "close": prices,
-        "volume": [1000]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": prices * 1.01,
+            "low": prices * 0.99,
+            "close": prices,
+            "volume": [1000] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
 def low_volume_ohlcv() -> pd.DataFrame:
     """OHLCV with mean volume < 1 (warning only)."""
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
-    return pd.DataFrame({
-        "open": [50000]*100,
-        "high": [50500]*100,
-        "low": [49500]*100,
-        "close": [50000]*100,
-        "volume": [0.1]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": [50000] * 100,
+            "high": [50500] * 100,
+            "low": [49500] * 100,
+            "close": [50000] * 100,
+            "volume": [0.1] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -213,13 +220,16 @@ def stale_ohlcv() -> pd.DataFrame:
     """OHLCV with last timestamp older than freshness threshold."""
     old_date = datetime.now(timezone.utc) - timedelta(days=10)
     dates = pd.date_range(end=old_date, periods=100, freq="1h", tz="UTC")
-    return pd.DataFrame({
-        "open": [50000]*100,
-        "high": [50500]*100,
-        "low": [49500]*100,
-        "close": [50000]*100,
-        "volume": [1000]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": [50000] * 100,
+            "high": [50500] * 100,
+            "low": [49500] * 100,
+            "close": [50000] * 100,
+            "volume": [1000] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -227,13 +237,16 @@ def duplicate_timestamps_ohlcv() -> pd.DataFrame:
     """OHLCV with duplicate timestamps."""
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=99, freq="1h", tz="UTC")
     dates = dates.insert(50, dates[50])  # duplicate
-    return pd.DataFrame({
-        "open": [50000]*100,
-        "high": [50500]*100,
-        "low": [49500]*100,
-        "close": [50000]*100,
-        "volume": [1000]*100,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": [50000] * 100,
+            "high": [50500] * 100,
+            "low": [49500] * 100,
+            "close": [50000] * 100,
+            "volume": [1000] * 100,
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -241,26 +254,21 @@ def large_gap_ohlcv() -> pd.DataFrame:
     """OHLCV with gap_ratio > 0.1 (should raise ValueError)."""
     # Create data with a large gap (missing ~20% of candles)
     dates1 = pd.date_range(
-        end=datetime.now(timezone.utc) - timedelta(days=5),
-        periods=400,
-        freq="1h",
-        tz="UTC"
+        end=datetime.now(timezone.utc) - timedelta(days=5), periods=400, freq="1h", tz="UTC"
     )
-    dates2 = pd.date_range(
-        end=datetime.now(timezone.utc),
-        periods=400,
-        freq="1h",
-        tz="UTC"
-    )
+    dates2 = pd.date_range(end=datetime.now(timezone.utc), periods=400, freq="1h", tz="UTC")
     dates = dates1.union(dates2)
     prices = np.ones(len(dates)) * 50000
-    return pd.DataFrame({
-        "open": prices,
-        "high": prices * 1.01,
-        "low": prices * 0.99,
-        "close": prices,
-        "volume": [1000]*len(dates),
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": prices * 1.01,
+            "low": prices * 0.99,
+            "close": prices,
+            "volume": [1000] * len(dates),
+        },
+        index=dates,
+    )
 
 
 @pytest.fixture
@@ -268,21 +276,26 @@ def small_gap_ohlcv() -> pd.DataFrame:
     """OHLCV with small gap (0 < gap_ratio <= 0.1, penalty only)."""
     dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
     dates = dates.delete(50)  # remove one candle (1% gap)
-    return pd.DataFrame({
-        "open": [50000]*99,
-        "high": [50500]*99,
-        "low": [49500]*99,
-        "close": [50000]*99,
-        "volume": [1000]*99,
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": [50000] * 99,
+            "high": [50500] * 99,
+            "low": [49500] * 99,
+            "close": [50000] * 99,
+            "volume": [1000] * 99,
+        },
+        index=dates,
+    )
 
 
 # ─── TradingSignal Fixtures ───
+
 
 @pytest.fixture
 def buy_valid_signal() -> dict[str, Any]:
     """Valid BUY TradingSignal with all fields populated."""
     from common.core import SignalType
+
     return {
         "symbol": "BTC/USDT",
         "signal_type": SignalType.BUY,
@@ -332,6 +345,7 @@ def buy_valid_signal() -> dict[str, Any]:
 def sell_valid_signal() -> dict[str, Any]:
     """Valid SELL TradingSignal with all fields populated."""
     from common.core import SignalType
+
     return {
         "symbol": "ETH/USDT",
         "signal_type": SignalType.SELL,
@@ -381,6 +395,7 @@ def sell_valid_signal() -> dict[str, Any]:
 def signal_with_macro_data() -> dict[str, Any]:
     """Signal with macro data for SignalRanking fed_rate tests."""
     from common.core import MacroEconomicData, SignalType
+
     signal = {
         "symbol": "BTC/USDT",
         "signal_type": SignalType.BUY,
@@ -431,6 +446,7 @@ def signal_with_macro_data() -> dict[str, Any]:
 def signal_without_external_data() -> dict[str, Any]:
     """Signal with all external data None (for backtest path)."""
     from common.core import SignalType
+
     return {
         "symbol": "BTC/USDT",
         "signal_type": SignalType.BUY,
@@ -478,10 +494,12 @@ def signal_without_external_data() -> dict[str, Any]:
 
 # ─── MarketAnalysis Fixtures ───
 
+
 @pytest.fixture
 def bullish_strong_analysis() -> dict[str, Any]:
     """Strong bullish MarketAnalysis."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.BULLISH,
         "trend_strength": TrendStrength.STRONG,
@@ -505,6 +523,7 @@ def bullish_strong_analysis() -> dict[str, Any]:
 def bearish_strong_analysis() -> dict[str, Any]:
     """Strong bearish MarketAnalysis."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.BEARISH,
         "trend_strength": TrendStrength.STRONG,
@@ -528,6 +547,7 @@ def bearish_strong_analysis() -> dict[str, Any]:
 def sideways_weak_analysis() -> dict[str, Any]:
     """Weak sideways MarketAnalysis."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -551,6 +571,7 @@ def sideways_weak_analysis() -> dict[str, Any]:
 def market_analysis_hurst_low() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent < 0.45 (mean-reverting)."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -574,6 +595,7 @@ def market_analysis_hurst_low() -> dict[str, Any]:
 def market_analysis_hurst_mid() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent 0.45-0.55 (random walk)."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -597,6 +619,7 @@ def market_analysis_hurst_mid() -> dict[str, Any]:
 def market_analysis_hurst_high() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent > 0.55 (persistent)."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
+
     return {
         "trend": TrendDirection.BULLISH,
         "trend_strength": TrendStrength.STRONG,
@@ -617,6 +640,7 @@ def market_analysis_hurst_high() -> dict[str, Any]:
 
 
 # ─── Model Prediction Fixtures ───
+
 
 @pytest.fixture
 def model_prediction_full() -> dict[str, float]:
@@ -656,6 +680,7 @@ def model_prediction_calibrated_diverges() -> dict[str, float]:
 
 # ─── External Data Bundle Fixtures ───
 
+
 @pytest.fixture
 def external_data_full() -> dict[str, Any]:
     """Full external data bundle with all sources."""
@@ -667,6 +692,7 @@ def external_data_full() -> dict[str, Any]:
         OrderBook,
         TrendingData,
     )
+
     return {
         "news": {"score": 5.0, "fear_greed_index": 50},
         "derivatives": DerivativesAnalysis(
@@ -681,9 +707,7 @@ def external_data_full() -> dict[str, Any]:
             community_score=90,
         ),
         "onchain": OnChainAnalysis(mvrv=2.5, sopr=1.02),
-        "order_book": OrderBook(
-            total_bid_volume=1000, total_ask_volume=800, bid_ask_spread=0.5
-        ),
+        "order_book": OrderBook(total_bid_volume=1000, total_ask_volume=800, bid_ask_spread=0.5),
         "macro": MacroEconomicData(fed_rate=3.5, cpi=2.8),
         "trending": TrendingData(coingecko_trending=["BTC", "ETH", "SOL"]),
         "market_indices": {
@@ -700,6 +724,7 @@ def external_data_full() -> dict[str, Any]:
 def external_data_partial() -> dict[str, Any]:
     """Partial external data with some None values."""
     from common.core import DerivativesAnalysis, MacroEconomicData
+
     return {
         "news": {"score": 5.0, "fear_greed_index": 50},
         "derivatives": DerivativesAnalysis(funding_rate=0.005),
@@ -728,6 +753,7 @@ def external_data_all_none() -> dict[str, Any]:
 
 
 # ─── Mock Fixtures ───
+
 
 @pytest.fixture
 def mock_fetcher():
@@ -760,10 +786,12 @@ def mock_telegram_bot():
 
 # ─── Helper Fixtures ───
 
+
 @pytest.fixture
 def mock_config_manager():
     """Mock ConfigManager with test defaults."""
     from config.settings import ConfigManager
+
     config = MagicMock(spec=ConfigManager)
     config.get_component_weights.return_value = {
         "technical_analysis": 0.4,
@@ -774,21 +802,18 @@ def mock_config_manager():
     config.get_indicator_weights.return_value = {}
     config.get_cache_ttl.return_value = 3600
     config.DEFAULT_CONFIG = {
-        "model_data_limits": {
-            "1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300
-        },
+        "model_data_limits": {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
         "model_prediction_limit": 500,
         "app_version": "1.0.0",
     }
     config.DEFAULT_WEIGHTS_CONFIG = {
-        "cache_config": {
-            "ohlcv": 3600, "external": 7200, "model": 1800
-        }
+        "cache_config": {"ohlcv": 3600, "external": 7200, "model": 1800}
     }
     return config
 
 
 # ─── Test Markers ───
+
 
 def pytest_configure(config):
     """Register custom markers."""
@@ -799,8 +824,10 @@ def pytest_configure(config):
 
 # ─── Test Utilities ───
 
+
 class AsyncContextManager:
     """Helper for async context managers in tests."""
+
     def __init__(self, obj):
         self.obj = obj
 

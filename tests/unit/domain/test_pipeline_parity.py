@@ -81,9 +81,7 @@ def test_weak_trend_rejects_when_strong_required():
 
 
 def test_fixture_prefixes_decide_identically_on_both_paths():
-    frame = pd.read_csv(
-        "tests/fixtures/ohlcv_1h.csv", index_col=0, parse_dates=True
-    ).tail(300)
+    frame = pd.read_csv("tests/fixtures/ohlcv_1h.csv", index_col=0, parse_dates=True).tail(300)
     config = GateConfig()
     for end in range(10, len(frame) + 1, 10):
         window = frame.iloc[:end]

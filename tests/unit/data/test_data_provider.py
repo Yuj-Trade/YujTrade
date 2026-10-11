@@ -27,6 +27,7 @@ from data.data_validator import DataQualityChecker
 
 # ─── Helpers ───
 
+
 def make_provider(redis_client=None):
     """Provider با session/redis تزریقی — بدون initialize() (شبکه واقعی ممنوع)."""
     rm, cm = MagicMock(), MagicMock()
@@ -47,6 +48,7 @@ def _to_cache_payload(df: pd.DataFrame) -> str:
 
 
 # ─── fetch_ohlcv_data Tests ───
+
 
 class TestFetchOHLCVData:
     """قاعده ۲۳: fetch_ohlcv_data — انتخاب بهترین منبع، کش، و شکست یکپارچه."""
@@ -78,12 +80,15 @@ class TestFetchOHLCVData:
             check_exact=False,
             rtol=1e-5,
         )
-        # Timestamp precision differs: fixture has microsecond precision but cache rounds to milliseconds
+        # Timestamp precision differs: fixture has microsecond precision
+        # but cache rounds to milliseconds
         # Skip exact timestamp comparison, only verify structure and values
         assert list(result.columns) == list(valid_1h_ohlcv.columns)
 
     @pytest.mark.asyncio
-    async def test_cached_invalid_data_triggers_refetch(self, valid_1h_ohlcv, high_less_than_low_ohlcv):
+    async def test_cached_invalid_data_triggers_refetch(
+        self, valid_1h_ohlcv, high_less_than_low_ohlcv
+    ):
         """کش موجود اما نامعتبر (high < low) → باید دوباره fetch شود."""
         stale_payload = _to_cache_payload(high_less_than_low_ohlcv)
         redis = AsyncMock()
@@ -238,6 +243,7 @@ class TestFetchOHLCVData:
 
 # ─── _get_data_quality_score Tests (gap 23 + gap 36) ───
 
+
 class TestGetDataQualityScore:
     """_get_data_quality_score منطق امتیازدهی واحد Provider (قاعده ۲۳) و
     مدیریت ValueError از detect_data_gaps (قاعده ۳۶)."""
@@ -256,8 +262,16 @@ class TestGetDataQualityScore:
     def test_gap36_detect_data_gaps_valueerror_caught_returns_zero(self, provider, valid_1h_ohlcv):
         """قاعده ۳۶: ValueError از detect_data_gaps در Provider گرفته و 0.0
         برگردانده می‌شود — برخلاف calculate_overall_quality_score یتیم."""
-        with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
-             patch.object(provider.data_quality_checker, "detect_data_gaps", side_effect=ValueError("gap too large")):
+        with (
+            patch.object(
+                provider.data_quality_checker, "validate_data_quality", return_value=(True, "")
+            ),
+            patch.object(
+                provider.data_quality_checker,
+                "detect_data_gaps",
+                side_effect=ValueError("gap too large"),
+            ),
+        ):
             score = provider._get_data_quality_score(valid_1h_ohlcv, "1h")
         assert score == 0.0
 
@@ -272,16 +286,30 @@ class TestGetDataQualityScore:
         assert score < 1.0  # جریمه گپ اعمال شده
 
     def test_volume_penalty(self, provider, valid_1h_ohlcv):
-        with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
-             patch.object(provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)), \
-             patch.object(provider.data_quality_checker, "check_sufficient_volume", return_value=False):
+        with (
+            patch.object(
+                provider.data_quality_checker, "validate_data_quality", return_value=(True, "")
+            ),
+            patch.object(
+                provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)
+            ),
+            patch.object(
+                provider.data_quality_checker, "check_sufficient_volume", return_value=False
+            ),
+        ):
             score = provider._get_data_quality_score(valid_1h_ohlcv, "1h")
         # 100 - 20 (حجم ناکافی) = 80
         assert score == 80.0
 
     def test_gap_penalty(self, provider, valid_1h_ohlcv):
-        with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
-             patch.object(provider.data_quality_checker, "detect_data_gaps", return_value=(True, 0.05)):
+        with (
+            patch.object(
+                provider.data_quality_checker, "validate_data_quality", return_value=(True, "")
+            ),
+            patch.object(
+                provider.data_quality_checker, "detect_data_gaps", return_value=(True, 0.05)
+            ),
+        ):
             score = provider._get_data_quality_score(valid_1h_ohlcv, "1h")
         # 100 - 30 (گپ) = 70 (volume واقعی OK، nulls 0)
         assert score == 70.0
@@ -290,18 +318,34 @@ class TestGetDataQualityScore:
         """قرارداد متضاد (regression باگ معکوس‌خوانی گپ): has_gaps=False →
         هیچ جریمه‌ای اعمال نمی‌شود و امتیاز کامل می‌ماند. قبل از اصلاح P1،
         داده بدون گپ -۳۰ می‌گرفت."""
-        with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
-             patch.object(provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)), \
-             patch.object(provider.data_quality_checker, "check_sufficient_volume", return_value=True):
+        with (
+            patch.object(
+                provider.data_quality_checker, "validate_data_quality", return_value=(True, "")
+            ),
+            patch.object(
+                provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)
+            ),
+            patch.object(
+                provider.data_quality_checker, "check_sufficient_volume", return_value=True
+            ),
+        ):
             score = provider._get_data_quality_score(valid_1h_ohlcv, "1h")
         assert score == 100.0
 
     def test_null_penalty(self, provider, valid_1h_ohlcv):
         df = valid_1h_ohlcv.copy()
         df.iloc[0:5, df.columns.get_loc("open")] = np.nan
-        with patch.object(provider.data_quality_checker, "validate_data_quality", return_value=(True, "")), \
-             patch.object(provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)), \
-             patch.object(provider.data_quality_checker, "check_sufficient_volume", return_value=True):
+        with (
+            patch.object(
+                provider.data_quality_checker, "validate_data_quality", return_value=(True, "")
+            ),
+            patch.object(
+                provider.data_quality_checker, "detect_data_gaps", return_value=(False, 0.0)
+            ),
+            patch.object(
+                provider.data_quality_checker, "check_sufficient_volume", return_value=True
+            ),
+        ):
             score = provider._get_data_quality_score(df, "1h")
         assert score == pytest.approx(99.5)  # 5 nulls × 0.1
 
@@ -334,16 +378,24 @@ class TestEnrichmentErrorContract30:
     def provider(self):
         return make_provider()
 
-    @pytest.mark.parametrize("method_name,fetcher_attr,fetcher_method,call_args", ENRICHMENT_METHODS)
+    @pytest.mark.parametrize(
+        "method_name,fetcher_attr,fetcher_method,call_args", ENRICHMENT_METHODS
+    )
     @pytest.mark.asyncio
-    async def test_fetcher_none_returns_none(self, provider, method_name, fetcher_attr, fetcher_method, call_args):
+    async def test_fetcher_none_returns_none(
+        self, provider, method_name, fetcher_attr, fetcher_method, call_args
+    ):
         # fetcher attr پیش‌فرض None است (در __init__)
         result = await getattr(provider, method_name)(*call_args)
         assert result is None, f"{method_name} should return None when fetcher is None"
 
-    @pytest.mark.parametrize("method_name,fetcher_attr,fetcher_method,call_args", ENRICHMENT_METHODS)
+    @pytest.mark.parametrize(
+        "method_name,fetcher_attr,fetcher_method,call_args", ENRICHMENT_METHODS
+    )
     @pytest.mark.asyncio
-    async def test_fetcher_exception_returns_none(self, provider, method_name, fetcher_attr, fetcher_method, call_args):
+    async def test_fetcher_exception_returns_none(
+        self, provider, method_name, fetcher_attr, fetcher_method, call_args
+    ):
         fetcher = AsyncMock()
         getattr(fetcher, fetcher_method).side_effect = RuntimeError("source down")
         setattr(provider, fetcher_attr, fetcher)
@@ -391,9 +443,12 @@ class TestGetDerivativesData:
         (نه None و نه Exception) — degradation اختیاری."""
         fetcher = AsyncMock()
         for name in [
-            "get_open_interest", "get_funding_rate", "get_taker_long_short_ratio",
+            "get_open_interest",
+            "get_funding_rate",
+            "get_taker_long_short_ratio",
             "get_top_trader_long_short_ratio_accounts",
-            "get_top_trader_long_short_ratio_positions", "get_mark_price",
+            "get_top_trader_long_short_ratio_positions",
+            "get_mark_price",
         ]:
             getattr(fetcher, name).side_effect = RuntimeError("down")
         provider.binance_fetcher = fetcher
@@ -411,15 +466,18 @@ class TestGetDerivativesData:
     @pytest.mark.asyncio
     async def test_outer_exception_returns_none(self, provider):
         """binance_fetcher خود broken → AttributeError در ساخت tasks → None."""
+
         class ExplodingAttr:
             def __getattr__(self, name):
                 raise RuntimeError("fetcher broken")
+
         provider.binance_fetcher = ExplodingAttr()
         result = await provider.get_derivatives_data("BTC/USDT")
         assert result is None
 
 
 # ─── close() Tests (gap 24/25) ───
+
 
 class TestClose:
     """قاعده ۲۵ (مالکیت): close() فقط Fetcherها را می‌بندد (idempotent)؛
@@ -471,12 +529,15 @@ class TestClose:
 
 # ─── initialize() Test ───
 
+
 class TestInitialize:
     @pytest.mark.asyncio
     async def test_initialize_idempotent_when_session_open(self):
         provider = make_provider()
         provider.session = MagicMock()
         provider.session.closed = False
-        with patch.object(provider.resource_manager, "get_session", new=AsyncMock()) as mock_get_session:
+        with patch.object(
+            provider.resource_manager, "get_session", new=AsyncMock()
+        ) as mock_get_session:
             await provider.initialize()
             mock_get_session.assert_not_called()

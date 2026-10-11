@@ -27,6 +27,7 @@ from strategy.signal_generator import SignalGenerator
 
 # ─── Fixtures ───
 
+
 @pytest.fixture
 def config_manager(tmp_path):
     """ConfigManager واقعی با فایل‌های tmp — DEFAULT_CONFIG خالص."""
@@ -41,8 +42,13 @@ def mock_data_provider():
     """MarketDataProvider mock با تمام متدهای get_* — AsyncMock return_value=None."""
     dp = MagicMock(name="MarketDataProviderMock")
     for name in [
-        "get_derivatives_data", "get_fundamental_data", "get_onchain_data",
-        "get_order_book", "get_macro_data", "get_trending_data", "get_all_indices",
+        "get_derivatives_data",
+        "get_fundamental_data",
+        "get_onchain_data",
+        "get_order_book",
+        "get_macro_data",
+        "get_trending_data",
+        "get_all_indices",
     ]:
         setattr(dp, name, AsyncMock(return_value=None))
     dp.get_news_sentiment = AsyncMock(return_value=None)
@@ -149,6 +155,7 @@ BAD_RR_LEVELS = {
 
 # ─── generate_signal Core Tests ───
 
+
 class TestGenerateSignalErrorContract:
     """قرارداد خطای واحد (قاعده ۳۰):
     - بازگرداندن None = «سیگنالی نیست» (HOLD، رد RR) — تصمیم سالم تحلیل.
@@ -166,9 +173,7 @@ class TestGenerateSignalErrorContract:
         raise — نه None (قاعده ۳۰)."""
         long_missing = pd.DataFrame(
             {"open": [50000.0] * 600, "high": [50500.0] * 600},
-            index=pd.date_range(
-                end=pd.Timestamp.now(tz="UTC"), periods=600, freq="1h", tz="UTC"
-            ),
+            index=pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=600, freq="1h", tz="UTC"),
         )
         with pytest.raises(InsufficientDataError, match="Missing required columns"):
             await generator.generate_signal("BTC/USDT", "1h", long_missing)
@@ -178,8 +183,10 @@ class TestGenerateSignalErrorContract:
         """|final_score| < threshold → HOLD → None (نه Exception)."""
         rigged_generator.scorer.calculate_combined_score.return_value = (10.0, ["hold reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels") as mock_levels:
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels") as mock_levels,
+        ):
             result = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -191,8 +198,10 @@ class TestGenerateSignalErrorContract:
     async def test_rr_ratio_below_minimum_returns_none(self, rigged_generator, valid_1h_ohlcv):
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BAD_RR_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BAD_RR_LEVELS),
+        ):
             result = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -203,8 +212,10 @@ class TestGenerateSignalErrorContract:
     async def test_sell_path_returns_complete_signal(self, rigged_generator, valid_1h_ohlcv):
         rigged_generator.scorer.calculate_combined_score.return_value = (-75.0, ["sell reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=SELL_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=SELL_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -217,12 +228,16 @@ class TestGenerateSignalErrorContract:
         assert signal.risk_reward_ratio == pytest.approx(2.8835, abs=1e-3)
 
     @pytest.mark.asyncio
-    async def test_buy_path_returns_complete_signal_with_all_fields(self, rigged_generator, valid_1h_ohlcv):
+    async def test_buy_path_returns_complete_signal_with_all_fields(
+        self, rigged_generator, valid_1h_ohlcv
+    ):
         """موفقیت → TradingSignal کامل با threshold_used/threshold_regime."""
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -249,16 +264,23 @@ class TestGenerateSignalErrorContract:
         """include_external=False → external_data همه None + provider صدا زده نشود."""
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
 
         # تمام متدهای get_* صدا زده نشده‌اند
         for name in [
-            "get_derivatives_data", "get_fundamental_data", "get_onchain_data",
-            "get_order_book", "get_macro_data", "get_trending_data", "get_all_indices",
+            "get_derivatives_data",
+            "get_fundamental_data",
+            "get_onchain_data",
+            "get_order_book",
+            "get_macro_data",
+            "get_trending_data",
+            "get_all_indices",
             "get_news_sentiment",
         ]:
             getattr(rigged_generator.data_provider, name).assert_not_called()
@@ -273,24 +295,38 @@ class TestGenerateSignalErrorContract:
         assert signal.market_indices is None
 
     @pytest.mark.asyncio
-    async def test_include_external_true_gathers_live_data(self, generator, valid_1h_ohlcv, sideways_analysis):
+    async def test_include_external_true_gathers_live_data(
+        self, generator, valid_1h_ohlcv, sideways_analysis
+    ):
         """include_external=True (پیش‌فرض) → _gather_external_data صدا زده شود و
         نتایج در سیگنال قرار بگیرند."""
-        generator.market_analyzer.analyze_market_condition = MagicMock(return_value=sideways_analysis)
+        generator.market_analyzer.analyze_market_condition = MagicMock(
+            return_value=sideways_analysis
+        )
         generator.scorer.calculate_combined_score = MagicMock(return_value=(75.0, ["buy reason"]))
         sentinel = {"derivatives": "deriv-data", "fundamental": "fund-data"}
 
         # configure the mocks
-        generator.data_provider.get_derivatives_data = AsyncMock(return_value=sentinel["derivatives"])
-        generator.data_provider.get_fundamental_data = AsyncMock(return_value=sentinel["fundamental"])
+        generator.data_provider.get_derivatives_data = AsyncMock(
+            return_value=sentinel["derivatives"]
+        )
+        generator.data_provider.get_fundamental_data = AsyncMock(
+            return_value=sentinel["fundamental"]
+        )
         for name in [
-            "get_onchain_data", "get_order_book", "get_macro_data",
-            "get_trending_data", "get_all_indices", "get_news_sentiment",
+            "get_onchain_data",
+            "get_order_book",
+            "get_macro_data",
+            "get_trending_data",
+            "get_all_indices",
+            "get_news_sentiment",
         ]:
             setattr(generator.data_provider, name, AsyncMock(return_value=None))
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await generator.generate_signal("BTC/USDT", "1h", valid_1h_ohlcv)
 
         generator.data_provider.get_derivatives_data.assert_awaited_once_with("BTC/USDT")
@@ -302,8 +338,10 @@ class TestGenerateSignalErrorContract:
     async def test_include_ml_false_no_model_calls(self, rigged_generator, valid_1h_ohlcv):
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -311,15 +349,25 @@ class TestGenerateSignalErrorContract:
         rigged_generator.model_manager.predict_with_confidence.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_include_ml_true_with_predictions(self, generator, valid_1h_ohlcv, sideways_analysis, model_prediction_full):
+    async def test_include_ml_true_with_predictions(
+        self, generator, valid_1h_ohlcv, sideways_analysis, model_prediction_full
+    ):
         """include_ml=True → predict_with_confidence برای هر دو مدل صدا زده شود."""
-        generator.market_analyzer.analyze_market_condition = MagicMock(return_value=sideways_analysis)
+        generator.market_analyzer.analyze_market_condition = MagicMock(
+            return_value=sideways_analysis
+        )
         generator.scorer.calculate_combined_score = MagicMock(return_value=(75.0, ["buy reason"]))
-        generator.model_manager.predict_with_confidence = AsyncMock(return_value=model_prediction_full)
+        generator.model_manager.predict_with_confidence = AsyncMock(
+            return_value=model_prediction_full
+        )
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
-            signal = await generator.generate_signal("BTC/USDT", "1h", valid_1h_ohlcv, include_ml=True)
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
+            signal = await generator.generate_signal(
+                "BTC/USDT", "1h", valid_1h_ohlcv, include_ml=True
+            )
 
         assert generator.model_manager.predict_with_confidence.await_count == 2  # lstm + xgboost
         assert signal.ml_confidence == pytest.approx(0.75, abs=1e-3)  # 75/100
@@ -327,13 +375,23 @@ class TestGenerateSignalErrorContract:
 
 # ─── adjust_weights_by_regime Tests (gap 6) ───
 
+
 class TestAdjustWeightsByRegime:
     """قاعده ۶: وزن‌دهی بر اساس رژیم بازار."""
 
     BASE = {
-        "rsi": 10.0, "stoch": 8.0, "cci": 6.0, "williams_r": 4.0,
-        "sma": 5.0, "ema": 5.0, "adx": 7.0, "supertrend": 3.0,
-        "psar": 2.0, "ichimoku": 2.0, "macd": 9.0, "bb": 6.0,
+        "rsi": 10.0,
+        "stoch": 8.0,
+        "cci": 6.0,
+        "williams_r": 4.0,
+        "sma": 5.0,
+        "ema": 5.0,
+        "adx": 7.0,
+        "supertrend": 3.0,
+        "psar": 2.0,
+        "ichimoku": 2.0,
+        "macd": 9.0,
+        "bb": 6.0,
     }
 
     def test_ranging_boosts_mean_reversion_indicators(self, generator):
@@ -354,7 +412,9 @@ class TestAdjustWeightsByRegime:
 
     def test_other_regimes_unchanged(self, generator):
         for market_type in ["transitional", "unknown", ""]:
-            adjusted = generator.adjust_weights_by_regime(dict(self.BASE), {"market_type": market_type})
+            adjusted = generator.adjust_weights_by_regime(
+                dict(self.BASE), {"market_type": market_type}
+            )
             assert adjusted == self.BASE
 
     def test_input_not_mutated(self, generator):
@@ -368,6 +428,7 @@ class TestAdjustWeightsByRegime:
 
 
 # ─── _hurst_range Tests ───
+
 
 class TestHurstRange:
     """_hurst_range ماپینگ Hurst بهレンジ برای threshold_regime."""
@@ -388,17 +449,21 @@ class TestHurstRange:
     def test_invalid_inputs(self):
         assert SignalGenerator._hurst_range(None) == "unknown"
         assert SignalGenerator._hurst_range("abc") == "unknown"
-        # NaN comparison always fails; NaN != NaN in Python. The function returns "mid" for NaN input.
+        # NaN comparison always fails; NaN != NaN in Python.
+        # The function returns "mid" for NaN input.
         assert SignalGenerator._hurst_range(float("nan")) == "mid"
 
 
 # ─── Combined Weights Tests ───
 
+
 class TestCombinedWeights:
     """combined_weights = regime_weight × decorr_weight (محصوله دو مرحله)."""
 
     @pytest.mark.asyncio
-    async def test_combined_is_product_of_regime_and_decorr(self, rigged_generator, valid_1h_ohlcv, sideways_analysis):
+    async def test_combined_is_product_of_regime_and_decorr(
+        self, rigged_generator, valid_1h_ohlcv, sideways_analysis
+    ):
         """وزن نهایی محصول وزن رژیمی و وزن ضدهمبستگی است."""
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["reason"])
 
@@ -409,8 +474,10 @@ class TestCombinedWeights:
 
         # base_weights از config (پیش‌فرض {} → combined همه 1.0)
         # به جای آن regime صریح patch می‌کنیم
-        with patch("strategy.signal_generator.detect_market_regime", return_value=RANGE_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=RANGE_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             # get_indicator_weights پیش‌فرض {} → base_weights خالی
             # بنابراین regime_weights هم خالی → combined هم خالی
             # تست محض قرارداد: اگر base_weights داشته باشد، combined = regime × decorr
@@ -435,6 +502,7 @@ class TestCombinedWeights:
 
 # ─── Threshold Regime Contract Tests ───
 
+
 class TestThresholdRegimeContract:
     """قرارداد: threshold_regime = f"{vol_regime}|{hurst_range}" — چون
     BacktestingEngine._flush_calibration با partition("|") تجزیه می‌کند."""
@@ -445,8 +513,10 @@ class TestThresholdRegimeContract:
 
         # volatility_regime = "high" از detect_market_regime
         # hurst_exponent = 0.5 (از sideways fixture) → "mid"
-        with patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -467,8 +537,10 @@ class TestThresholdRegimeContract:
         threshold_manager.get_optimal_threshold باشد."""
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -477,15 +549,19 @@ class TestThresholdRegimeContract:
         assert signal.threshold_used == 50.0
 
     @pytest.mark.asyncio
-    async def test_threshold_regime_with_low_vol_low_hurst(self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_low):
+    async def test_threshold_regime_with_low_vol_low_hurst(
+        self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_low
+    ):
         rigged_generator.market_analyzer.analyze_market_condition = MagicMock(
             return_value=MarketAnalysis(**market_analysis_hurst_low)
         )
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
         # volatility_regime = "low", hurst = 0.3 → "low"
-        with patch("strategy.signal_generator.detect_market_regime", return_value=RANGE_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=RANGE_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -495,14 +571,18 @@ class TestThresholdRegimeContract:
         assert vol == "low" and hurst == "low"
 
     @pytest.mark.asyncio
-    async def test_threshold_regime_with_high_vol_high_hurst(self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_high):
+    async def test_threshold_regime_with_high_vol_high_hurst(
+        self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_high
+    ):
         rigged_generator.market_analyzer.analyze_market_condition = MagicMock(
             return_value=MarketAnalysis(**market_analysis_hurst_high)
         )
         rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
 
-        with patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT), \
-             patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS):
+        with (
+            patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT),
+            patch("strategy.signal_generator.calculate_dynamic_levels", return_value=BUY_LEVELS),
+        ):
             signal = await rigged_generator.generate_signal(
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
@@ -531,14 +611,17 @@ class TestGatherExternalData:
     @pytest.mark.asyncio
     async def test_all_sources_returned(self, generator):
         sentinels = {
-            "derivatives": "deriv", "fundamental": "fund", "onchain": "onchain",
-            "order_book": "ob", "macro": "macro", "trending": "trend",
-            "market_indices": "indices", "news": "news",
+            "derivatives": "deriv",
+            "fundamental": "fund",
+            "onchain": "onchain",
+            "order_book": "ob",
+            "macro": "macro",
+            "trending": "trend",
+            "market_indices": "indices",
+            "news": "news",
         }
         for key, method in EXTERNAL_KEY_TO_METHOD.items():
-            setattr(
-                generator.data_provider, method, AsyncMock(return_value=sentinels[key])
-            )
+            setattr(generator.data_provider, method, AsyncMock(return_value=sentinels[key]))
 
         result = await generator._gather_external_data("BTC/USDT")
 
@@ -568,22 +651,41 @@ class TestGatherExternalData:
 
     @pytest.mark.asyncio
     async def test_news_sentiment_exception_becomes_none(self, generator):
-        for key in ["derivatives", "fundamental", "onchain", "order_book", "macro", "trending", "market_indices"]:
+        for key in [
+            "derivatives",
+            "fundamental",
+            "onchain",
+            "order_book",
+            "macro",
+            "trending",
+            "market_indices",
+        ]:
             setattr(
                 generator.data_provider,
                 EXTERNAL_KEY_TO_METHOD[key],
                 AsyncMock(return_value="ok"),
             )
-        generator.data_provider.get_news_sentiment = AsyncMock(side_effect=RuntimeError("news down"))
+        generator.data_provider.get_news_sentiment = AsyncMock(
+            side_effect=RuntimeError("news down")
+        )
 
         result = await generator._gather_external_data("BTC/USDT")
 
         assert result["news"] is None
-        for k in ["derivatives", "fundamental", "onchain", "order_book", "macro", "trending", "market_indices"]:
+        for k in [
+            "derivatives",
+            "fundamental",
+            "onchain",
+            "order_book",
+            "macro",
+            "trending",
+            "market_indices",
+        ]:
             assert result[k] == "ok"
 
 
 # ─── Market Regime Tests (فاز ۱۲ — common/utils.py::detect_market_regime) ───
+
 
 class TestMarketRegime:
     """قاعده ۶/۱۲: کلیدهای خروجی detect_market_regime دقیقا همان چیزی است که
@@ -599,8 +701,13 @@ class TestMarketRegime:
     def test_returns_all_required_keys(self, valid_1h_ohlcv):
         regime = detect_market_regime(valid_1h_ohlcv)
         assert set(regime.keys()) == {
-            "market_type", "adx", "volatility", "volatility_regime",
-            "trend_persistence", "hurst_exponent", "recommended_strategy",
+            "market_type",
+            "adx",
+            "volatility",
+            "volatility_regime",
+            "trend_persistence",
+            "hurst_exponent",
+            "recommended_strategy",
         }
 
     def test_never_raises_unboundlocal_on_live_path(self, valid_1h_ohlcv):
@@ -622,9 +729,7 @@ class TestMarketRegime:
             regime = detect_market_regime(valid_1h_ohlcv, lookback=lookback)
             assert regime["market_type"] in ("trending", "ranging", "transitional")
             assert regime["volatility_regime"] in ("high", "low", "normal")
-            adjusted = generator.adjust_weights_by_regime(
-                {"rsi": 2.0, "sma": 2.0}, regime
-            )
+            adjusted = generator.adjust_weights_by_regime({"rsi": 2.0, "sma": 2.0}, regime)
             if regime["market_type"] == "ranging":
                 assert adjusted["rsi"] == pytest.approx(3.0)
                 assert adjusted["sma"] == pytest.approx(2.0)

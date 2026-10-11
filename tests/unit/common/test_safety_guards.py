@@ -64,9 +64,7 @@ def test_detect_market_regime_propagates_base_exception(monkeypatch):
 
 def test_format_signal_message_propagates_cancelled(monkeypatch):
     """CancelledError during reason formatting must propagate (clean shutdown)."""
-    handler = telegram_bot_mod.TelegramBotHandler.__new__(
-        telegram_bot_mod.TelegramBotHandler
-    )
+    handler = telegram_bot_mod.TelegramBotHandler.__new__(telegram_bot_mod.TelegramBotHandler)
     calls = {"n": 0}
     real_escape = telegram_bot_mod.escape_markdown_v2
 

@@ -14,9 +14,7 @@ def test_predict_without_artifact_never_trains(tmp_path):
     )
     manager.train_and_save_model = AsyncMock(wraps=manager.train_and_save_model)
 
-    result = asyncio.run(
-        manager.predict_with_confidence("xgboost", "BTC/USDT", "1h")
-    )
+    result = asyncio.run(manager.predict_with_confidence("xgboost", "BTC/USDT", "1h"))
 
     assert result is None
     manager.train_and_save_model.assert_not_called()

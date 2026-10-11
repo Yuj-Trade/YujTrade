@@ -33,8 +33,8 @@ class TestSignalTrackerGap31:
     @pytest.fixture
     def temp_history_file(self):
         """Create a temporary history file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{}')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{}")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink(missing_ok=True)
@@ -44,9 +44,7 @@ class TestSignalTrackerGap31:
         return SignalTracker(storage_path=temp_history_file)
 
     @pytest.mark.asyncio
-    async def test_gap31_production_path_never_calls_resolve(
-        self, tracker, monkeypatch
-    ):
+    async def test_gap31_production_path_never_calls_resolve(self, tracker, monkeypatch):
         """
         Gap 31: Verify that in a simulated production run (TradingService path),
         signal_tracker.resolve is NEVER called.
@@ -54,18 +52,20 @@ class TestSignalTrackerGap31:
         This test MUST FAIL initially (red) to document the gap, then pass after fix.
         """
         # Create a real signal
-        signal_id = make_signal_id(
-            "BTC/USDT", "1d", datetime.now(timezone.utc), "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
 
         # Record a signal (simulating TradingService.analyze_symbol)
-        await tracker.record(signal_id, None, {
-            "symbol": "BTC/USDT",
-            "timeframe": "1d",
-            "signal_type": "BUY",
-            "entry_price": 50000,
-            "confidence_score": 75,
-        })
+        await tracker.record(
+            signal_id,
+            None,
+            {
+                "symbol": "BTC/USDT",
+                "timeframe": "1d",
+                "signal_type": "BUY",
+                "entry_price": 50000,
+                "confidence_score": 75,
+            },
+        )
 
         # Spy on resolve
         resolve_called = []
@@ -104,13 +104,9 @@ class TestSignalTrackerGap31:
         # This test documents the MISSING reconciliation mechanism
 
     @pytest.mark.asyncio
-    async def test_gap31_resolve_called_from_backtest_only(
-        self, tracker
-    ):
+    async def test_gap31_resolve_called_from_backtest_only(self, tracker):
         """Verify BacktestingEngine is the only path that calls resolve."""
-        signal_id = make_signal_id(
-            "BTC/USDT", "1h", datetime.now(timezone.utc), "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
 
         await tracker.record(signal_id, None, {"symbol": "BTC/USDT", "timeframe": "1h"})
 
@@ -123,9 +119,7 @@ class TestSignalTrackerGap31:
         assert summary["win_rate"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_gap31_reconciliation_mechanism_missing(
-        self, tracker
-    ):
+    async def test_gap31_reconciliation_mechanism_missing(self, tracker):
         """
         Test that demonstrates the missing reconciliation mechanism.
 
@@ -138,18 +132,20 @@ class TestSignalTrackerGap31:
         """
         # Create an "old" signal (simulate time passing by manipulating created_at)
         old_time = datetime.now(timezone.utc) - timedelta(hours=25)  # > 1h expiry
-        signal_id = make_signal_id(
-            "BTC/USDT", "1h", old_time, "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1h", old_time, "BUY")
 
-        await tracker.record(signal_id, None, {
-            "symbol": "BTC/USDT",
-            "timeframe": "1h",
-            "signal_type": "BUY",
-            "entry_price": 50000,
-            "confidence_score": 75,
-            "created_at": old_time.isoformat(),
-        })
+        await tracker.record(
+            signal_id,
+            None,
+            {
+                "symbol": "BTC/USDT",
+                "timeframe": "1h",
+                "signal_type": "BUY",
+                "entry_price": 50000,
+                "confidence_score": 75,
+                "created_at": old_time.isoformat(),
+            },
+        )
 
         # Now the signal is expired (1h expiry = 12 hours per SIGNAL_EXPIRY_BY_TIMEFRAME)
         # Wait - 1h expiry is 12 hours, so 25 hours ago IS expired
@@ -169,8 +165,8 @@ class TestSignalTrackerGap37:
 
     @pytest.fixture
     def temp_history_file(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{}')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{}")
             temp_path = f.name
         yield temp_path
         Path(temp_path).unlink(missing_ok=True)
@@ -189,15 +185,17 @@ class TestSignalTrackerGap37:
         num_signals = 20
 
         async def record_signal(i):
-            signal_id = make_signal_id(
-                f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY"
+            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY")
+            await tracker.record(
+                signal_id,
+                None,
+                {
+                    "symbol": f"SYM{i}/USDT",
+                    "timeframe": "1h",
+                    "signal_type": "BUY",
+                    "entry_price": 50000 + i,
+                },
             )
-            await tracker.record(signal_id, None, {
-                "symbol": f"SYM{i}/USDT",
-                "timeframe": "1h",
-                "signal_type": "BUY",
-                "entry_price": 50000 + i,
-            })
 
         # Run all concurrently (simulating asyncio.gather in TradingService)
         await asyncio.gather(*[record_signal(i) for i in range(num_signals)])
@@ -226,9 +224,7 @@ class TestSignalTrackerGap37:
         num_signals = 50
 
         async def record_signal(i):
-            signal_id = make_signal_id(
-                f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY"
-            )
+            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY")
             await tracker.record(signal_id, None, {"index": i})
 
         start = time.perf_counter()
@@ -247,9 +243,7 @@ class TestSignalTrackerGap37:
         """
         Gap 37: Test that asyncio.Lock prevents race between record and resolve.
         """
-        signal_id = make_signal_id(
-            "BTC/USDT", "1h", datetime.now(timezone.utc), "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
 
         # Start a record and a resolve concurrently
         async def do_record():
@@ -392,8 +386,8 @@ class TestSignalTrackerGap40:
 
     @pytest.fixture
     def tracker(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{}')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{}")
             temp_path = f.name
         tracker = SignalTracker(storage_path=temp_path)
         yield tracker
@@ -401,9 +395,7 @@ class TestSignalTrackerGap40:
 
     @pytest.mark.asyncio
     async def test_gap40_rerecord_preserves_resolved_outcome(self, tracker):
-        signal_id = make_signal_id(
-            "BTC/USDT", "1d", datetime.now(timezone.utc), "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
         await tracker.record(signal_id, None, {"entry": 50000})
         await tracker.resolve(signal_id, True, {"resolved_price": 51000})
 
@@ -417,9 +409,7 @@ class TestSignalTrackerGap40:
 
     @pytest.mark.asyncio
     async def test_gap40_rerecord_merges_details_keeps_outcome(self, tracker):
-        signal_id = make_signal_id(
-            "BTC/USDT", "1d", datetime.now(timezone.utc), "BUY"
-        )
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
         await tracker.record(signal_id, None, {"entry": 50000})
         await tracker.resolve(signal_id, False, {"resolved_price": 49000})
         await tracker.record(signal_id, None, {"extra": "info"})
@@ -472,8 +462,8 @@ class TestSignalTrackerPerformanceSummary:
 
     @pytest.fixture
     def tracker(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{}')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{}")
             temp_path = f.name
         tracker = SignalTracker(storage_path=temp_path)
         yield tracker

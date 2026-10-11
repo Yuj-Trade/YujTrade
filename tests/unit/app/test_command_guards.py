@@ -30,9 +30,7 @@ def test_signals_command_never_executes():
     handler.format_signal_message = MagicMock(return_value=["formatted"])
     update, context = _update_context()
 
-    with patch.object(
-        TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)
-    ):
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
         asyncio.run(handler.signals_command(update, context))
 
     trading_service.run_quick_analysis.assert_awaited_once()
@@ -51,16 +49,11 @@ def test_paper_command_reports_accepted_and_rejected():
         handler = _handler(trading_service)
         update, context = _update_context()
 
-        with patch.object(
-            TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)
-        ):
+        with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
             asyncio.run(handler.paper_command(update, context))
 
         trading_service.execute_signal.assert_awaited_once()
-        texts = [
-            str(call.args[0])
-            for call in update.message.reply_text.await_args_list
-        ]
+        texts = [str(call.args[0]) for call in update.message.reply_text.await_args_list]
         assert any(word in text for text in texts)
 
 
@@ -71,9 +64,7 @@ def test_paper_command_rejects_non_admin():
     handler = _handler(trading_service)
     update, context = _update_context()
 
-    with patch.object(
-        TelegramBotHandler, "_is_admin", AsyncMock(return_value=False)
-    ):
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=False)):
         asyncio.run(handler.paper_command(update, context))
 
     trading_service.run_quick_analysis.assert_not_called()

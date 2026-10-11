@@ -22,9 +22,7 @@ def test_risk_command_reports_config_manager_values(tmp_path):
     update.message.reply_text = AsyncMock()
     context = MagicMock(name="Context")
 
-    with patch.object(
-        TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)
-    ):
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
         asyncio.run(handler.risk_command(update, context))
 
     update.message.reply_text.assert_awaited_once()
