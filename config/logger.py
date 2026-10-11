@@ -16,12 +16,7 @@ console_format = (
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 )
 
-logger.add(
-    sys.stdout,
-    level="INFO",
-    format=console_format,
-    colorize=True
-)
+logger.add(sys.stdout, level="INFO", format=console_format, colorize=True)
 
 logger.add(
     log_file,
@@ -29,10 +24,10 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
     rotation="10 MB",
     retention="7 days",
-    encoding='utf-8',
+    encoding="utf-8",
     enqueue=True,
     backtrace=True,
-    diagnose=True
+    diagnose=True,
 )
 
 logger.info("Logger initialized.")

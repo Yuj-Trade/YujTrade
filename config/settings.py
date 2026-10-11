@@ -159,9 +159,9 @@ class ConfigManager:
 
     def get_component_weights(self, timeframe: str) -> dict[str, float]:
         if self.get("timeframe_based_weights", True):
-            timeframe_weights = self.weights_config.get(
-                "timeframe_based_settings", {}
-            ).get(timeframe, {})
+            timeframe_weights = self.weights_config.get("timeframe_based_settings", {}).get(
+                timeframe, {}
+            )
             if "component_weights" in timeframe_weights:
                 return timeframe_weights["component_weights"]
 
@@ -177,29 +177,23 @@ class ConfigManager:
 
     def get_indicator_weights(self, timeframe: str) -> dict[str, float]:
         if self.get("timeframe_based_weights", True):
-            timeframe_weights = self.weights_config.get(
-                "timeframe_based_settings", {}
-            ).get(timeframe, {})
+            timeframe_weights = self.weights_config.get("timeframe_based_settings", {}).get(
+                timeframe, {}
+            )
             if "indicator_weights" in timeframe_weights:
                 return timeframe_weights["indicator_weights"]
 
-        return self.weights_config.get("default_settings", {}).get(
-            "indicator_weights", {}
-        )
+        return self.weights_config.get("default_settings", {}).get("indicator_weights", {})
 
     def get_cache_config(self) -> dict[str, Any]:
-        return self.weights_config.get(
-            "cache_config", self.DEFAULT_WEIGHTS_CONFIG["cache_config"]
-        )
+        return self.weights_config.get("cache_config", self.DEFAULT_WEIGHTS_CONFIG["cache_config"])
 
     def get_cache_ttl(self, category: str, sub_category: str | None = None) -> int:
         cache_config = self.get_cache_config()
         category_config = cache_config.get(category)
 
         if isinstance(category_config, dict) and sub_category:
-            return category_config.get(
-                sub_category, cache_config.get("default_ttl", 3600)
-            )
+            return category_config.get(sub_category, cache_config.get("default_ttl", 3600))
         elif isinstance(category_config, int):
             return category_config
         else:
