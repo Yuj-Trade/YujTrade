@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -77,7 +77,6 @@ class RiskDecision:
     leverage: float = 1.0
     reason: str = ""
     checks: dict[str, Any] = field(default_factory=dict)
-
 
 
 class SignalType(Enum):

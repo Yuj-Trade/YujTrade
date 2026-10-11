@@ -60,6 +60,7 @@ class TradingService(ModelDataProvider):
        (max_signals_per_run)."""
 
     _TREND_STRENGTH_RANK = {"WEAK": 0, "MODERATE": 1, "STRONG": 2}
+
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
@@ -85,9 +86,7 @@ class TradingService(ModelDataProvider):
             data_provider=self,
             redis_client=self._redis_client,
             model_path=self.config_manager.get("model_path", "models"),
-            auto_train_on_predict=self.config_manager.get(
-                "model_auto_train_on_predict", False
-            ),
+            auto_train_on_predict=self.config_manager.get("model_auto_train_on_predict", False),
         )
 
         self.signal_generator = SignalGenerator(
@@ -104,8 +103,14 @@ class TradingService(ModelDataProvider):
         risk_cfg = build_risk_config(self.config_manager)
         self.risk_manager = RiskManager(risk_cfg)
         self.portfolio = PortfolioManager(float(self.config_manager.get("initial_cash", 10000.0)))
-        self.paper_engine = PaperTradingEngine(portfolio=self.portfolio, risk_manager=self.risk_manager)
-        self.execution_engine = ExecutionEngine(adapter=ExchangeAdapter(dry_run=bool(self.config_manager.get("execution_dry_run", True))))
+        self.paper_engine = PaperTradingEngine(
+            portfolio=self.portfolio, risk_manager=self.risk_manager
+        )
+        self.execution_engine = ExecutionEngine(
+            adapter=ExchangeAdapter(
+                dry_run=bool(self.config_manager.get("execution_dry_run", True))
+            )
+        )
         self.signal_tracker = SignalTracker()
 
     async def initialize(self) -> None:
@@ -132,29 +137,19 @@ class TradingService(ModelDataProvider):
         limit = limit_map.get(timeframe, 2000)
 
         if for_prediction:
-            limit = min(
-                limit, self.config_manager.get("model_prediction_limit", 300)
-            )
+            limit = min(limit, self.config_manager.get("model_prediction_limit", 300))
 
         try:
-            data = await self.market_data_provider.fetch_ohlcv_data(
-                symbol, timeframe, limit=limit
-            )
+            data = await self.market_data_provider.fetch_ohlcv_data(symbol, timeframe, limit=limit)
             if data is None or data.empty or len(data) < 200:
-                logger.warning(
-                    f"Insufficient data for model operations for {symbol}-{timeframe}."
-                )
+                logger.warning(f"Insufficient data for model operations for {symbol}-{timeframe}.")
                 return None
             return data
         except Exception as e:
-            logger.error(
-                f"Failed to fetch data for model for {symbol}-{timeframe}: {e}"
-            )
+            logger.error(f"Failed to fetch data for model for {symbol}-{timeframe}: {e}")
             return None
 
-    async def analyze_symbol(
-        self, symbol: str, timeframe: str
-    ) -> TradingSignal | None:
+    async def analyze_symbol(self, symbol: str, timeframe: str) -> TradingSignal | None:
         """قرارداد خطای واحد (قاعده ۳۰):
         - None یعنی «سیگنالی نیست» (HOLD/رد RR/رد multi-TF/رد گیت‌ها) یا
           سمبل دائماً نامعتبر (ignore-list).
@@ -177,15 +172,15 @@ class TradingService(ModelDataProvider):
                 logger.warning(f"No OHLCV data for {symbol}-{timeframe}")
                 return None
 
-            signal = await self.signal_generator.generate_signal(
-                symbol, timeframe, ohlcv_data
-            )
+            signal = await self.signal_generator.generate_signal(symbol, timeframe, ohlcv_data)
 
             if signal:
-                multi_tf_score, _, direction_conflict = (
-                    await self.multi_tf_analyzer.get_confirmation_score(
-                        symbol, timeframe, signal.signal_type, ohlcv_data
-                    )
+                (
+                    multi_tf_score,
+                    _,
+                    direction_conflict,
+                ) = await self.multi_tf_analyzer.get_confirmation_score(
+                    symbol, timeframe, signal.signal_type, ohlcv_data
                 )
                 if multi_tf_score < 0.3 or direction_conflict:
                     logger.info(
@@ -194,13 +189,13 @@ class TradingService(ModelDataProvider):
                     return None
 
                 if not self._passes_quality_gates(signal):
-                    logger.info(
-                        f"Signal for {symbol}-{timeframe} rejected by quality gates."
-                    )
+                    logger.info(f"Signal for {symbol}-{timeframe} rejected by quality gates.")
                     return None
 
                 logger.info(
-                    f"Generated signal for {symbol} on {timeframe}: {signal.signal_type.value} with confidence {signal.confidence_score:.2f}"
+                    f"Generated signal for {symbol} on {timeframe}: "
+                    f"{signal.signal_type.value} "
+                    f"with confidence {signal.confidence_score:.2f}"
                 )
                 # شروع lifecycle رهگیری: generated → pending (قاعده ۱۳).
                 # record الان async است — بدون await هیچ سیگنالی ذخیره
@@ -269,15 +264,13 @@ class TradingService(ModelDataProvider):
             return False
 
         # 3b. حداقل قدرت روند
-        required = str(
-            LONG_TERM_CONFIG.get("min_trend_strength", "MODERATE")
-        ).upper()
+        required = str(LONG_TERM_CONFIG.get("min_trend_strength", "MODERATE")).upper()
         strength = signal.market_context.get("trend_strength")
         strength_name = getattr(strength, "value", strength)
         strength_name = str(strength_name).upper() if strength_name else "WEAK"
-        if self._TREND_STRENGTH_RANK.get(
-            strength_name, 0
-        ) < self._TREND_STRENGTH_RANK.get(required, 1):
+        if self._TREND_STRENGTH_RANK.get(strength_name, 0) < self._TREND_STRENGTH_RANK.get(
+            required, 1
+        ):
             logger.debug(
                 f"Gate trend strength: {strength_name} < {required} "
                 f"for {signal.symbol}-{signal.timeframe}"
@@ -338,9 +331,7 @@ class TradingService(ModelDataProvider):
             tf for tf in all_timeframes if tf in focus_timeframes
         ] or all_timeframes
 
-        tasks = [
-            self.analyze_symbol(s, tf) for s in symbols for tf in timeframes_to_use
-        ]
+        tasks = [self.analyze_symbol(s, tf) for s in symbols for tf in timeframes_to_use]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         signals = self._partition_results(results)
@@ -377,7 +368,8 @@ class TradingService(ModelDataProvider):
 
         if final_signals:
             logger.info(
-                f"Selected {len(final_signals)} top quality long-term signals from {len(signals)} candidates."
+                f"Selected {len(final_signals)} top quality long-term signals "
+                f"from {len(signals)} candidates."
             )
             for i, sig in enumerate(final_signals, 1):
                 logger.info(
@@ -390,9 +382,7 @@ class TradingService(ModelDataProvider):
 
         return final_signals
 
-    async def run_quick_analysis(
-        self, timeframes: list[str] | None = None
-    ) -> list[TradingSignal]:
+    async def run_quick_analysis(self, timeframes: list[str] | None = None) -> list[TradingSignal]:
         """تعریف واحد Quick Analysis (قاعده ۱۷): اسکن فقط تایم‌فریم‌های داده‌شده
         (پیش‌فرض ["1h"]) بدون رتبه‌بندی/محدودسازی نهایی. هم Telegram و هم
         TaskService از همین implementation استفاده می‌کنند.
@@ -407,11 +397,7 @@ class TradingService(ModelDataProvider):
         symbols = self.config_manager.get("symbols", [])
         timeframes_to_run = timeframes or ["1h"]
 
-        tasks = [
-            self.analyze_symbol(symbol, tf)
-            for symbol in symbols
-            for tf in timeframes_to_run
-        ]
+        tasks = [self.analyze_symbol(symbol, tf) for symbol in symbols for tf in timeframes_to_run]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         return self._partition_results(results)
@@ -512,10 +498,7 @@ class TradingService(ModelDataProvider):
             if df is not None and not df.empty:
                 window = df[df.index >= created_at]
                 if expiry_hours:
-                    window = window[
-                        window.index
-                        <= created_at + timedelta(hours=expiry_hours)
-                    ]
+                    window = window[window.index <= created_at + timedelta(hours=expiry_hours)]
                 for _, candle in window.iterrows():
                     try:
                         high = float(candle["high"])
@@ -536,16 +519,10 @@ class TradingService(ModelDataProvider):
         price = await self._get_reference_price(symbol, timeframe)
         if price is None:
             return None
-        success = (
-            price > entry
-            if signal_type == "buy"
-            else price < entry
-        )
+        success = price > entry if signal_type == "buy" else price < entry
         return success, price
 
-    async def _get_reference_price(
-        self, symbol: str, timeframe: str
-    ) -> float | None:
+    async def _get_reference_price(self, symbol: str, timeframe: str) -> float | None:
         """قیمت مرجع برای reconciliation (قاعده ۳۱): آخرین close از Provider
         در لحظه اجرا. قاعده ۴۴: با bypass_cache=True تا قیمت کهنه از کش Redis
         (TTL تایم‌فریم) برنگردد. None یعنی قیمت در دسترس نیست (skip، نه
@@ -558,9 +535,7 @@ class TradingService(ModelDataProvider):
                 return None
             return float(df["close"].iloc[-1])
         except Exception as e:
-            logger.debug(
-                f"Reference price fetch failed for {symbol}-{timeframe}: {e}"
-            )
+            logger.debug(f"Reference price fetch failed for {symbol}-{timeframe}: {e}")
             return None
 
     @staticmethod

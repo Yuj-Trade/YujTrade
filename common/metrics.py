@@ -1,7 +1,12 @@
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
-    _signals_total = Counter("yujtrade_signals_total", "Signals generated", ["symbol", "timeframe", "side"])
-    _orders_total = Counter("yujtrade_orders_total", "Orders executed", ["symbol", "mode", "status"])
+
+    _signals_total = Counter(
+        "yujtrade_signals_total", "Signals generated", ["symbol", "timeframe", "side"]
+    )
+    _orders_total = Counter(
+        "yujtrade_orders_total", "Orders executed", ["symbol", "mode", "status"]
+    )
     _equity = Gauge("yujtrade_equity", "Portfolio equity")
     _exposure = Gauge("yujtrade_exposure_pct", "Portfolio exposure pct")
     _signal_latency = Histogram("yujtrade_signal_latency_seconds", "Signal pipeline latency")
@@ -14,6 +19,7 @@ def start_metrics_server(enabled: bool = False, port: int = 9108) -> bool:
     if not enabled or not _PROM:
         return False
     from prometheus_client import start_http_server
+
     start_http_server(int(port), addr="127.0.0.1")
     return True
 
@@ -22,6 +28,7 @@ def init_sentry(dsn: str = "") -> bool:
     if not dsn:
         return False
     import sentry_sdk
+
     sentry_sdk.init(dsn=dsn)
     return True
 

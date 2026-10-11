@@ -37,9 +37,7 @@ class CacheKeyBuilder:
         >>> CacheKeyBuilder.build(CacheCategory.OHLCV, "binance", ["1h", "1000"], "BTC/USDT")
         'cache:ohlcv:binance:btc_usdt:1h:1000'
         """
-        safe_symbol = (
-            symbol.lower().replace("/", "_").replace("\\", "") if symbol else "global"
-        )
+        safe_symbol = symbol.lower().replace("/", "_").replace("\\", "") if symbol else "global"
         key_parts = [
             CacheKeyBuilder.PREFIX,
             category.value,
@@ -50,15 +48,11 @@ class CacheKeyBuilder:
 
     @staticmethod
     def ohlcv_key(source: str, symbol: str, timeframe: str, limit: int) -> str:
-        return CacheKeyBuilder.build(
-            CacheCategory.OHLCV, source, [timeframe, str(limit)], symbol
-        )
+        return CacheKeyBuilder.build(CacheCategory.OHLCV, source, [timeframe, str(limit)], symbol)
 
     @staticmethod
     def generic_key(source: str, identifier: str, symbol: str | None = None) -> str:
-        return CacheKeyBuilder.build(
-            CacheCategory.GENERIC, source, [identifier], symbol
-        )
+        return CacheKeyBuilder.build(CacheCategory.GENERIC, source, [identifier], symbol)
 
     @staticmethod
     def mtf_analysis_key(symbol: str, timeframe: str) -> str:
@@ -69,9 +63,7 @@ class CacheKeyBuilder:
     @staticmethod
     def derivatives_key(source: str, metric: str, symbol: str) -> str:
         """Creates a cache key for derivatives data."""
-        return CacheKeyBuilder.build(
-            CacheCategory.DERIVATIVES, source, [metric], symbol
-        )
+        return CacheKeyBuilder.build(CacheCategory.DERIVATIVES, source, [metric], symbol)
 
     @staticmethod
     def macro_key(source: str, identifier: str) -> str:

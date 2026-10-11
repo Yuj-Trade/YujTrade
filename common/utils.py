@@ -34,16 +34,12 @@ class RateLimiter:
                 oldest_request_time = reqs[0]
                 sleep_time = self.time_window - (now - oldest_request_time)
                 if sleep_time > 0:
-                    logger.debug(
-                        f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s"
-                    )
+                    logger.debug(f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s")
                     await asyncio.sleep(sleep_time)
 
                 # After sleeping, update the list again
                 now = time.time()
-                self.requests[endpoint] = [
-                    t for t in reqs if now - t < self.time_window
-                ]
+                self.requests[endpoint] = [t for t in reqs if now - t < self.time_window]
 
             self.requests[endpoint].append(time.time())
 
@@ -152,9 +148,7 @@ class IndicatorNormalizer:
         ):
             return indicator_result
 
-        expected_min, expected_max = self.expected_ranges.get(
-            indicator_name.lower(), (-1, 1)
-        )
+        expected_min, expected_max = self.expected_ranges.get(indicator_name.lower(), (-1, 1))
 
         if expected_max == float("inf") and expected_min == -float("inf"):
             # Cannot normalize unbounded values, return as is
@@ -178,8 +172,7 @@ class IndicatorNormalizer:
             if indicator_result.value < expected_max:
                 normalized_value = max(
                     (
-                        (indicator_result.value - expected_max)
-                        / abs(expected_max + 1e-6)
+                        (indicator_result.value - expected_max) / abs(expected_max + 1e-6)
                         if (expected_max + 1e-6) != 0
                         else 0
                     ),
@@ -191,10 +184,7 @@ class IndicatorNormalizer:
             # Normalize bounded values to [-1, 1]
             if expected_max > expected_min:
                 normalized_value = (
-                    2
-                    * (indicator_result.value - expected_min)
-                    / (expected_max - expected_min)
-                    - 1
+                    2 * (indicator_result.value - expected_min) / (expected_max - expected_min) - 1
                 )
                 normalized_value = np.clip(normalized_value, -1.0, 1.0)
             else:
@@ -234,9 +224,7 @@ def async_retry(
                     last_exception = e
                     if attempt + 1 == attempts:
                         break
-                    actual_delay = current_delay + random.uniform(
-                        0, jitter * current_delay
-                    )
+                    actual_delay = current_delay + random.uniform(0, jitter * current_delay)
                     logger.warning(
                         f"Attempt {attempt + 1}/{attempts} for {func.__name__} failed: {e}. "
                         f"Retrying in {actual_delay:.2f}s..."
@@ -246,9 +234,7 @@ def async_retry(
             logger.error(f"Function {func.__name__} failed after {attempts} attempts.")
             if last_exception:
                 raise last_exception
-            raise RuntimeError(
-                f"Function {func.__name__} failed without a clear exception."
-            )
+            raise RuntimeError(f"Function {func.__name__} failed without a clear exception.")
 
         return wrapper
 
@@ -256,12 +242,7 @@ def async_retry(
 
 
 def get_support_resistance_strength(data: pd.DataFrame, level: float) -> float:
-    if (
-        data.empty
-        or "high" not in data.columns
-        or "low" not in data.columns
-        or level is None
-    ):
+    if data.empty or "high" not in data.columns or "low" not in data.columns or level is None:
         return 0.0
 
     price_range = data["high"].max() - data["low"].min()
@@ -283,11 +264,7 @@ def get_support_resistance_strength(data: pd.DataFrame, level: float) -> float:
     touch_score = np.log1p(touch_count) * 2.0
 
     volume_score = 1.0
-    if (
-        "volume" in touches.columns
-        and not touches["volume"].empty
-        and touches["volume"].mean() > 0
-    ):
+    if "volume" in touches.columns and not touches["volume"].empty and touches["volume"].mean() > 0:
         avg_volume_at_touch = touches["volume"].mean()
         avg_volume_total = data["volume"].mean()
         if avg_volume_total > 0:
@@ -315,19 +292,12 @@ def get_support_resistance_strength(data: pd.DataFrame, level: float) -> float:
 
     bounce_score = bounce_score / max(len(touches), 1) * 10
 
-    strength = (
-        touch_score * 0.35
-        + volume_score * 0.25
-        + recency_score * 0.25
-        + bounce_score * 0.15
-    )
+    strength = touch_score * 0.35 + volume_score * 0.25 + recency_score * 0.25 + bounce_score * 0.15
 
     return np.clip(strength, 0, 10)
 
 
-def calculate_fibonacci_levels(
-    data: pd.DataFrame, lookback: int = 100
-) -> dict[str, float]:
+def calculate_fibonacci_levels(data: pd.DataFrame, lookback: int = 100) -> dict[str, float]:
     if len(data) < lookback:
         lookback = len(data)
 
@@ -482,9 +452,7 @@ def calculate_dynamic_levels(
 
     # Adjust based on order book liquidity
     if order_book and hasattr(order_book, "bids") and signal_type == SignalType.BUY:
-        major_bid = (
-            max([p for p, _ in order_book.bids[:5]]) if order_book.bids else None
-        )
+        major_bid = max([p for p, _ in order_book.bids[:5]]) if order_book.bids else None
         if major_bid and abs(major_bid - stop_loss) / stop_loss < 0.005:
             stop_loss = major_bid * 0.995  # Place SL just below major liquidity
 
@@ -550,9 +518,7 @@ def validate_signal_timing(
             return False, "Too close to recent high for BUY signal"
 
         lowest_index = recent_data["low"].idxmin()
-        candles_since_low = (
-            len(recent_data) - recent_data.index.get_loc(lowest_index) - 1
-        )
+        candles_since_low = len(recent_data) - recent_data.index.get_loc(lowest_index) - 1
 
         if candles_since_low < min_candles_from_extreme:
             return False, f"Too soon after recent low ({candles_since_low} candles)"
@@ -563,9 +529,7 @@ def validate_signal_timing(
             return False, "Too close to recent low for SELL signal"
 
         highest_index = recent_data["high"].idxmax()
-        candles_since_high = (
-            len(recent_data) - recent_data.index.get_loc(highest_index) - 1
-        )
+        candles_since_high = len(recent_data) - recent_data.index.get_loc(highest_index) - 1
 
         if candles_since_high < min_candles_from_extreme:
             return False, f"Too soon after recent high ({candles_since_high} candles)"
@@ -711,9 +675,7 @@ def calculate_max_drawdown(data: pd.DataFrame) -> tuple[float, int]:
     if isinstance(data.index, pd.DatetimeIndex):
         duration = (dd_end_idx - dd_start_idx).days
     else:
-        duration = int(
-            data.index.get_loc(dd_end_idx) - data.index.get_loc(dd_start_idx)
-        )
+        duration = int(data.index.get_loc(dd_end_idx) - data.index.get_loc(dd_start_idx))
 
     return round(max_dd_percentage, 2), duration
 
@@ -726,9 +688,7 @@ def calculate_correlation_matrix(symbols_data: dict[str, pd.DataFrame]) -> pd.Da
     if not symbols_data:
         return pd.DataFrame()
 
-    closes = pd.DataFrame(
-        {symbol: data["close"] for symbol, data in symbols_data.items()}
-    )
+    closes = pd.DataFrame({symbol: data["close"] for symbol, data in symbols_data.items()})
 
     returns = closes.pct_change().dropna()
     correlation_matrix = returns.corr()
