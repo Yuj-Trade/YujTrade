@@ -9,7 +9,7 @@ Market Data -> Validation -> Indicators -> Scoring -> Signal -> MTF -> Ranking -
 ## Quickstart
 1. Copy `.env.example` to `.env` and set tokens
 2. `pip install -r requirements.txt`
-3. `python -m pytest tests/ -q`
+3. `python -m pytest -m "not slow and not ml" -q`
 4. `python main.py`
 ## Configuration
 `ConfigManager` defaults plus env: risk_per_trade_pct, max_portfolio_exposure_pct, max_single_position_pct, max_concurrent_positions, max_daily_loss_pct, max_weekly_loss_pct, max_drawdown_pct, max_leverage, initial_cash, execution_dry_run.
@@ -18,7 +18,13 @@ Default mode is paper via `TradingService.execute_signal(signal, mode="paper")`.
 ## Risk
 Fixed fractional + volatility cap + Kelly ceiling, portfolio exposure limits, daily/weekly/drawdown halts.
 ## Backtest
-`BacktestingEngine.run_backtest` supports commission + slippage. `run_walk_forward` validates across chronological windows. Optimizer exposes `walk_forward_splits`.
+`BacktestingEngine.run_backtest` supports commission + slippage. `EventDrivenSimulator`
+in `backtesting/simulator.py` is the deterministic event-loop engine (entry at next open,
+stop-first, gap-aware exits). `WalkForwardValidator.split` validates across chronological
+windows with purge (`label_horizon`) and embargo. `scripts/run_holdout.py` guards the final
+15% holdout (`--confirm`, `--force-rerun`). Golden baselines live in `tests/golden/`
+(regenerate with `python tests/golden/record_signals.py` and `python scripts/record_backtest.py`).
+Full determinism proof: `python -m pytest -m slow -q`.
 ## Telegram
 /start /status /signals /paper /performance /risk /health, Quick Analyze, Full Analyze, scheduled analysis.
 
