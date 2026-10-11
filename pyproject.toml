@@ -31,6 +31,7 @@ exclude = ["Main*", "skills*", "copyfile*", "logs*", "models*", "runs*", "tests*
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "pytest-cov==7.0.0",
     "ruff==0.13.1",
     "mypy==1.18.2",
     "pre-commit==4.3.0",
