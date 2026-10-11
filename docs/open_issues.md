@@ -44,16 +44,14 @@ A `blocked` entry never guesses missing content; it records the reason and moves
 - [x] Local `.gitignore` noise (duplicate `/copyfile` + `copyfile/copy.py`
   lines) reverted to HEAD; the exporter script stays tracked.
 
-## Legacy tracked artifacts (do NOT delete without backup + migration)
+## Legacy tracked artifacts (resolved in v3.0)
 
-The denylist in `.gitignore` covers `.env`, `secret.salt`, `*.keras`, `*.pkl`,
-`*.db`, `calibration.json`, `signal_history.json`. These paths are already
-tracked from earlier history and must stay untouched until a dedicated,
-backed-up removal is approved:
-
-- `models/lstm/*.pkl` (tracked scalers)
-- `calibration.json` (tracked at repo root)
-- any `*.db` under `runs/` created at runtime (untracked, ignored)
+- `models/` (27 `.pkl` scalers + XGBoost `.json` files): untracked via
+  `git rm --cached` (files stay on disk); `/models/` added to `.gitignore`.
+  No default-marker test and no `ModelManager` predict path depends on it.
+- `calibration.json`: was never tracked; the earlier note claiming otherwise
+  was stale. It is covered by `.gitignore` and must stay untracked.
+- Any `*.db` under `runs/` created at runtime (untracked, ignored).
 
 ## Out of scope (user-side, section 6 of the directive)
 
