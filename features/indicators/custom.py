@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 import talib
@@ -11,9 +10,7 @@ from features.indicators.base import TechnicalIndicator
 class PivotPointsIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 2:
-            raise InsufficientDataError(
-                "PivotPointsIndicator requires at least 2 data points."
-            )
+            raise InsufficientDataError("PivotPointsIndicator requires at least 2 data points.")
 
         prev_high = float(data["high"].iloc[-2])
         prev_low = float(data["low"].iloc[-2])
@@ -45,9 +42,7 @@ class PivotPointsIndicator(TechnicalIndicator):
 class MedianPriceIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 1:
-            raise InsufficientDataError(
-                "MedianPriceIndicator requires at least 1 data point."
-            )
+            raise InsufficientDataError("MedianPriceIndicator requires at least 1 data point.")
         median_price = talib.MEDPRICE(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -87,9 +82,7 @@ class MedianPriceIndicator(TechnicalIndicator):
 class TypicalPriceIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 1:
-            raise InsufficientDataError(
-                "TypicalPriceIndicator requires at least 1 data point."
-            )
+            raise InsufficientDataError("TypicalPriceIndicator requires at least 1 data point.")
         typical_price = talib.TYPPRICE(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -106,9 +99,7 @@ class TypicalPriceIndicator(TechnicalIndicator):
             if current_typical > 0
             else 0.0
         )
-        interpretation = (
-            "above_typical" if current_close > current_typical else "below_typical"
-        )
+        interpretation = "above_typical" if current_close > current_typical else "below_typical"
 
         return IndicatorResult(
             name="TypicalPrice",
@@ -135,14 +126,8 @@ class WeightedClosePriceIndicator(TechnicalIndicator):
         current_wcl = float(wcl_price[-1])
         current_close = float(data["close"].iloc[-1])
 
-        strength = (
-            abs(current_close - current_wcl) / current_wcl * 100
-            if current_wcl > 0
-            else 0.0
-        )
-        interpretation = (
-            "above_weighted" if current_close > current_wcl else "below_weighted"
-        )
+        strength = abs(current_close - current_wcl) / current_wcl * 100 if current_wcl > 0 else 0.0
+        interpretation = "above_weighted" if current_close > current_wcl else "below_weighted"
 
         return IndicatorResult(
             name="WeightedClosePrice",
@@ -155,13 +140,25 @@ class WeightedClosePriceIndicator(TechnicalIndicator):
 class PriceActionPatternIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 3:
-            raise InsufficientDataError("PriceActionPatternIndicator requires at least 3 data points.")
+            raise InsufficientDataError(
+                "PriceActionPatternIndicator requires at least 3 data points."
+            )
 
         last = data.iloc[-1]
         prev = data.iloc[-2]
 
-        is_bullish_engulfing = last['close'] > prev['open'] and last['open'] < prev['close'] and last['close'] > prev['high'] and last['open'] < prev['low']
-        is_bearish_engulfing = last['open'] > prev['close'] and last['close'] < prev['open'] and last['open'] > prev['high'] and last['close'] < prev['low']
+        is_bullish_engulfing = (
+            last["close"] > prev["open"]
+            and last["open"] < prev["close"]
+            and last["close"] > prev["high"]
+            and last["open"] < prev["low"]
+        )
+        is_bearish_engulfing = (
+            last["open"] > prev["close"]
+            and last["close"] < prev["open"]
+            and last["open"] > prev["high"]
+            and last["close"] < prev["low"]
+        )
 
         if is_bullish_engulfing:
             return IndicatorResult("PriceAction", 1.0, 100.0, "bullish_engulfing")
@@ -174,15 +171,17 @@ class PriceActionPatternIndicator(TechnicalIndicator):
 class MarketStructureIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 20:
-            raise InsufficientDataError("MarketStructureIndicator requires at least 20 data points.")
+            raise InsufficientDataError(
+                "MarketStructureIndicator requires at least 20 data points."
+            )
 
-        recent_high = data['high'].rolling(14).max()
-        recent_low = data['low'].rolling(14).min()
+        recent_high = data["high"].rolling(14).max()
+        recent_low = data["low"].rolling(14).min()
 
-        is_higher_high = data['high'].iloc[-1] > recent_high.iloc[-2]
-        is_higher_low = data['low'].iloc[-1] > recent_low.iloc[-2]
-        is_lower_high = data['high'].iloc[-1] < recent_high.iloc[-2]
-        is_lower_low = data['low'].iloc[-1] < recent_low.iloc[-2]
+        is_higher_high = data["high"].iloc[-1] > recent_high.iloc[-2]
+        is_higher_low = data["low"].iloc[-1] > recent_low.iloc[-2]
+        is_lower_high = data["high"].iloc[-1] < recent_high.iloc[-2]
+        is_lower_low = data["low"].iloc[-1] < recent_low.iloc[-2]
 
         if is_higher_high and is_higher_low:
             return IndicatorResult("MarketStructure", 1.0, 100.0, "higher_high_higher_low")
@@ -195,18 +194,23 @@ class MarketStructureIndicator(TechnicalIndicator):
 class LiquidityLevelsIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 50:
-            raise InsufficientDataError("LiquidityLevelsIndicator requires at least 50 data points.")
+            raise InsufficientDataError(
+                "LiquidityLevelsIndicator requires at least 50 data points."
+            )
 
         from scipy.signal import find_peaks
-        highs = data['high']
-        lows = data['low']
 
-        peak_indices, _ = find_peaks(highs, prominence=data['close'].mean() * 0.05)
-        trough_indices, _ = find_peaks(-lows, prominence=data['close'].mean() * 0.05)
+        highs = data["high"]
+        lows = data["low"]
+
+        peak_indices, _ = find_peaks(highs, prominence=data["close"].mean() * 0.05)
+        trough_indices, _ = find_peaks(-lows, prominence=data["close"].mean() * 0.05)
 
         if len(peak_indices) > 0:
             resistance_level = highs.iloc[peak_indices].iloc[-1]
-            return IndicatorResult("LiquidityLevels", resistance_level, 80.0, "resistance_identified")
+            return IndicatorResult(
+                "LiquidityLevels", resistance_level, 80.0, "resistance_identified"
+            )
 
         if len(trough_indices) > 0:
             support_level = lows.iloc[trough_indices].iloc[-1]
@@ -220,16 +224,16 @@ class WyckoffVolumeSpreadIndicator(TechnicalIndicator):
         if len(data) < 20:
             raise InsufficientDataError("WyckoffVSA requires at least 20 data points.")
 
-        vol_ma = data['volume'].rolling(20).mean()
-        last_vol = data['volume'].iloc[-1]
-        last_range = data['high'].iloc[-1] - data['low'].iloc[-1]
+        vol_ma = data["volume"].rolling(20).mean()
+        last_vol = data["volume"].iloc[-1]
+        last_range = data["high"].iloc[-1] - data["low"].iloc[-1]
 
         is_high_volume = last_vol > vol_ma.iloc[-1] * 1.5
-        is_wide_spread = last_range > data['close'].rolling(20).std().iloc[-1] * 2
+        is_wide_spread = last_range > data["close"].rolling(20).std().iloc[-1] * 2
 
-        if is_high_volume and is_wide_spread and data['close'].iloc[-1] > data['open'].iloc[-1]:
+        if is_high_volume and is_wide_spread and data["close"].iloc[-1] > data["open"].iloc[-1]:
             return IndicatorResult("WyckoffVSA", 1.0, 90.0, "demand_wave")
-        if is_high_volume and is_wide_spread and data['close'].iloc[-1] < data['open'].iloc[-1]:
+        if is_high_volume and is_wide_spread and data["close"].iloc[-1] < data["open"].iloc[-1]:
             return IndicatorResult("WyckoffVSA", -1.0, 90.0, "supply_wave")
 
         return IndicatorResult("WyckoffVSA", 0.0, 50.0, "neutral_vsa")

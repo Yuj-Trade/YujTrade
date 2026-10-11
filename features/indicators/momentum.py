@@ -18,9 +18,7 @@ class RSIIndicator(TechnicalIndicator):
             raise InsufficientDataError(
                 f"RSIIndicator requires at least {self.period} data points."
             )
-        rsi_series = talib.RSI(
-            data["close"].to_numpy(dtype=np.float64), timeperiod=self.period
-        )
+        rsi_series = talib.RSI(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if rsi_series.size == 0 or pd.isna(rsi_series[-1]):
             raise InsufficientDataError("RSI calculation resulted in NaN.")
 
@@ -96,7 +94,9 @@ class WilliamsRIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"WilliamsRIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"WilliamsRIndicator requires at least {self.period} data points."
+            )
         willr = talib.WILLR(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -126,7 +126,9 @@ class CCIIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"CCIIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"CCIIndicator requires at least {self.period} data points."
+            )
         cci = talib.CCI(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -153,7 +155,9 @@ class CCIIndicator(TechnicalIndicator):
 class SqueezeMomentumIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 20:
-            raise InsufficientDataError("SqueezeMomentumIndicator requires at least 20 data points.")
+            raise InsufficientDataError(
+                "SqueezeMomentumIndicator requires at least 20 data points."
+            )
         sqz = squeeze(high=data["high"], low=data["low"], close=data["close"])
         if sqz is None or sqz.empty or sqz.iloc[-1].isna().any():
             raise InsufficientDataError("Squeeze calculation resulted in NaN.")
@@ -178,7 +182,9 @@ class MoneyFlowIndexIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"MFIIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"MFIIndicator requires at least {self.period} data points."
+            )
         mfi = talib.MFI(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -235,7 +241,9 @@ class ROCIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"ROCIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"ROCIndicator requires at least {self.period} data points."
+            )
         roc_val = talib.ROC(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if roc_val.size == 0 or pd.isna(roc_val[-1]):
             raise InsufficientDataError("ROC calculation resulted in NaN.")
@@ -253,9 +261,16 @@ class TRIXIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period * 3:
-            raise InsufficientDataError(f"TRIXIndicator requires at least {self.period * 3} data points.")
+            raise InsufficientDataError(
+                f"TRIXIndicator requires at least {self.period * 3} data points."
+            )
         trix_val = trix(close=data["close"], length=self.period)
-        if trix_val is None or trix_val.empty or trix_val.iloc[-1, 0] is None or pd.isna(trix_val.iloc[-1, 0]):
+        if (
+            trix_val is None
+            or trix_val.empty
+            or trix_val.iloc[-1, 0] is None
+            or pd.isna(trix_val.iloc[-1, 0])
+        ):
             raise InsufficientDataError("TRIX calculation resulted in NaN.")
 
         value = float(trix_val.iloc[-1, 0])
@@ -293,13 +308,15 @@ class MomentumIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"MomentumIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"MomentumIndicator requires at least {self.period} data points."
+            )
         mom_val = talib.MOM(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if mom_val.size == 0 or pd.isna(mom_val[-1]):
             raise InsufficientDataError("Momentum calculation resulted in NaN.")
 
         value = float(mom_val[-1])
-        strength = abs(value / data['close'].iloc[-1]) * 1000 if data['close'].iloc[-1] > 0 else 0
+        strength = abs(value / data["close"].iloc[-1]) * 1000 if data["close"].iloc[-1] > 0 else 0
         interpretation = "positive" if value > 0 else "negative"
 
         return IndicatorResult("Momentum", value, min(strength, 100.0), interpretation)
@@ -308,13 +325,15 @@ class MomentumIndicator(TechnicalIndicator):
 class AwesomeOscillatorIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 34:
-            raise InsufficientDataError("AwesomeOscillatorIndicator requires at least 34 data points.")
+            raise InsufficientDataError(
+                "AwesomeOscillatorIndicator requires at least 34 data points."
+            )
         ao = ta.ao(high=data["high"], low=data["low"])
         if ao is None or ao.empty or pd.isna(ao.iloc[-1]):
             raise InsufficientDataError("AO calculation resulted in NaN.")
 
         value = float(ao.iloc[-1])
-        strength = abs(value / data['close'].iloc[-1]) * 1000 if data['close'].iloc[-1] > 0 else 0
+        strength = abs(value / data["close"].iloc[-1]) * 1000 if data["close"].iloc[-1] > 0 else 0
         interpretation = "bullish" if value > 0 else "bearish"
 
         return IndicatorResult("AwesomeOscillator", value, min(strength, 100.0), interpretation)
@@ -326,7 +345,9 @@ class ChandeMomentumOscillatorIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"CMOIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"CMOIndicator requires at least {self.period} data points."
+            )
         cmo_val = cmo(close=data["close"], length=self.period)
         if cmo_val is None or cmo_val.empty or pd.isna(cmo_val.iloc[-1]):
             raise InsufficientDataError("CMO calculation resulted in NaN.")
@@ -387,7 +408,9 @@ class FisherTransformIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"FisherTransform requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"FisherTransform requires at least {self.period} data points."
+            )
         fisher = ta.fisher(high=data["high"], low=data["low"], length=self.period)
         if fisher is None or fisher.empty or fisher.iloc[-1].isna().any():
             raise InsufficientDataError("Fisher Transform calculation resulted in NaN.")
@@ -575,7 +598,7 @@ class BalanceOfPowerRSIIndicator(TechnicalIndicator):
         if len(data) < 15:
             raise InsufficientDataError("BOPRSI requires at least 15 data points.")
 
-        bop = talib.BOP(data['open'], data['high'], data['low'], data['close'])
+        bop = talib.BOP(data["open"], data["high"], data["low"], data["close"])
         bop_series = pd.Series(bop, index=data.index).dropna()
 
         if len(bop_series) < 14:
@@ -604,14 +627,14 @@ class SmartMoneyConceptIndicator(TechnicalIndicator):
         if len(data) < 20:
             raise InsufficientDataError("SMC requires at least 20 data points.")
 
-        last_swing_high = data['high'].rolling(9).max().iloc[-2]
-        last_swing_low = data['low'].rolling(9).min().iloc[-2]
+        last_swing_high = data["high"].rolling(9).max().iloc[-2]
+        last_swing_low = data["low"].rolling(9).min().iloc[-2]
 
-        break_of_structure = data['close'].iloc[-1] > last_swing_high
+        break_of_structure = data["close"].iloc[-1] > last_swing_high
         if break_of_structure:
             return IndicatorResult("SMC", 1.0, 100.0, "break_of_structure_up")
 
-        change_of_character = data['close'].iloc[-1] < last_swing_low
+        change_of_character = data["close"].iloc[-1] < last_swing_low
         if change_of_character:
             return IndicatorResult("SMC", -1.0, 100.0, "change_of_character_down")
 

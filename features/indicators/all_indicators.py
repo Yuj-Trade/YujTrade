@@ -1,4 +1,3 @@
-
 from .base import TechnicalIndicator
 from .custom import (
     LiquidityLevelsIndicator,

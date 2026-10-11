@@ -1,4 +1,3 @@
-
 from features.indicators.all_indicators import get_all_indicators
 from features.indicators.base import TechnicalIndicator
 from features.indicators.trend import MovingAverageIndicator
@@ -6,9 +5,7 @@ from features.indicators.trend import MovingAverageIndicator
 
 class IndicatorFactory:
     def __init__(self):
-        self._indicator_classes: dict[str, type[TechnicalIndicator]] = (
-            get_all_indicators()
-        )
+        self._indicator_classes: dict[str, type[TechnicalIndicator]] = get_all_indicators()
 
     def create(self, name: str) -> TechnicalIndicator | None:
         """

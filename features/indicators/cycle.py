@@ -112,7 +112,9 @@ class KSTIndicator(TechnicalIndicator):
 class HilbertDominantCycleIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 32:
-            raise InsufficientDataError("HilbertDominantCycleIndicator requires at least 32 data points.")
+            raise InsufficientDataError(
+                "HilbertDominantCycleIndicator requires at least 32 data points."
+            )
 
         ht_dc_period = talib.HT_DCPERIOD(data["close"].to_numpy(dtype=np.float64))
         if ht_dc_period.size == 0 or pd.isna(ht_dc_period[-1]):
@@ -130,7 +132,9 @@ class HilbertDominantCycleIndicator(TechnicalIndicator):
 class HilbertTrendVsCycleModeIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 63:
-            raise InsufficientDataError("HilbertTrendVsCycleModeIndicator requires at least 63 data points.")
+            raise InsufficientDataError(
+                "HilbertTrendVsCycleModeIndicator requires at least 63 data points."
+            )
 
         ht_trendmode = talib.HT_TRENDMODE(data["close"].to_numpy(dtype=np.float64))
         if ht_trendmode.size == 0 or pd.isna(ht_trendmode[-1]):
@@ -141,5 +145,8 @@ class HilbertTrendVsCycleModeIndicator(TechnicalIndicator):
         strength = 100.0 if value == 1 else 50.0
 
         return IndicatorResult(
-            name="HT_TREND_MODE", value=float(value), signal_strength=strength, interpretation=interpretation
+            name="HT_TREND_MODE",
+            value=float(value),
+            signal_strength=strength,
+            interpretation=interpretation,
         )

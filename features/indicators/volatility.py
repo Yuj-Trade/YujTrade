@@ -21,9 +21,7 @@ class BollingerBandsIndicator(TechnicalIndicator):
             )
         bb_df = bbands(close=data["close"], length=self.period, std=self.std_dev)
         if bb_df is None or bb_df.empty or bb_df.dropna().empty:
-            raise InsufficientDataError(
-                "Bollinger Bands calculation resulted in empty DataFrame."
-            )
+            raise InsufficientDataError("Bollinger Bands calculation resulted in empty DataFrame.")
 
         upper_band = float(bb_df.iloc[-1, 2])
         lower_band = float(bb_df.iloc[-1, 0])
@@ -79,9 +77,7 @@ class ATRIndicator(TechnicalIndicator):
         current_atr = float(atr_series[-1])
         current_price = float(data["close"].iloc[-1])
 
-        atr_percentage = (
-            (current_atr / current_price) * 100 if current_price > 0 else 0.0
-        )
+        atr_percentage = (current_atr / current_price) * 100 if current_price > 0 else 0.0
 
         if atr_percentage > 3:
             interpretation = "high_volatility"
@@ -107,7 +103,9 @@ class KeltnerChannelsIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"KeltnerChannelsIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"KeltnerChannelsIndicator requires at least {self.period} data points."
+            )
         kc_df = kc(high=data["high"], low=data["low"], close=data["close"], length=self.period)
         if kc_df is None or kc_df.empty or kc_df.iloc[-1].isna().any():
             raise InsufficientDataError("Keltner Channels calculation resulted in NaN.")
@@ -135,8 +133,12 @@ class DonchianChannelsIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"DonchianChannelsIndicator requires at least {self.period} data points.")
-        dc_df = donchian(high=data["high"], low=data["low"], lower_length=self.period, upper_length=self.period)
+            raise InsufficientDataError(
+                f"DonchianChannelsIndicator requires at least {self.period} data points."
+            )
+        dc_df = donchian(
+            high=data["high"], low=data["low"], lower_length=self.period, upper_length=self.period
+        )
         if dc_df is None or dc_df.empty or dc_df.iloc[-1].isna().any():
             raise InsufficientDataError("Donchian Channels calculation resulted in NaN.")
 
@@ -163,7 +165,9 @@ class StandardDeviationIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"StdDevIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"StdDevIndicator requires at least {self.period} data points."
+            )
         std_dev = talib.STDDEV(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if std_dev.size == 0 or pd.isna(std_dev[-1]):
             raise InsufficientDataError("StdDev calculation resulted in NaN.")
@@ -172,7 +176,7 @@ class StandardDeviationIndicator(TechnicalIndicator):
         strength = value / data["close"].mean() * 100 if data["close"].mean() > 0 else 0
         interpretation = "high_volatility" if strength > 5 else "low_volatility"
 
-        return IndicatorResult("StdDev", value, min(strength*10, 100.0), interpretation)
+        return IndicatorResult("StdDev", value, min(strength * 10, 100.0), interpretation)
 
 
 class MassIndexIndicator(TechnicalIndicator):
@@ -198,13 +202,23 @@ class CorrelationCoefficientIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 14:
             raise InsufficientDataError("CorrCoefIndicator requires at least 14 data points.")
-        corr = talib.CORREL(data["high"].to_numpy(dtype=np.float64), data["low"].to_numpy(dtype=np.float64), timeperiod=14)
+        corr = talib.CORREL(
+            data["high"].to_numpy(dtype=np.float64),
+            data["low"].to_numpy(dtype=np.float64),
+            timeperiod=14,
+        )
         if corr.size == 0 or pd.isna(corr[-1]):
             raise InsufficientDataError("Correlation Coefficient calculation resulted in NaN.")
 
         value = float(corr[-1])
         strength = abs(value) * 100
-        interpretation = "positive_correlation" if value > 0.5 else "negative_correlation" if value < -0.5 else "low_correlation"
+        interpretation = (
+            "positive_correlation"
+            if value > 0.5
+            else "negative_correlation"
+            if value < -0.5
+            else "low_correlation"
+        )
 
         return IndicatorResult("CorrCoef", value, strength, interpretation)
 
@@ -241,7 +255,9 @@ class ChoppinessIndexIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"ChoppinessIndexIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"ChoppinessIndexIndicator requires at least {self.period} data points."
+            )
         chop = ta.chop(high=data["high"], low=data["low"], close=data["close"], length=self.period)
         if chop is None or chop.empty or pd.isna(chop.iloc[-1]):
             raise InsufficientDataError("Choppiness Index calculation resulted in NaN.")
@@ -263,8 +279,12 @@ class ChoppinessIndexIndicator(TechnicalIndicator):
 class ChaikinVolatilityIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 20:
-            raise InsufficientDataError("ChaikinVolatilityIndicator requires at least 20 data points.")
-        chakin_vol = ta.vhf(high=data["high"], low=data["low"], close=data["close"]) # Using VHF as a proxy
+            raise InsufficientDataError(
+                "ChaikinVolatilityIndicator requires at least 20 data points."
+            )
+        chakin_vol = ta.vhf(
+            high=data["high"], low=data["low"], close=data["close"]
+        )  # Using VHF as a proxy
         if chakin_vol is None or chakin_vol.empty or pd.isna(chakin_vol.iloc[-1]):
             raise InsufficientDataError("Chaikin Volatility calculation resulted in NaN.")
 
@@ -281,8 +301,10 @@ class HistoricalVolatilityIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"HistoricalVolatilityIndicator requires at least {self.period} data points.")
-        log_returns = np.log(data['close'] / data['close'].shift(1))
+            raise InsufficientDataError(
+                f"HistoricalVolatilityIndicator requires at least {self.period} data points."
+            )
+        log_returns = np.log(data["close"] / data["close"].shift(1))
         volatility = log_returns.rolling(window=self.period).std() * np.sqrt(self.period)
         if volatility.isna().iloc[-1]:
             raise InsufficientDataError("Historical Volatility calculation resulted in NaN.")
@@ -300,7 +322,9 @@ class UlcerIndexIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"UlcerIndexIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"UlcerIndexIndicator requires at least {self.period} data points."
+            )
         ulcer = ta.ui(close=data["close"], length=self.period)
         if ulcer is None or ulcer.empty or pd.isna(ulcer.iloc[-1]):
             raise InsufficientDataError("Ulcer Index calculation resulted in NaN.")
@@ -319,7 +343,9 @@ class ATRBandsIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"ATRBandsIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"ATRBandsIndicator requires at least {self.period} data points."
+            )
         atr = talib.ATR(data["high"], data["low"], data["close"], timeperiod=self.period)
         if atr.size == 0 or pd.isna(atr[-1]):
             raise InsufficientDataError("ATR Bands calculation failed on ATR.")
@@ -351,7 +377,9 @@ class BollingerBandwidthIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"BollingerBandwidthIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"BollingerBandwidthIndicator requires at least {self.period} data points."
+            )
         bbw = ta.bbands(close=data["close"], length=self.period)
         if bbw is None or bbw.empty or bbw.iloc[-1].isna().any():
             raise InsufficientDataError("BBW calculation resulted in NaN.")
@@ -359,6 +387,8 @@ class BollingerBandwidthIndicator(TechnicalIndicator):
         bandwidth = float(bbw.iloc[-1, 3])
         value = bandwidth
         strength = bandwidth * 100
-        interpretation = "expanding_volatility" if bandwidth > bbw.iloc[-2, 3] else "contracting_volatility"
+        interpretation = (
+            "expanding_volatility" if bandwidth > bbw.iloc[-2, 3] else "contracting_volatility"
+        )
 
         return IndicatorResult("BBW", value, min(strength, 100.0), interpretation)

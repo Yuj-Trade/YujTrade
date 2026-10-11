@@ -28,9 +28,7 @@ class FeatureEngineer:
         self.correlation_manager = IndicatorCorrelationManager()
         self.history_provider = history_provider
 
-    def _compute_indicator(
-        self, indicator_name: str, data: pd.DataFrame
-    ) -> IndicatorResult | None:
+    def _compute_indicator(self, indicator_name: str, data: pd.DataFrame) -> IndicatorResult | None:
         """primitive واحد محاسبه اندیکاتور برای هر دو مسیر (Signal و ML)."""
         indicator_instance = self.indicator_factory.create(indicator_name)
         if not indicator_instance:
@@ -51,7 +49,8 @@ class FeatureEngineer:
     ) -> pd.DataFrame:
         """
         Adds multiple indicator features to the dataframe.
-        This method is kept for compatibility with model training but is less used in signal generation.
+        This method is kept for compatibility with model training
+        but is less used in signal generation.
         """
         if indicators_to_run is None:
             # Use a default or broad set of indicators for feature creation
@@ -69,9 +68,7 @@ class FeatureEngineer:
                 value_to_add = indicator_output.value
             elif isinstance(indicator_output.value, (int, float, np.number)):
                 # Create a series with the same index as the data to broadcast the single value
-                value_to_add = pd.Series(
-                    indicator_output.value, index=features_df.index
-                )
+                value_to_add = pd.Series(indicator_output.value, index=features_df.index)
 
             if value_to_add is not None:
                 # Ensure the series is aligned with the dataframe index
@@ -86,9 +83,7 @@ class FeatureEngineer:
 
         # Reorder columns to have original data first
         original_cols = ["open", "high", "low", "close", "volume"]
-        indicator_cols = [
-            col for col in features_df.columns if col not in original_cols
-        ]
+        indicator_cols = [col for col in features_df.columns if col not in original_cols]
 
         # Ensure all original columns are present, even if they were not in the input
         for col in original_cols:
@@ -102,9 +97,7 @@ class FeatureEngineer:
         self.feature_columns = list(features_df.columns)
         return features_df
 
-    def scale_features(
-        self, features: pd.DataFrame, fit: bool = False
-    ) -> np.ndarray | None:
+    def scale_features(self, features: pd.DataFrame, fit: bool = False) -> np.ndarray | None:
         if features.empty:
             return None
         if fit:
@@ -135,7 +128,8 @@ class FeatureEngineer:
             # Fallback to 0 if not found, assuming 'close' is the first column
             close_idx = 0
             logger.warning(
-                "'close' column not found in feature columns. Assuming it is the first column for inverse scaling."
+                "'close' column not found in feature columns. "
+                "Assuming it is the first column for inverse scaling."
             )
 
         dummy_array[:, close_idx] = prediction.flatten()
@@ -160,9 +154,7 @@ class FeatureEngineer:
         volatility_map = {"1h": 0.01, "4h": 0.02, "1d": 0.04, "1w": 0.08, "1M": 0.15}
         return volatility_map.get(timeframe, 0.04)
 
-    def get_last_indicator_results(
-        self, data: pd.DataFrame, timeframe: str
-    ) -> dict[str, Any]:
+    def get_last_indicator_results(self, data: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         """
         Calculates and retrieves the last result for all active indicators for a given timeframe.
         This is the primary method used by the SignalGenerator (مسیر Signal).
@@ -177,7 +169,11 @@ class FeatureEngineer:
             if indicator_result is None or indicator_result.value is None:
                 continue
             try:
-                if bool(pd.isna(indicator_result.value).all() if isinstance(indicator_result.value, (pd.Series, np.ndarray)) else pd.isna(indicator_result.value)):
+                if bool(
+                    pd.isna(indicator_result.value).all()
+                    if isinstance(indicator_result.value, (pd.Series, np.ndarray))
+                    else pd.isna(indicator_result.value)
+                ):
                     continue
             except (TypeError, ValueError):
                 continue

@@ -19,9 +19,7 @@ class VolumeIndicator(TechnicalIndicator):
                 f"VolumeIndicator requires 'volume' column and at least {self.period} data points."
             )
 
-        volume_ma = talib.SMA(
-            data["volume"].to_numpy(dtype=np.float64), timeperiod=self.period
-        )
+        volume_ma = talib.SMA(data["volume"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if volume_ma.size == 0 or pd.isna(volume_ma[-1]):
             raise InsufficientDataError("Volume MA calculation resulted in NaN.")
 
@@ -54,9 +52,7 @@ class ChaikinMoneyFlowIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(
-                f"CMF requires at least {self.period} data points."
-            )
+            raise InsufficientDataError(f"CMF requires at least {self.period} data points.")
         cmf_series = cmf(
             high=data["high"],
             low=data["low"],
@@ -106,7 +102,9 @@ class VWAPIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 1:
             raise InsufficientDataError("VWAPIndicator requires at least 1 data point.")
-        vwap = ta.vwap(high=data["high"], low=data["low"], close=data["close"], volume=data["volume"])
+        vwap = ta.vwap(
+            high=data["high"], low=data["low"], close=data["close"], volume=data["volume"]
+        )
         if vwap is None or vwap.empty or pd.isna(vwap.iloc[-1]):
             raise InsufficientDataError("VWAP calculation resulted in NaN.")
 
@@ -139,7 +137,9 @@ class ForceIndexIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"ForceIndexIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"ForceIndexIndicator requires at least {self.period} data points."
+            )
         fi = efi(close=data["close"], volume=data["volume"], length=self.period)
         if fi is None or fi.empty or pd.isna(fi.iloc[-1]):
             raise InsufficientDataError("Force Index calculation resulted in NaN.")
@@ -157,7 +157,9 @@ class VWMAIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"VWMAIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"VWMAIndicator requires at least {self.period} data points."
+            )
         vwma = ta.vwma(close=data["close"], volume=data["volume"], length=self.period)
         if vwma is None or vwma.empty or pd.isna(vwma.iloc[-1]):
             raise InsufficientDataError("VWMA calculation resulted in NaN.")
@@ -176,8 +178,16 @@ class EaseOfMovementIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"EOMIndicator requires at least {self.period} data points.")
-        eom_val = eom(high=data["high"], low=data["low"], close=data["close"], volume=data["volume"], length=self.period)
+            raise InsufficientDataError(
+                f"EOMIndicator requires at least {self.period} data points."
+            )
+        eom_val = eom(
+            high=data["high"],
+            low=data["low"],
+            close=data["close"],
+            volume=data["volume"],
+            length=self.period,
+        )
         if eom_val is None or eom_val.empty or eom_val.iloc[-1].isna().any():
             raise InsufficientDataError("EOM calculation resulted in NaN.")
 
@@ -192,11 +202,13 @@ class PriceVolumeRankIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 20:
             raise InsufficientDataError("PVRIndicator requires at least 20 data points.")
-        price_rank = data['close'].rank(pct=True).iloc[-1]
-        volume_rank = data['volume'].rank(pct=True).iloc[-1]
+        price_rank = data["close"].rank(pct=True).iloc[-1]
+        volume_rank = data["volume"].rank(pct=True).iloc[-1]
         pvr = price_rank * volume_rank
         strength = pvr * 100
-        interpretation = "strong_bullish" if pvr > 0.8 else "strong_bearish" if pvr < 0.2 else "neutral"
+        interpretation = (
+            "strong_bullish" if pvr > 0.8 else "strong_bearish" if pvr < 0.2 else "neutral"
+        )
 
         return IndicatorResult("PVR", pvr, strength, interpretation)
 
@@ -228,7 +240,11 @@ class PriceVolumeTrendIndicator(TechnicalIndicator):
 
         value = float(pvt_val.iloc[-1])
         strength = 50.0
-        interpretation = "volume_confirming_uptrend" if value > pvt_val.iloc[-2] else "volume_confirming_downtrend"
+        interpretation = (
+            "volume_confirming_uptrend"
+            if value > pvt_val.iloc[-2]
+            else "volume_confirming_downtrend"
+        )
 
         return IndicatorResult("PVT", value, strength, interpretation)
 
@@ -240,7 +256,9 @@ class VolumeOscillatorIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.slow_period:
-            raise InsufficientDataError(f"VolumeOscillatorIndicator requires at least {self.slow_period} data points.")
+            raise InsufficientDataError(
+                f"VolumeOscillatorIndicator requires at least {self.slow_period} data points."
+            )
         pvo_val = pvo(volume=data["volume"], fast=self.fast_period, slow=self.slow_period)
         if pvo_val is None or pvo_val.empty or pvo_val.iloc[-1].isna().any():
             raise InsufficientDataError("Volume Oscillator calculation resulted in NaN.")
@@ -256,7 +274,9 @@ class KlingerVolumeOscillatorIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 55:
             raise InsufficientDataError("KVOIndicator requires at least 55 data points.")
-        kvo_val = kvo(high=data["high"], low=data["low"], close=data["close"], volume=data["volume"])
+        kvo_val = kvo(
+            high=data["high"], low=data["low"], close=data["close"], volume=data["volume"]
+        )
         if kvo_val is None or kvo_val.empty or kvo_val.iloc[-1].isna().any():
             raise InsufficientDataError("KVO calculation resulted in NaN.")
 
@@ -294,7 +314,9 @@ class NVIIndicator(TechnicalIndicator):
 
         value = float(nvi_val.iloc[-1])
         strength = 50.0
-        interpretation = "smart_money_accumulating" if value > nvi_val.iloc[-2] else "smart_money_distributing"
+        interpretation = (
+            "smart_money_accumulating" if value > nvi_val.iloc[-2] else "smart_money_distributing"
+        )
 
         return IndicatorResult("NVI", value, strength, interpretation)
 
@@ -318,7 +340,7 @@ class MFIBillWilliamsIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 2:
             raise InsufficientDataError("MFIBW requires at least 2 data points.")
-        mfi = (data['high'] + data['low'] + data['close']) / 3 * data['volume']
+        mfi = (data["high"] + data["low"] + data["close"]) / 3 * data["volume"]
         value = mfi.iloc[-1]
         strength = 50.0
         interpretation = "green_bar" if value > mfi.iloc[-2] else "red_bar"
@@ -332,8 +354,10 @@ class VolumeWeightedRSIIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"VolumeWeightedRSI requires at least {self.period} data points.")
-        vw_rsi = ta.vw_rsi(close=data['close'], volume=data['volume'], length=self.period)
+            raise InsufficientDataError(
+                f"VolumeWeightedRSI requires at least {self.period} data points."
+            )
+        vw_rsi = ta.vw_rsi(close=data["close"], volume=data["volume"], length=self.period)
         if vw_rsi is None or vw_rsi.empty or pd.isna(vw_rsi.iloc[-1]):
             raise InsufficientDataError("VW_RSI calculation resulted in NaN.")
 
@@ -355,7 +379,7 @@ class AccumulationDistributionIndexIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 2:
             raise InsufficientDataError("ADI requires at least 2 data points.")
-        adi = talib.AD(data['high'], data['low'], data['close'], data['volume'])
+        adi = talib.AD(data["high"], data["low"], data["close"], data["volume"])
         if adi.size == 0 or pd.isna(adi[-1]):
             raise InsufficientDataError("ADI calculation failed.")
 
@@ -371,8 +395,8 @@ class OrderFlowImbalanceIndicator(TechnicalIndicator):
         if len(data) < 2:
             raise InsufficientDataError("OrderFlowImbalance requires at least 2 data points.")
 
-        price_change = data['close'].diff()
-        volume = data['volume']
+        price_change = data["close"].diff()
+        volume = data["volume"]
         flow = (price_change * volume).cumsum()
         if flow.isna().iloc[-1]:
             raise InsufficientDataError("Order Flow calculation failed.")

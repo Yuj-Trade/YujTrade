@@ -48,13 +48,9 @@ class MovingAverageIndicator(TechnicalIndicator):
         current_ma = ma_series[-1]
 
         signal_strength = (
-            abs((current_price - current_ma) / current_ma) * 100
-            if current_ma != 0
-            else 0
+            abs((current_price - current_ma) / current_ma) * 100 if current_ma != 0 else 0
         )
-        interpretation = (
-            "bullish_above_ma" if current_price > current_ma else "bearish_below_ma"
-        )
+        interpretation = "bullish_above_ma" if current_price > current_ma else "bearish_below_ma"
 
         return IndicatorResult(
             name=f"{self.ma_type}_{self.period}",
@@ -73,9 +69,7 @@ class MACDIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.min_period:
-            raise InsufficientDataError(
-                f"MACD requires at least {self.min_period} data points."
-            )
+            raise InsufficientDataError(f"MACD requires at least {self.min_period} data points.")
         macd, macdsignal, macdhist = talib.MACD(
             data["close"].to_numpy(dtype=np.float64),
             fastperiod=self.fast,
@@ -155,7 +149,9 @@ class ADXIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period * 2:
-            raise InsufficientDataError(f"ADXIndicator requires at least {self.period * 2} data points.")
+            raise InsufficientDataError(
+                f"ADXIndicator requires at least {self.period * 2} data points."
+            )
         adx_val = adx(high=data["high"], low=data["low"], close=data["close"], length=self.period)
         if adx_val is None or adx_val.empty or adx_val.iloc[-1].isna().any():
             raise InsufficientDataError("ADX calculation resulted in NaN.")
@@ -193,7 +189,9 @@ class AroonIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"AroonIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"AroonIndicator requires at least {self.period} data points."
+            )
         aroon_df = aroon(high=data["high"], low=data["low"], length=self.period)
         if aroon_df is None or aroon_df.empty or aroon_df.iloc[-1].isna().any():
             raise InsufficientDataError("Aroon calculation resulted in NaN.")
@@ -213,7 +211,9 @@ class DetrendedPriceOscillatorIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period + 10:
-            raise InsufficientDataError(f"DPOIndicator requires at least {self.period + 10} data points.")
+            raise InsufficientDataError(
+                f"DPOIndicator requires at least {self.period + 10} data points."
+            )
         dpo_val = dpo(close=data["close"], length=self.period)
         if dpo_val is None or dpo_val.empty or pd.isna(dpo_val.iloc[-1]):
             raise InsufficientDataError("DPO calculation resulted in NaN.")
@@ -231,7 +231,9 @@ class LinearRegressionIndicator(TechnicalIndicator):
 
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
-            raise InsufficientDataError(f"LinRegIndicator requires at least {self.period} data points.")
+            raise InsufficientDataError(
+                f"LinRegIndicator requires at least {self.period} data points."
+            )
         linreg = talib.LINEARREG(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
         if linreg.size == 0 or pd.isna(linreg[-1]):
             raise InsufficientDataError("LinReg calculation resulted in NaN.")
@@ -251,7 +253,9 @@ class LinearRegressionSlopeIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period:
             raise InsufficientDataError(f"LinRegSlope requires at least {self.period} data points.")
-        slope = talib.LINEARREG_SLOPE(data["close"].to_numpy(dtype=np.float64), timeperiod=self.period)
+        slope = talib.LINEARREG_SLOPE(
+            data["close"].to_numpy(dtype=np.float64), timeperiod=self.period
+        )
         if slope.size == 0 or pd.isna(slope[-1]):
             raise InsufficientDataError("LinRegSlope calculation resulted in NaN.")
 
@@ -359,8 +363,18 @@ class FractalIndicator(TechnicalIndicator):
             raise InsufficientDataError("Fractal requires at least 5 data points.")
         highs = data["high"]
         lows = data["low"]
-        is_bull_fractal = (lows.iloc[-3] < lows.iloc[-5]) and (lows.iloc[-3] < lows.iloc[-4]) and (lows.iloc[-3] < lows.iloc[-2]) and (lows.iloc[-3] < lows.iloc[-1])
-        is_bear_fractal = (highs.iloc[-3] > highs.iloc[-5]) and (highs.iloc[-3] > highs.iloc[-4]) and (highs.iloc[-3] > highs.iloc[-2]) and (highs.iloc[-3] > highs.iloc[-1])
+        is_bull_fractal = (
+            (lows.iloc[-3] < lows.iloc[-5])
+            and (lows.iloc[-3] < lows.iloc[-4])
+            and (lows.iloc[-3] < lows.iloc[-2])
+            and (lows.iloc[-3] < lows.iloc[-1])
+        )
+        is_bear_fractal = (
+            (highs.iloc[-3] > highs.iloc[-5])
+            and (highs.iloc[-3] > highs.iloc[-4])
+            and (highs.iloc[-3] > highs.iloc[-2])
+            and (highs.iloc[-3] > highs.iloc[-1])
+        )
 
         if is_bear_fractal:
             return IndicatorResult("Fractal", highs.iloc[-3], 100.0, "bearish_fractal")
