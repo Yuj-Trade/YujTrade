@@ -10,6 +10,9 @@ from common.exceptions import InvalidSymbolError
 from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
+from domain.gates import quality_gate_reason
+from domain.outcome import resolve_outcome
+from domain.types import GateConfig, SignalDraft
 from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.signal_generator import SignalGenerator
@@ -252,44 +255,49 @@ class TradingService(ModelDataProvider):
         return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:
-        """گیت‌های مرحله ۳ Pipeline (قاعده ۲۱) — فقط Ruleهای موجود."""
+        """گیت‌های مرحله ۳ Pipeline (قاعده ۲۱) — تصمیم به domain تفویض شده؛
+        فقط نگاشت پیکربندی و گیت ml_confidence محلی است."""
         # 3a. حداقل اطمینان هر تایم‌فریم
         thresholds = LONG_TERM_CONFIG.get("min_confidence_threshold", {})
         threshold = thresholds.get(signal.timeframe)
-        if threshold is not None and signal.confidence_score < threshold:
-            logger.debug(
-                f"Gate confidence: {signal.confidence_score:.1f} < {threshold} "
-                f"for {signal.symbol}-{signal.timeframe}"
-            )
-            return False
 
         # 3b. حداقل قدرت روند
         required = str(LONG_TERM_CONFIG.get("min_trend_strength", "MODERATE")).upper()
+        if required not in self._TREND_STRENGTH_RANK:
+            required = "MODERATE"
         strength = signal.market_context.get("trend_strength")
         strength_name = getattr(strength, "value", strength)
         strength_name = str(strength_name).upper() if strength_name else "WEAK"
-        if self._TREND_STRENGTH_RANK.get(strength_name, 0) < self._TREND_STRENGTH_RANK.get(
-            required, 1
-        ):
-            logger.debug(
-                f"Gate trend strength: {strength_name} < {required} "
-                f"for {signal.symbol}-{signal.timeframe}"
-            )
-            return False
 
         # 3c. حداقل جهش حجم (از ratio حملی سیگنال، نه محاسبه مجدد)
         min_surge = LONG_TERM_CONFIG.get("min_volume_surge")
         ratio = (signal.volume_analysis or {}).get("volume_ratio")
+        surge: float | None = None
         if min_surge is not None and ratio is not None:
             try:
-                if float(ratio) < float(min_surge):
-                    logger.debug(
-                        f"Gate volume surge: {float(ratio):.2f} < {min_surge} "
-                        f"for {signal.symbol}-{signal.timeframe}"
-                    )
-                    return False
+                surge = float(ratio)
             except (TypeError, ValueError):
-                pass
+                surge = None
+
+        draft = SignalDraft(
+            symbol=signal.symbol,
+            timeframe=signal.timeframe,
+            side=signal.signal_type.value,
+            timestamp=signal.timestamp,
+            entry=signal.entry_price,
+            stop=signal.stop_loss,
+            target=signal.exit_price,
+            confidence=signal.confidence_score,
+        )
+        gate_config = GateConfig(
+            min_confidence=threshold if threshold is not None else float("-inf"),
+            min_trend_strength=required,
+            min_volume_surge=float(min_surge) if min_surge is not None else 0.0,
+        )
+        reason = quality_gate_reason(draft, gate_config, strength_name, surge)
+        if reason is not None:
+            logger.debug(f"Gate {reason.value}: {signal.symbol}-{signal.timeframe} rejected.")
+            return False
 
         # 3d. اطمینان مدل (قاعده ۳۴): ml_confidence در گیت خوانده می‌شود.
         # مقیاس صفر تا یک است و فقط وقتی ML واقعاً اجرا شده (مقدار > 0) اعمال
@@ -499,22 +507,25 @@ class TradingService(ModelDataProvider):
                 window = df[df.index >= created_at]
                 if expiry_hours:
                     window = window[window.index <= created_at + timedelta(hours=expiry_hours)]
-                for _, candle in window.iterrows():
+                candles: list[dict[str, Any]] = []
+                for _, row in window.iterrows():
                     try:
-                        high = float(candle["high"])
-                        low = float(candle["low"])
+                        high = float(row["high"])
+                        low = float(row["low"])
                     except (KeyError, TypeError, ValueError):
                         continue
-                    if signal_type == "buy":
-                        if low <= stop:
-                            return False, stop
-                        if high >= target:
-                            return True, target
-                    else:
-                        if high >= stop:
-                            return False, stop
-                        if low <= target:
-                            return True, target
+                    candles.append({"timestamp": row.name, "high": high, "low": low})
+                outcome = resolve_outcome(
+                    candles,
+                    signal_type,
+                    entry,
+                    stop,
+                    target,
+                    created_at=created_at,
+                    expiry_hours=expiry_hours,
+                )
+                if outcome is not None:
+                    return outcome.success, outcome.exit_price
 
         price = await self._get_reference_price(symbol, timeframe)
         if price is None:
