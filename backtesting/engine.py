@@ -34,11 +34,13 @@ class BacktraderStrategy(bt.Strategy):
         if order.status in [order.Completed]:
             if order.isbuy():
                 self.log(
-                    f"BUY EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}"
+                    f"BUY EXECUTED, Price: {order.executed.price:.2f}, "
+                    f"Cost: {order.executed.value:.2f}"
                 )
             elif order.issell():
                 self.log(
-                    f"SELL EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}"
+                    f"SELL EXECUTED, Price: {order.executed.price:.2f}, "
+                    f"Cost: {order.executed.value:.2f}"
                 )
             self.bar_executed = len(self)
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
@@ -76,12 +78,14 @@ class BacktraderStrategy(bt.Strategy):
         if self.order:
             return
 
-        current_dt = pd.to_datetime(self.datas[0].datetime.datetime(0)).tz_localize(
-            "UTC"
-        )
+        current_dt = pd.to_datetime(self.datas[0].datetime.datetime(0)).tz_localize("UTC")
 
         # Check if the current datetime from backtrader exists in our pre-calculated signals
-        if self.signals_df is None or self.signals_df.empty or current_dt not in self.signals_df.index:
+        if (
+            self.signals_df is None
+            or self.signals_df.empty
+            or current_dt not in self.signals_df.index
+        ):
             return
 
         signal_row = self.signals_df.loc[current_dt]
@@ -212,9 +216,7 @@ class BacktestingEngine:
         مدل‌ها و threshold_manager برمی‌گردد. چون تفکیک confidence به‌ازای
         هر مدل در قرارداد فعلی plumbing نشده، از confidence ترکیبی سیگنال
         به‌عنوان proxy استفاده می‌شود (بدون مکانیزم جدید)."""
-        threshold_manager = (
-            self.trading_service.signal_generator.threshold_manager
-        )
+        threshold_manager = self.trading_service.signal_generator.threshold_manager
         for outcome in self.pending_outcomes:
             success = bool(outcome.get("success", False))
             confidence = outcome.get("confidence", 0.0) or 0.0

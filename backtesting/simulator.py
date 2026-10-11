@@ -62,9 +62,7 @@ class EventDrivenSimulator:
         equity: float,
     ) -> tuple[list[SimulatedTrade], RunStats]:
         bars = list(candles)
-        by_time = {
-            self._timestamp(candle): index for index, candle in enumerate(bars)
-        }
+        by_time = {self._timestamp(candle): index for index, candle in enumerate(bars)}
         trades: list[SimulatedTrade] = []
         exposure = 0.0
         evaluated = 0
@@ -93,9 +91,7 @@ class EventDrivenSimulator:
             )
             stop = float(raw_signal["stop"])
             target = float(raw_signal["target"])
-            result = calculate_position_size(
-                equity, entry, stop, sizing, current_exposure=exposure
-            )
+            result = calculate_position_size(equity, entry, stop, sizing, current_exposure=exposure)
             if result.quantity <= 0:
                 size_zero += 1
                 continue
@@ -111,8 +107,7 @@ class EventDrivenSimulator:
             exit_price = float(outcome.exit_price)
             exit_open = float(exit_bar["open"])
             if outcome.reason == "stop" and (
-                (side == "buy" and exit_open < stop)
-                or (side == "sell" and exit_open > stop)
+                (side == "buy" and exit_open < stop) or (side == "sell" and exit_open > stop)
             ):
                 exit_price = exit_open
             fee = (entry + exit_price) * result.quantity * self.config.commission_rate

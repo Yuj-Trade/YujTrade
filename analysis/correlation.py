@@ -56,9 +56,7 @@ class IndicatorCorrelationManager:
 
         self.correlation_matrix = df.corr()
 
-    def get_decorrelation_weights(
-        self, processed_results: dict[str, Any]
-    ) -> dict[str, float]:
+    def get_decorrelation_weights(self, processed_results: dict[str, Any]) -> dict[str, float]:
         """
         Calculates weights to reduce the influence of highly correlated indicators.
         """
@@ -78,10 +76,7 @@ class IndicatorCorrelationManager:
             new_group = {indicator1}
             for j in range(i + 1, len(indicators)):
                 indicator2 = indicators[j]
-                if (
-                    self.correlation_matrix.loc[indicator1, indicator2]
-                    > self.correlation_threshold
-                ):
+                if self.correlation_matrix.loc[indicator1, indicator2] > self.correlation_threshold:
                     new_group.add(indicator2)
 
             if len(new_group) > 1:

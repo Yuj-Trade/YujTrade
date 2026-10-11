@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -15,7 +14,7 @@ class MarketConditionAnalyzer:
         trend_strength = self._calculate_trend_strength(data)
         volatility = self._calculate_volatility(data)
         momentum = self._calculate_momentum(data)
-        
+
         hurst = self._calculate_hurst_exponent(data["close"])
         if hurst is None:
             hurst = 0.5
@@ -40,6 +39,7 @@ class MarketConditionAnalyzer:
             volume_trend_score = 0.0
 
         import talib
+
         rsi_values = talib.RSI(data["close"].to_numpy(), timeperiod=14)
         market_condition = MarketCondition.NEUTRAL
         if rsi_values.size > 0 and not pd.isna(rsi_values[-1]):
@@ -51,7 +51,7 @@ class MarketConditionAnalyzer:
 
         support, resistance = self._calculate_support_resistance(data)
         trend_acceleration = self._calculate_trend_acceleration(data)
-        
+
         candle_patterns = self.pattern_analyzer.detect_patterns(data)
 
         # قاعده ۳۵: detect_divergence به analyze_market_condition وصل است —
@@ -76,7 +76,7 @@ class MarketConditionAnalyzer:
                 ]
         except Exception:
             pass
-        
+
         return MarketAnalysis(
             trend=trend,
             trend_strength=trend_strength,
@@ -113,6 +113,7 @@ class MarketConditionAnalyzer:
         if len(data) < 28:
             return TrendStrength.WEAK
         import talib
+
         adx = talib.ADX(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -130,6 +131,7 @@ class MarketConditionAnalyzer:
         if len(data) < 14:
             return 0.0
         import talib
+
         atr = talib.ATR(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -144,21 +146,17 @@ class MarketConditionAnalyzer:
         if len(data) < 10:
             return 0.0
         import talib
+
         mom = talib.MOM(data["close"].to_numpy(dtype=np.float64), timeperiod=10)
         return mom[-1] if mom.size > 0 and not pd.isna(mom[-1]) else 0.0
 
-    def _calculate_hurst_exponent(
-        self, series: pd.Series, max_lag=100
-    ) -> float | None:
+    def _calculate_hurst_exponent(self, series: pd.Series, max_lag=100) -> float | None:
         if len(series) < max_lag:
             return None
         series_np = series.to_numpy()
         lags = range(2, max_lag)
         try:
-            tau = [
-                np.sqrt(np.std(np.subtract(series_np[lag:], series_np[:-lag])))
-                for lag in lags
-            ]
+            tau = [np.sqrt(np.std(np.subtract(series_np[lag:], series_np[:-lag]))) for lag in lags]
             if len(tau) == 0 or any(np.isnan(tau)) or any(t == 0 for t in tau):
                 return None
             poly = np.polyfit(np.log(lags), np.log(tau), 1)
@@ -174,18 +172,14 @@ class MarketConditionAnalyzer:
             return (None, None)
 
         from scipy.signal import find_peaks
-        
+
         recent_data = data.tail(window)
         required_prominence = (
             recent_data["high"].max() - recent_data["low"].min()
         ) * prominence_factor
 
-        low_peaks, _ = find_peaks(
-            -recent_data["low"].to_numpy(), prominence=required_prominence
-        )
-        high_peaks, _ = find_peaks(
-            recent_data["high"].to_numpy(), prominence=required_prominence
-        )
+        low_peaks, _ = find_peaks(-recent_data["low"].to_numpy(), prominence=required_prominence)
+        high_peaks, _ = find_peaks(recent_data["high"].to_numpy(), prominence=required_prominence)
 
         support = None
         resistance = None
@@ -210,12 +204,11 @@ class MarketConditionAnalyzer:
 
         return support, resistance
 
-    def _calculate_trend_acceleration(
-        self, data: pd.DataFrame, period: int = 10
-    ) -> float:
+    def _calculate_trend_acceleration(self, data: pd.DataFrame, period: int = 10) -> float:
         if len(data) < period + 1:
             return 0.0
         import talib
+
         mom = talib.MOM(data["close"].to_numpy(dtype=np.float64), timeperiod=period)
         if mom.size < 2 or pd.isna(mom[-1]) or pd.isna(mom[-2]):
             return 0.0
@@ -226,6 +219,7 @@ class MarketConditionAnalyzer:
         if len(data) < 28:
             return 25.0
         import talib
+
         adx = talib.ADX(
             data["high"].to_numpy(dtype=np.float64),
             data["low"].to_numpy(dtype=np.float64),
@@ -238,11 +232,7 @@ class MarketConditionAnalyzer:
 
 class VolumeAnalyzer:
     def analyze_volume_pattern(self, data: pd.DataFrame) -> dict:
-        if (
-            len(data) < 20
-            or "volume" not in data.columns
-            or data["volume"].isnull().all()
-        ):
+        if len(data) < 20 or "volume" not in data.columns or data["volume"].isnull().all():
             return {}
         volume_ma_20 = data["volume"].rolling(20).mean().iloc[-1]
         if pd.isna(volume_ma_20) or volume_ma_20 == 0:
@@ -323,7 +313,7 @@ class PatternAnalyzer:
             return []
 
         import talib
-        
+
         op = data["open"].to_numpy(dtype=np.float64)
         hi = data["high"].to_numpy(dtype=np.float64)
         lo = data["low"].to_numpy(dtype=np.float64)
@@ -349,28 +339,20 @@ class PatternAnalyzer:
             except Exception:
                 continue
 
-        sorted_patterns = sorted(
-            pattern_scores.items(), key=lambda x: x[1], reverse=True
-        )
-        detected_patterns = [
-            pattern for pattern, score in sorted_patterns if score > 0.5
-        ]
+        sorted_patterns = sorted(pattern_scores.items(), key=lambda x: x[1], reverse=True)
+        detected_patterns = [pattern for pattern, score in sorted_patterns if score > 0.5]
 
         return detected_patterns
 
     @staticmethod
-    def _analyze_pattern_context(
-        data: pd.DataFrame, direction: str, pattern_name: str
-    ) -> float:
+    def _analyze_pattern_context(data: pd.DataFrame, direction: str, pattern_name: str) -> float:
         score = 1.0
 
         if len(data) < 20:
             return score
 
         sma_20 = data["close"].rolling(20).mean()
-        current_trend = (
-            "bullish" if data["close"].iloc[-1] > sma_20.iloc[-1] else "bearish"
-        )
+        current_trend = "bullish" if data["close"].iloc[-1] > sma_20.iloc[-1] else "bearish"
 
         reversal_patterns = [
             "Hammer",
@@ -421,15 +403,13 @@ class PatternAnalyzer:
         return score
 
     @staticmethod
-    def detect_divergence(
-        data: pd.DataFrame, indicator: pd.Series, window=14
-    ) -> list:
+    def detect_divergence(data: pd.DataFrame, indicator: pd.Series, window=14) -> list:
         patterns = []
         if len(data) < window or len(indicator) < window:
             return patterns
 
         from scipy.signal import find_peaks
-        
+
         lows = data["low"].to_numpy()
         highs = data["high"].to_numpy()
         indicator_vals = indicator.to_numpy()
@@ -443,9 +423,7 @@ class PatternAnalyzer:
                 lows[last_peak_idx] > lows[prev_peak_idx]
                 and indicator_vals[last_peak_idx] < indicator_vals[prev_peak_idx]
             ):
-                strength = (
-                    abs(lows[last_peak_idx] - lows[prev_peak_idx]) / lows[prev_peak_idx]
-                )
+                strength = abs(lows[last_peak_idx] - lows[prev_peak_idx]) / lows[prev_peak_idx]
                 if strength > 0.02:
                     patterns.append("bullish_divergence_A")
                 else:
@@ -460,10 +438,7 @@ class PatternAnalyzer:
                 highs[last_peak_idx] < highs[prev_peak_idx]
                 and indicator_vals[last_peak_idx] > indicator_vals[prev_peak_idx]
             ):
-                strength = (
-                    abs(highs[last_peak_idx] - highs[prev_peak_idx])
-                    / highs[prev_peak_idx]
-                )
+                strength = abs(highs[last_peak_idx] - highs[prev_peak_idx]) / highs[prev_peak_idx]
                 if strength > 0.02:
                     patterns.append("bearish_divergence_A")
                 else:

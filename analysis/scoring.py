@@ -35,11 +35,7 @@ class AnalysisScorer:
         total_weight = 0.0
         for name, item in processed_results.items():
             result = item.get("result")
-            if (
-                not result
-                or not hasattr(result, "value")
-                or result.value is None
-            ):
+            if not result or not hasattr(result, "value") or result.value is None:
                 continue
             try:
                 if np.isnan(result.value):
@@ -54,9 +50,7 @@ class AnalysisScorer:
 
         return (total_score / total_weight) if total_weight > 0 else 0.0
 
-    def get_indicator_score(
-        self, result: IndicatorResult, market_context: MarketAnalysis
-    ) -> float:
+    def get_indicator_score(self, result: IndicatorResult, market_context: MarketAnalysis) -> float:
         strength = (
             np.clip(result.signal_strength / 100.0, 0, 1)
             if result.signal_strength is not None
@@ -151,8 +145,7 @@ class AnalysisScorer:
 
         volume_score = (
             context.volume_trend_score
-            if hasattr(context, "volume_trend_score")
-            and context.volume_trend_score is not None
+            if hasattr(context, "volume_trend_score") and context.volume_trend_score is not None
             else 0.0
         )
         score += volume_score
@@ -216,7 +209,9 @@ class AnalysisScorer:
             if accel != 0.0 and context.trend != TrendDirection.SIDEWAYS:
                 aligned = (accel > 0) == (context.trend == TrendDirection.BULLISH)
                 extras += 0.1 if aligned else -0.1
-                reasons.append(f"Trend acceleration {'aligned' if aligned else 'against'} ({accel:.2f})")
+                reasons.append(
+                    f"Trend acceleration {'aligned' if aligned else 'against'} ({accel:.2f})"
+                )
         except (TypeError, ValueError):
             pass
 
@@ -283,7 +278,9 @@ class AnalysisScorer:
                 if fg_val is not None:
                     if fg_val >= 75:
                         score += -0.15
-                        reasons.append(f"Fear&Greed: {fg_val:.0f} (extreme greed, contrarian -0.15)")
+                        reasons.append(
+                            f"Fear&Greed: {fg_val:.0f} (extreme greed, contrarian -0.15)"
+                        )
                     elif fg_val <= 25:
                         score += 0.15
                         reasons.append(f"Fear&Greed: {fg_val:.0f} (extreme fear, contrarian +0.15)")
@@ -306,9 +303,7 @@ class AnalysisScorer:
                 if ratio is not None:
                     ratio_score = 0.2 if ratio > 1.1 else -0.2 if ratio < 0.9 else 0.0
                     score += ratio_score
-                    reasons.append(
-                        f"Taker L/S Ratio: {ratio:.2f} (Score: {ratio_score:.2f})"
-                    )
+                    reasons.append(f"Taker L/S Ratio: {ratio:.2f} (Score: {ratio_score:.2f})")
         except Exception as e:
             logger.debug(f"Derivatives scoring skipped: {e}")
 
@@ -320,9 +315,7 @@ class AnalysisScorer:
                 comm = float(getattr(fund, "community_score", 0) or 0)
                 if dev > 0 or comm > 0:
                     score += 0.1
-                    reasons.append(
-                        f"Fundamental: dev {dev:.1f} / community {comm:.0f} (+0.10)"
-                    )
+                    reasons.append(f"Fundamental: dev {dev:.1f} / community {comm:.0f} (+0.10)")
         except Exception as e:
             logger.debug(f"Fundamental scoring skipped: {e}")
 
@@ -441,9 +434,7 @@ class AnalysisScorer:
         """
         asset = symbol.split("/")[0]
         # These are just example averages, could be dynamically calculated
-        market_avg_funding = {"BTC": 0.01, "ETH": 0.008, "default": 0.02}.get(
-            asset, 0.02
-        )
+        market_avg_funding = {"BTC": 0.01, "ETH": 0.008, "default": 0.02}.get(asset, 0.02)
 
         # High funding rate is bearish, so score is negative
         if funding_rate > market_avg_funding * 2:
@@ -482,9 +473,7 @@ class AnalysisScorer:
             # امتیاز حذف می‌کرد؛ پس "confidence" اولویت دارد و
             # "calibrated_confidence" فقط برای callerهایی که فقط آن را
             # می‌فرستند fallback می‌شود.
-            confidence = pred_data.get(
-                "confidence", pred_data.get("calibrated_confidence", 0)
-            )
+            confidence = pred_data.get("confidence", pred_data.get("calibrated_confidence", 0))
 
             if pred_price == 0:
                 continue
@@ -497,7 +486,9 @@ class AnalysisScorer:
             total_confidence += confidence * model_weight
 
             reasons.append(
-                f"ML ({model_name}): Predicts {'increase' if direction > 0 else 'decrease'} (Conf: {confidence:.1f}%)"
+                f"ML ({model_name}): "
+                f"Predicts {'increase' if direction > 0 else 'decrease'} "
+                f"(Conf: {confidence:.1f}%)"
             )
 
         # Normalize the score by the total confidence to get a value between -1 and 1
