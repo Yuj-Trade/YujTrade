@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -10,5 +10,8 @@ COPY pyproject.toml requirements.txt requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
 COPY --chown=appuser:appuser . .
 USER appuser
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD python scripts/docker_healthcheck.py
 
 CMD ["python", "main.py"]
