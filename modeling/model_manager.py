@@ -106,9 +106,7 @@ class ModelManager:
 
         try:
             model = await self._run_in_executor(
-                lambda: model_class(
-                    symbol=symbol, timeframe=timeframe, model_path=model_path_str
-                ),
+                lambda: model_class(symbol=symbol, timeframe=timeframe, model_path=model_path_str),
                 executor_type="prediction",
             )
 
@@ -116,18 +114,12 @@ class ModelManager:
                 model_name_map = {"lstm": "keras", "xgboost": "json"}
                 model_ext = model_name_map.get(model_type)
                 if model_ext:
-                    model_file, scaler_file = model._get_model_paths(
-                        model_type, model_ext
-                    )
+                    model_file, scaler_file = model._get_model_paths(model_type, model_ext)
 
                     if model_file.exists() and scaler_file.exists():
                         try:
-                            await self._run_in_executor(
-                                model.load, executor_type="prediction"
-                            )
-                            samples = self.artifacts.load_calibration(
-                                model_type, symbol, timeframe
-                            )
+                            await self._run_in_executor(model.load, executor_type="prediction")
+                            samples = self.artifacts.load_calibration(model_type, symbol, timeframe)
                             if samples:
                                 model.calibrator.calibration_data[
                                     f"{model_type}_{symbol}_{timeframe}"
@@ -142,7 +134,8 @@ class ModelManager:
                             model.is_trained = False
                     else:
                         self.logger.info(
-                            f"No existing {model_type.upper()} model found for {key}, needs training"
+                            f"No existing {model_type.upper()} model found "
+                            f"for {key}, needs training"
                         )
                         model.is_trained = False
                 else:
@@ -169,16 +162,12 @@ class ModelManager:
         self._check_if_closed()
 
         if data is None or data.empty:
-            self.logger.warning(
-                f"Cannot train {model_type} for {symbol}-{timeframe}: empty data"
-            )
+            self.logger.warning(f"Cannot train {model_type} for {symbol}-{timeframe}: empty data")
             return False
 
         model = await self.get_model(model_type, symbol, timeframe, auto_load=False)
         if not model:
-            self.logger.error(
-                f"Failed to create model {model_type} for {symbol}-{timeframe}"
-            )
+            self.logger.error(f"Failed to create model {model_type} for {symbol}-{timeframe}")
             return False
 
         try:
@@ -265,23 +254,15 @@ class ModelManager:
 
                 tasks.append(self.get_model(model_type, symbol_formatted, timeframe))
             except (IndexError, ValueError) as e:
-                self.logger.warning(
-                    f"Could not parse model file name: {file.name}. Error: {e}"
-                )
+                self.logger.warning(f"Could not parse model file name: {file.name}. Error: {e}")
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for res in results:
             if isinstance(res, Exception):
-                self.logger.error(
-                    f"Error during model initialization: {res}", exc_info=res
-                )
-        self.logger.info(
-            f"Model initialization finished. Loaded/Created {len(tasks)} models."
-        )
+                self.logger.error(f"Error during model initialization: {res}", exc_info=res)
+        self.logger.info(f"Model initialization finished. Loaded/Created {len(tasks)} models.")
 
-    async def train_and_save_model(
-        self, model_type: str, symbol: str, timeframe: str
-    ) -> bool:
+    async def train_and_save_model(self, model_type: str, symbol: str, timeframe: str) -> bool:
         self.logger.info(
             f"Attempting to train and save {model_type} model for {symbol}-{timeframe}"
         )
@@ -316,29 +297,29 @@ class ModelManager:
                 )
                 return None
             self.logger.info(
-                f"Model {model_type} for {symbol}-{timeframe} is not trained. Attempting to train now."
+                f"Model {model_type} for {symbol}-{timeframe} is not trained. "
+                "Attempting to train now."
             )
             success = await self.train_and_save_model(model_type, symbol, timeframe)
             if not success:
                 self.logger.warning(
-                    f"Training failed for {model_type} on {symbol}-{timeframe}. Skipping prediction."
+                    f"Training failed for {model_type} on {symbol}-{timeframe}. "
+                    "Skipping prediction."
                 )
                 return None
             # Re-get the model to ensure we have the trained instance
             model = await self.get_model(model_type, symbol, timeframe)
             if not model or not model.is_trained:
                 self.logger.error(
-                    f"Model still not trained after attempt for {model_type} on {symbol}-{timeframe}."
+                    f"Model still not trained after attempt "
+                    f"for {model_type} on {symbol}-{timeframe}."
                 )
                 return None
 
-        data = await self.data_provider.get_data_for_model(
-            symbol, timeframe, for_prediction=True
-        )
+        data = await self.data_provider.get_data_for_model(symbol, timeframe, for_prediction=True)
         if data is None or data.empty:
             self.logger.warning(
-                f"model_unavailable: empty data for prediction {model_type} "
-                f"on {symbol}-{timeframe}"
+                f"model_unavailable: empty data for prediction {model_type} on {symbol}-{timeframe}"
             )
             return None
 
@@ -369,28 +350,18 @@ class ModelManager:
             current_price = data["close"].iloc[-1]
             raw_confidence = 0.0
             if current_price > 0:
-                expected_pct_change = (
-                    model.feature_engineer.get_typical_volatility(timeframe) * 100
-                )
+                expected_pct_change = model.feature_engineer.get_typical_volatility(timeframe) * 100
                 if expected_pct_change > 0:
-                    price_change_pct = (
-                        abs(prediction[0] - current_price) / current_price * 100
-                    )
+                    price_change_pct = abs(prediction[0] - current_price) / current_price * 100
                     # A more sensible confidence based on expected volatility
                     raw_confidence = np.clip(
                         100
-                        - (
-                            abs(price_change_pct - expected_pct_change)
-                            / expected_pct_change
-                        )
-                        * 100,
+                        - (abs(price_change_pct - expected_pct_change) / expected_pct_change) * 100,
                         30,
                         95,
                     )
                 else:
-                    raw_confidence = (
-                        50.0  # Default confidence if no volatility expected
-                    )
+                    raw_confidence = 50.0  # Default confidence if no volatility expected
 
             # Use the calibrator
             model_name = f"{model_type}_{symbol}_{timeframe}"
@@ -398,9 +369,7 @@ class ModelManager:
                 model_name, raw_confidence
             )
 
-            final_confidence = max(
-                0.0, min(100.0, calibrated_confidence * (1 - uncertainty**2))
-            )
+            final_confidence = max(0.0, min(100.0, calibrated_confidence * (1 - uncertainty**2)))
 
             return {
                 "prediction": float(prediction[0]),
@@ -458,9 +427,7 @@ class ModelManager:
             try:
                 model.cleanup()
             except Exception as e:
-                self.logger.error(
-                    f"Error cleaning up model {model.symbol}-{model.timeframe}: {e}"
-                )
+                self.logger.error(f"Error cleaning up model {model.symbol}-{model.timeframe}: {e}")
 
         for executor_attr in ["_training_executor", "_prediction_executor"]:
             if hasattr(self, executor_attr):

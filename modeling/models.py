@@ -105,13 +105,9 @@ class BaseModel:
             if self.model:
                 del self.model
                 self.model = None
-                self.logger.debug(
-                    f"Cleaned up model object for {self.symbol}-{self.timeframe}"
-                )
+                self.logger.debug(f"Cleaned up model object for {self.symbol}-{self.timeframe}")
         except Exception as e:
-            self.logger.error(
-                f"Error during model cleanup for {self.symbol}-{self.timeframe}: {e}"
-            )
+            self.logger.error(f"Error during model cleanup for {self.symbol}-{self.timeframe}: {e}")
 
     def __del__(self):
         if not self._is_closed:
@@ -164,33 +160,32 @@ class LSTMModel(BaseModel):
             self.model.compile(optimizer=optimizer, loss="huber", metrics=["mae"])
             self.logger.debug(f"Created LSTM model for {self.symbol}-{self.timeframe}")
 
-    def fit(
-        self, data: pd.DataFrame, epochs=15, batch_size=None, validation_split=0.2
-    ) -> bool:
+    def fit(self, data: pd.DataFrame, epochs=15, batch_size=None, validation_split=0.2) -> bool:
         self._check_if_closed()
         try:
             if (
                 data is None or data.empty or len(data) < self.sequence_length + 20
             ):  # Increased minimum data
                 self.logger.warning(
-                    f"Insufficient data for {self.symbol}-{self.timeframe}, skipping training. Required: {self.sequence_length + 20}, Got: {len(data) if data is not None else 0}"
+                    f"Insufficient data for {self.symbol}-{self.timeframe}, "
+                    f"skipping training. Required: {self.sequence_length + 20}, "
+                    f"Got: {len(data) if data is not None else 0}"
                 )
                 return False
 
             features = self.feature_engineer.create_features(data)
             if features.empty or len(features) < self.sequence_length + 20:
                 self.logger.warning(
-                    f"No features or insufficient features created for {self.symbol}-{self.timeframe}, skipping training."
+                    f"No features or insufficient features created "
+                    f"for {self.symbol}-{self.timeframe}, skipping training."
                 )
                 return False
 
             scaled_features = self.feature_engineer.scale_features(features, fit=True)
-            if (
-                scaled_features is None
-                or len(scaled_features) < self.sequence_length + 20
-            ):
+            if scaled_features is None or len(scaled_features) < self.sequence_length + 20:
                 self.logger.warning(
-                    f"Feature scaling failed or resulted in insufficient data for {self.symbol}-{self.timeframe}, skipping training."
+                    f"Feature scaling failed or resulted in insufficient data "
+                    f"for {self.symbol}-{self.timeframe}, skipping training."
                 )
                 return False
 
@@ -202,14 +197,16 @@ class LSTMModel(BaseModel):
             )  # Target is the first column ('close')
             if X.shape[0] == 0 or y.shape[0] == 0:
                 self.logger.warning(
-                    f"Not enough data to create sequences for {self.symbol}-{self.timeframe}, skipping training."
+                    f"Not enough data to create sequences "
+                    f"for {self.symbol}-{self.timeframe}, skipping training."
                 )
                 return False
 
             # Ensure validation set is not empty
             if int(X.shape[0] * validation_split) < 1:
                 self.logger.warning(
-                    f"Not enough data for validation split in {self.symbol}-{self.timeframe}. Disabling validation."
+                    f"Not enough data for validation split "
+                    f"in {self.symbol}-{self.timeframe}. Disabling validation."
                 )
                 validation_split = 0.0
 
@@ -219,22 +216,14 @@ class LSTMModel(BaseModel):
 
             callbacks = [
                 (
-                    EarlyStopping(
-                        monitor="val_loss", patience=5, restore_best_weights=True
-                    )
+                    EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
                     if validation_split > 0
-                    else EarlyStopping(
-                        monitor="loss", patience=5, restore_best_weights=True
-                    )
+                    else EarlyStopping(monitor="loss", patience=5, restore_best_weights=True)
                 ),
                 (
-                    ReduceLROnPlateau(
-                        monitor="val_loss", factor=0.7, patience=3, min_lr=1e-7
-                    )
+                    ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=3, min_lr=1e-7)
                     if validation_split > 0
-                    else ReduceLROnPlateau(
-                        monitor="loss", factor=0.7, patience=3, min_lr=1e-7
-                    )
+                    else ReduceLROnPlateau(monitor="loss", factor=0.7, patience=3, min_lr=1e-7)
                 ),
             ]
 
@@ -266,7 +255,9 @@ class LSTMModel(BaseModel):
                 try:
                     self.save()
                     self.logger.info(
-                        f"LSTM model for {self.symbol}-{self.timeframe} trained and saved successfully with {final_loss_key}: {final_val_loss:.4f}"
+                        f"LSTM model for {self.symbol}-{self.timeframe} trained "
+                        f"and saved successfully with {final_loss_key}: "
+                        f"{final_val_loss:.4f}"
                     )
                 except Exception as save_e:
                     self.logger.error(
@@ -277,7 +268,9 @@ class LSTMModel(BaseModel):
                 return True
             else:
                 self.logger.warning(
-                    f"LSTM training for {self.symbol}-{self.timeframe} did not converge. Final {final_loss_key}: {final_val_loss:.4f} (Threshold: {loss_threshold:.4f})"
+                    f"LSTM training for {self.symbol}-{self.timeframe} "
+                    f"did not converge. Final {final_loss_key}: "
+                    f"{final_val_loss:.4f} (Threshold: {loss_threshold:.4f})"
                 )
                 self.is_trained = False
                 return False
@@ -293,21 +286,22 @@ class LSTMModel(BaseModel):
         self._check_if_closed()
         if not self.model or not self.is_trained:
             self.logger.debug(
-                f"Prediction skipped for {self.symbol}-{self.timeframe}: model not available or not trained."
+                f"Prediction skipped for {self.symbol}-{self.timeframe}: "
+                "model not available or not trained."
             )
             return None
 
         try:
             if data is None or data.empty:
-                self.logger.warning(
-                    f"Empty data for prediction {self.symbol}-{self.timeframe}"
-                )
+                self.logger.warning(f"Empty data for prediction {self.symbol}-{self.timeframe}")
                 return None
 
             features = self.feature_engineer.create_features(data)
             if features.empty or len(features) < self.sequence_length:
                 self.logger.warning(
-                    f"Not enough data for prediction for {self.symbol}-{self.timeframe}. Required: {self.sequence_length}, available: {len(features)}"
+                    f"Not enough data for prediction "
+                    f"for {self.symbol}-{self.timeframe}. "
+                    f"Required: {self.sequence_length}, available: {len(features)}"
                 )
                 return None
 
@@ -327,9 +321,7 @@ class LSTMModel(BaseModel):
                 predictions_sample = [
                     self.model(reshaped_sequence, training=True) for _ in range(10)
                 ]
-                predictions_sample_np = np.array(
-                    [p.numpy() for p in predictions_sample]
-                ).squeeze()
+                predictions_sample_np = np.array([p.numpy() for p in predictions_sample]).squeeze()
 
             if predictions_sample_np is None or predictions_sample_np.size == 0:
                 return None
@@ -337,9 +329,7 @@ class LSTMModel(BaseModel):
             scaled_prediction = np.mean(predictions_sample_np, axis=0, keepdims=True)
             prediction_std = np.std(predictions_sample_np, axis=0)
 
-            prediction = self.feature_engineer.inverse_scale_prediction(
-                scaled_prediction
-            )
+            prediction = self.feature_engineer.inverse_scale_prediction(scaled_prediction)
 
             # Normalize uncertainty
             uncertainty = min(prediction_std * 0.5, 0.9)
@@ -364,13 +354,9 @@ class LSTMModel(BaseModel):
                 self.model.save(str(model_file))
 
             self.save_scaler("lstm")
-            self.logger.info(
-                f"LSTM model for {self.symbol}-{self.timeframe} saved to {model_file}"
-            )
+            self.logger.info(f"LSTM model for {self.symbol}-{self.timeframe} saved to {model_file}")
         except Exception as e:
-            self.logger.error(
-                f"Error saving LSTM model for {self.symbol}-{self.timeframe}: {e}"
-            )
+            self.logger.error(f"Error saving LSTM model for {self.symbol}-{self.timeframe}: {e}")
             raise
 
     def load(self):
@@ -382,7 +368,8 @@ class LSTMModel(BaseModel):
 
             if not self.load_scaler("lstm"):
                 raise ModelError(
-                    f"Scaler not found for LSTM model {self.symbol}-{self.timeframe}. It will need retraining."
+                    f"Scaler not found for LSTM model {self.symbol}-{self.timeframe}. "
+                    "It will need retraining."
                 )
 
             with managed_tf_session():
@@ -407,9 +394,7 @@ class LSTMModel(BaseModel):
                 f"LSTM model for {self.symbol}-{self.timeframe} loaded from {model_file}"
             )
         except Exception as e:
-            self.logger.error(
-                f"Error loading LSTM model for {self.symbol}-{self.timeframe}: {e}"
-            )
+            self.logger.error(f"Error loading LSTM model for {self.symbol}-{self.timeframe}: {e}")
             self.is_trained = False
             raise
 
@@ -419,9 +404,7 @@ class LSTMModel(BaseModel):
         super().cleanup()
         try:
             tf.keras.backend.clear_session()
-            self.logger.debug(
-                f"Keras session cleared for {self.symbol}-{self.timeframe}"
-            )
+            self.logger.debug(f"Keras session cleared for {self.symbol}-{self.timeframe}")
         except Exception as e:
             self.logger.error(
                 f"Error clearing Keras session for {self.symbol}-{self.timeframe}: {e}"
@@ -429,9 +412,7 @@ class LSTMModel(BaseModel):
 
 
 class XGBoostModel(BaseModel):
-    def __init__(
-        self, symbol: str, timeframe: str, model_path: str = "models/xgboost", **params
-    ):
+    def __init__(self, symbol: str, timeframe: str, model_path: str = "models/xgboost", **params):
         super().__init__(symbol, timeframe, model_path)
         default_params = {
             "objective": "reg:squarederror",
@@ -453,15 +434,14 @@ class XGBoostModel(BaseModel):
         self._check_if_closed()
         try:
             if data is None or data.empty or len(data) < 50:
-                self.logger.warning(
-                    f"Insufficient data for XGBoost {self.symbol}-{self.timeframe}"
-                )
+                self.logger.warning(f"Insufficient data for XGBoost {self.symbol}-{self.timeframe}")
                 return False
 
             features = self.feature_engineer.create_features(data)
             if features.empty or len(features) < 50:
                 self.logger.warning(
-                    f"No features or insufficient features created for XGBoost {self.symbol}-{self.timeframe}"
+                    f"No features or insufficient features created "
+                    f"for XGBoost {self.symbol}-{self.timeframe}"
                 )
                 return False
 
@@ -523,7 +503,8 @@ class XGBoostModel(BaseModel):
             try:
                 self.save()
                 self.logger.info(
-                    f"XGBoost model for {self.symbol}-{self.timeframe} trained and saved successfully"
+                    f"XGBoost model for {self.symbol}-{self.timeframe} "
+                    "trained and saved successfully"
                 )
             except Exception as save_e:
                 self.logger.error(
@@ -567,9 +548,7 @@ class XGBoostModel(BaseModel):
             if last_features.empty:
                 return None
 
-            scaled_features = self.feature_engineer.scale_features(
-                last_features, fit=False
-            )
+            scaled_features = self.feature_engineer.scale_features(last_features, fit=False)
             if scaled_features is None:
                 return None
 
@@ -581,9 +560,7 @@ class XGBoostModel(BaseModel):
                 importances = self.model.feature_importances_
                 # Higher variance in importances might mean more uncertainty
                 uncertainty = (
-                    np.std(importances) / np.mean(importances)
-                    if np.mean(importances) > 0
-                    else 0.5
+                    np.std(importances) / np.mean(importances) if np.mean(importances) > 0 else 0.5
                 )
                 uncertainty = min(max(uncertainty * 0.1, 0.05), 0.5)
             except Exception:
@@ -609,9 +586,7 @@ class XGBoostModel(BaseModel):
                 f"XGBoost model for {self.symbol}-{self.timeframe} saved to {model_file}"
             )
         except Exception as e:
-            self.logger.error(
-                f"Error saving XGBoost model for {self.symbol}-{self.timeframe}: {e}"
-            )
+            self.logger.error(f"Error saving XGBoost model for {self.symbol}-{self.timeframe}: {e}")
             raise
 
     def load(self):
@@ -623,7 +598,8 @@ class XGBoostModel(BaseModel):
 
             if not self.load_scaler("xgboost"):  # Load the scaler
                 raise ModelError(
-                    f"Scaler not found for XGBoost model {self.symbol}-{self.timeframe}. It will need retraining."
+                    f"Scaler not found for XGBoost model {self.symbol}-{self.timeframe}. "
+                    "It will need retraining."
                 )
 
             self.model.load_model(str(model_file))

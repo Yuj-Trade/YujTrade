@@ -41,9 +41,7 @@ class HyperparameterOptimizer:
             self.optuna = optuna
         except ImportError:
             self.optuna = None
-            logger.error(
-                "Optuna is not installed. Install it to use HyperparameterOptimizer."
-            )
+            logger.error("Optuna is not installed. Install it to use HyperparameterOptimizer.")
 
     def _define_lstm_search_space(self, trial):
         return {
@@ -88,8 +86,7 @@ class HyperparameterOptimizer:
             for fold in validator.split(self.data):
                 fold_dir = self.artifact_root / "fold-runs" / run_id / f"fold-{fold.index}"
                 model = model_class(
-                    symbol=self.symbol, timeframe=self.timeframe,
-                    model_path=str(fold_dir), **params
+                    symbol=self.symbol, timeframe=self.timeframe, model_path=str(fold_dir), **params
                 )
                 if sequence_length and hasattr(model, "sequence_length"):
                     model.sequence_length = sequence_length
@@ -105,10 +102,18 @@ class HyperparameterOptimizer:
                 sharpes.append(score)
                 source_files = list(fold_dir.glob("*"))
                 registry.create_version(
-                    self.model_type, self.symbol, self.timeframe, source_files,
-                    metadata={"run_id": run_id, "fold": fold.index, "params": params,
-                              "oos_metrics": {"sharpe": score}},
-                    version=f"{run_id}-fold-{fold.index}", update_current=False,
+                    self.model_type,
+                    self.symbol,
+                    self.timeframe,
+                    source_files,
+                    metadata={
+                        "run_id": run_id,
+                        "fold": fold.index,
+                        "params": params,
+                        "oos_metrics": {"sharpe": score},
+                    },
+                    version=f"{run_id}-fold-{fold.index}",
+                    update_current=False,
                 )
                 model.cleanup()
                 trial.report(purged_objective_score(sharpes), step=fold.index)
@@ -131,15 +136,13 @@ class HyperparameterOptimizer:
         actual = test["close"].to_numpy()
         previous = pd.Series(actual).shift(1).fillna(float(train["close"].iloc[-1])).to_numpy()
         returns = (actual - previous) / previous
-        directions = pd.Series(predictions).sub(previous).apply(
-            lambda value: 1 if value > 0 else -1
+        directions = (
+            pd.Series(predictions).sub(previous).apply(lambda value: 1 if value > 0 else -1)
         )
         strategy_returns = returns * directions.to_numpy()
         std = float(strategy_returns.std())
         return (
-            float(strategy_returns.mean() / std * (len(strategy_returns) ** 0.5))
-            if std
-            else -1.0
+            float(strategy_returns.mean() / std * (len(strategy_returns) ** 0.5)) if std else -1.0
         )
 
     async def run(self):
@@ -158,9 +161,7 @@ class HyperparameterOptimizer:
         # Run optimize in a separate thread to avoid blocking the event loop
         await self.loop.run_in_executor(
             None,
-            lambda: study.optimize(
-                sync_objective_wrapper, n_trials=self.n_trials, n_jobs=1
-            ),
+            lambda: study.optimize(sync_objective_wrapper, n_trials=self.n_trials, n_jobs=1),
         )
 
         pruned_trials = study.get_trials(
