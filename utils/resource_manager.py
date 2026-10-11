@@ -16,6 +16,7 @@ class ResourceManager:
     هیچ لایه دیگری آنها را نمی‌بندد (BaseFetcher.close عمداً session مشترک
     را دست نمی‌زند). سلسله‌مراتب cleanup:
     Application → Services/TradingService → Providers/Models → این‌جا."""
+
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
         self._redis_client: redis.Redis | None = None
@@ -54,7 +55,7 @@ class ResourceManager:
                         health_check_interval=30,
                         retry_on_timeout=True,
                         retry_on_error=[redis.ConnectionError, redis.TimeoutError],
-                        ssl_cert_reqs=None
+                        ssl_cert_reqs=None,
                     )
 
                     await asyncio.wait_for(self._redis_client.ping(), timeout=10.0)
@@ -84,7 +85,9 @@ class ResourceManager:
                             logger.error(f"Error closing failed redis client: {close_e}")
                     self._redis_client = None
                 except Exception as e:
-                    logger.error(f"Unexpected error connecting to Redis: {e}. Caching will be disabled.")
+                    logger.error(
+                        f"Unexpected error connecting to Redis: {e}. Caching will be disabled."
+                    )
                     if self._redis_client:
                         try:
                             await self._redis_client.aclose()

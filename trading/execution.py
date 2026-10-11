@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -33,14 +33,29 @@ class ExchangeAdapter:
             logger.debug(f"Exchange price fetch failed for {symbol}: {e}")
             return None
 
-    async def create_order(self, symbol: str, side: OrderSide, quantity: float, price: float | None = None, order_type: OrderType = OrderType.MARKET) -> ExecutionResult:
+    async def create_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        price: float | None = None,
+        order_type: OrderType = OrderType.MARKET,
+    ) -> ExecutionResult:
         if self.dry_run or self.exchange is None:
             order_id = uuid.uuid4().hex[:12]
-            return ExecutionResult(ok=True, order_id=order_id, price=float(price or 0.0), quantity=float(quantity), fee=float((price or 0.0) * quantity * self.fee_rate))
+            return ExecutionResult(
+                ok=True,
+                order_id=order_id,
+                price=float(price or 0.0),
+                quantity=float(quantity),
+                fee=float((price or 0.0) * quantity * self.fee_rate),
+            )
         try:
             side_str = "buy" if side == OrderSide.BUY else "sell"
             params = {"type": order_type.value}
-            result = await asyncio.to_thread(self.exchange.create_order, symbol, params["type"], side_str, float(quantity), price)
+            result = await asyncio.to_thread(
+                self.exchange.create_order, symbol, params["type"], side_str, float(quantity), price
+            )
             order_id = str(result.get("id", uuid.uuid4().hex[:12]))
             avg = float(result.get("average") or result.get("price") or price or 0.0)
             filled = float(result.get("filled") or result.get("amount") or quantity)
@@ -80,7 +95,12 @@ class FakeAdapter(ExchangeAdapter):
 
 
 class ExecutionEngine:
-    def __init__(self, adapter: ExchangeAdapter | None = None, max_deviation_pct: float = 2.0, max_spread_pct: float = 0.5):
+    def __init__(
+        self,
+        adapter: ExchangeAdapter | None = None,
+        max_deviation_pct: float = 2.0,
+        max_spread_pct: float = 0.5,
+    ):
         self.adapter = adapter or ExchangeAdapter()
         self.max_deviation_pct = max_deviation_pct
         self.max_spread_pct = max_spread_pct
@@ -92,7 +112,16 @@ class ExecutionEngine:
         deviation = abs(limit_price - market_price) / market_price * 100.0
         return deviation <= self.max_deviation_pct
 
-    async def execute(self, symbol: str, side: OrderSide, quantity: float, price: float | None = None, order_type: OrderType = OrderType.MARKET, signal_id: str | None = None, timeframe: str | None = None) -> ExecutionResult:
+    async def execute(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        price: float | None = None,
+        order_type: OrderType = OrderType.MARKET,
+        signal_id: str | None = None,
+        timeframe: str | None = None,
+    ) -> ExecutionResult:
         if quantity <= 0:
             return ExecutionResult(ok=False, error="invalid_quantity")
         market_price = await self.adapter.fetch_price(symbol)

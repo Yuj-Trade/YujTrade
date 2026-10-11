@@ -39,18 +39,12 @@ class MainApp:
                 raise ValueError
             return hours * 3600.0
         except (TypeError, ValueError):
-            logger.warning(
-                f"Invalid schedule_hour={value!r}, falling back to 1 hour."
-            )
+            logger.warning(f"Invalid schedule_hour={value!r}, falling back to 1 hour.")
             return 3600.0
 
     async def _scheduled_analysis_loop(self, config_manager):
-        interval = self._parse_schedule_hour(
-            config_manager.get("schedule_hour", "*/1")
-        )
-        logger.info(
-            f"Scheduled analysis enabled every {interval / 3600:.2f}h."
-        )
+        interval = self._parse_schedule_hour(config_manager.get("schedule_hour", "*/1"))
+        logger.info(f"Scheduled analysis enabled every {interval / 3600:.2f}h.")
         self.scheduler_store = SchedulerStore(
             config_manager.get("scheduler_db_path", "runs/scheduler.db")
         )
@@ -58,9 +52,7 @@ class MainApp:
         while not self.shutdown_event.is_set():
             if not first_iteration:
                 try:
-                    await asyncio.wait_for(
-                        self.shutdown_event.wait(), timeout=interval
-                    )
+                    await asyncio.wait_for(self.shutdown_event.wait(), timeout=interval)
                 except asyncio.TimeoutError:
                     pass
             first_iteration = False
@@ -108,20 +100,21 @@ class MainApp:
                 port=int(config_manager.get("METRICS_PORT", 9108)),
             )
             init_sentry(str(SecretsManager.SENTRY_DSN or ""))
-            logger.info(
-                f"YujTrade v{config_manager.get('app_version', '?')} initialized."
-            )
+            logger.info(f"YujTrade v{config_manager.get('app_version', '?')} initialized.")
 
             bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
             if not bot_token:
                 logger.error("TELEGRAM_BOT_TOKEN is not configured. Cannot start bot.")
-            
+
             from utils.background_manager import BackgroundTaskManager
+
             self.background_tasks_manager = BackgroundTaskManager()
 
             admin_chat_id = SecretsManager.ADMIN_CHAT_ID
             if not admin_chat_id:
-                logger.critical("CRITICAL: ADMIN_CHAT_ID is not configured. Bot interactions will be limited.")
+                logger.critical(
+                    "CRITICAL: ADMIN_CHAT_ID is not configured. Bot interactions will be limited."
+                )
 
             if bot_token and admin_chat_id:
                 logger.info("Initializing Telegram bot handler...")
@@ -134,12 +127,12 @@ class MainApp:
                 )
 
                 logger.info("Starting Telegram bot...")
-                
+
                 await self.bot_handler.application.initialize()
-                
+
                 await self.bot_handler.application.start()
                 await self.bot_handler.application.updater.start_polling()
-                
+
                 logger.info("Telegram bot started successfully.")
 
                 # اجرای دوره‌ای تحلیل با مکانیزم موجود (قاعده ۱۹):
@@ -160,8 +153,13 @@ class MainApp:
             logger.error(f"Error during application run: {e}", exc_info=True)
         finally:
             logger.info("Shutdown event set. Cleaning up resources...")
-            
-            if self.bot_handler and self.bot_handler.application and hasattr(self.bot_handler.application, 'updater') and self.bot_handler.application.updater.running:
+
+            if (
+                self.bot_handler
+                and self.bot_handler.application
+                and hasattr(self.bot_handler.application, "updater")
+                and self.bot_handler.application.updater.running
+            ):
                 try:
                     await self.bot_handler.application.updater.stop()
                     await self.bot_handler.application.stop()
@@ -185,13 +183,13 @@ class MainApp:
                     await self.market_data_provider.close()
                 except Exception as e:
                     logger.error(f"Error closing market data provider: {e}")
-                    
+
             if self.resource_manager:
                 try:
                     await self.resource_manager.cleanup()
                 except Exception as e:
                     logger.error(f"Error cleaning up resource manager: {e}")
-                    
+
             logger.info("Application has been shut down gracefully.")
 
 

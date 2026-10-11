@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 
 
 @dataclass
@@ -11,7 +11,12 @@ class MarginState:
 
 
 class MarginManager:
-    def __init__(self, max_leverage: float = 3.0, margin_call_level: float = 100.0, liquidation_level: float = 50.0):
+    def __init__(
+        self,
+        max_leverage: float = 3.0,
+        margin_call_level: float = 100.0,
+        liquidation_level: float = 50.0,
+    ):
         self.max_leverage = float(max_leverage)
         self.margin_call_level = float(margin_call_level)
         self.liquidation_level = float(liquidation_level)

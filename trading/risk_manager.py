@@ -42,7 +42,9 @@ class RiskManager:
         self.weekly_pnl = 0.0
         self.consecutive_losses = 0
 
-    def update_state(self, equity: float, daily_pnl: float, weekly_pnl: float, consecutive_losses: int = 0):
+    def update_state(
+        self, equity: float, daily_pnl: float, weekly_pnl: float, consecutive_losses: int = 0
+    ):
         if equity > self.equity_peak:
             self.equity_peak = equity
         self.daily_pnl = daily_pnl
@@ -75,7 +77,9 @@ class RiskManager:
         factor = max(0.25, min(2.0, factor))
         return base_size * factor
 
-    def kelly_size(self, equity: float, entry: float, stop: float, win_rate: float, payoff: float) -> float:
+    def kelly_size(
+        self, equity: float, entry: float, stop: float, win_rate: float, payoff: float
+    ) -> float:
         if payoff <= 0 or equity <= 0:
             return 0.0
         p = max(0.01, min(0.99, win_rate))
@@ -87,17 +91,30 @@ class RiskManager:
             return 0.0
         return equity * f / price_risk
 
-    def check_limits(self, equity: float, open_exposure_pct: float, open_count: int, new_position_pct: float) -> dict[str, Any]:
+    def check_limits(
+        self, equity: float, open_exposure_pct: float, open_count: int, new_position_pct: float
+    ) -> dict[str, Any]:
         checks: dict[str, Any] = {}
         checks["drawdown"] = self.drawdown_pct(equity) < self.config.max_drawdown_pct
         checks["daily_loss"] = self.daily_pnl > -self.config.max_daily_loss_pct
         checks["weekly_loss"] = self.weekly_pnl > -self.config.max_weekly_loss_pct
-        checks["exposure"] = (open_exposure_pct + new_position_pct) <= self.config.max_portfolio_exposure_pct
+        checks["exposure"] = (
+            open_exposure_pct + new_position_pct
+        ) <= self.config.max_portfolio_exposure_pct
         checks["single_position"] = new_position_pct <= self.config.max_single_position_pct
         checks["concurrent"] = open_count < self.config.max_concurrent_positions
         return checks
 
-    def evaluate(self, signal: TradingSignal, equity: float, open_exposure_pct: float, open_count: int, current_vol_pct: float = 0.0, win_rate: float = 0.5, payoff: float = 2.0) -> RiskDecision:
+    def evaluate(
+        self,
+        signal: TradingSignal,
+        equity: float,
+        open_exposure_pct: float,
+        open_count: int,
+        current_vol_pct: float = 0.0,
+        win_rate: float = 0.5,
+        payoff: float = 2.0,
+    ) -> RiskDecision:
         if signal.signal_type not in (SignalType.BUY, SignalType.SELL):
             return RiskDecision(allowed=False, reason="hold_signal")
         if signal.risk_reward_ratio < self.config.min_risk_reward:
@@ -120,4 +137,11 @@ class RiskManager:
         leverage = min(self.config.max_leverage, max(1.0, notional / equity)) if equity > 0 else 1.0
         risk_amount = abs(entry - stop) * sized
         side = PositionSide.LONG if signal.signal_type == SignalType.BUY else PositionSide.SHORT
-        return RiskDecision(allowed=True, position_size=float(sized), risk_amount=float(risk_amount), leverage=float(leverage), reason=side.value, checks=checks)
+        return RiskDecision(
+            allowed=True,
+            position_size=float(sized),
+            risk_amount=float(risk_amount),
+            leverage=float(leverage),
+            reason=side.value,
+            checks=checks,
+        )

@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -18,11 +18,54 @@ class OrderManager:
         self.orders: dict[str, Order] = {}
         self.trailing: dict[str, float] = {}
 
-    def bracket(self, symbol: str, side: OrderSide, quantity: float, entry: float, stop: float, target: float, signal_id: str | None = None, timeframe: str | None = None) -> BracketOrder:
-        entry_o = Order(order_id=uuid.uuid4().hex[:12], symbol=symbol, side=side, order_type=OrderType.LIMIT, quantity=float(quantity), price=float(entry), status=OrderStatus.OPEN, signal_id=signal_id, timeframe=timeframe, paper=True)
+    def bracket(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        entry: float,
+        stop: float,
+        target: float,
+        signal_id: str | None = None,
+        timeframe: str | None = None,
+    ) -> BracketOrder:
+        entry_o = Order(
+            order_id=uuid.uuid4().hex[:12],
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.LIMIT,
+            quantity=float(quantity),
+            price=float(entry),
+            status=OrderStatus.OPEN,
+            signal_id=signal_id,
+            timeframe=timeframe,
+            paper=True,
+        )
         stop_side = OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY
-        stop_o = Order(order_id=uuid.uuid4().hex[:12], symbol=symbol, side=stop_side, order_type=OrderType.STOP, quantity=float(quantity), stop_price=float(stop), status=OrderStatus.OPEN, signal_id=signal_id, timeframe=timeframe, paper=True)
-        target_o = Order(order_id=uuid.uuid4().hex[:12], symbol=symbol, side=stop_side, order_type=OrderType.LIMIT, quantity=float(quantity), price=float(target), status=OrderStatus.OPEN, signal_id=signal_id, timeframe=timeframe, paper=True)
+        stop_o = Order(
+            order_id=uuid.uuid4().hex[:12],
+            symbol=symbol,
+            side=stop_side,
+            order_type=OrderType.STOP,
+            quantity=float(quantity),
+            stop_price=float(stop),
+            status=OrderStatus.OPEN,
+            signal_id=signal_id,
+            timeframe=timeframe,
+            paper=True,
+        )
+        target_o = Order(
+            order_id=uuid.uuid4().hex[:12],
+            symbol=symbol,
+            side=stop_side,
+            order_type=OrderType.LIMIT,
+            quantity=float(quantity),
+            price=float(target),
+            status=OrderStatus.OPEN,
+            signal_id=signal_id,
+            timeframe=timeframe,
+            paper=True,
+        )
         for o in (entry_o, stop_o, target_o):
             self.orders[o.order_id] = o
         return BracketOrder(entry=entry_o, stop=stop_o, target=target_o)
@@ -30,7 +73,15 @@ class OrderManager:
     def set_trailing(self, position_id: str, distance_pct: float) -> None:
         self.trailing[position_id] = float(distance_pct)
 
-    def update_trailing(self, position_id: str, side: PositionSide, current_price: float, stop_price: float, highest: float = 0.0, lowest: float = 0.0) -> float:
+    def update_trailing(
+        self,
+        position_id: str,
+        side: PositionSide,
+        current_price: float,
+        stop_price: float,
+        highest: float = 0.0,
+        lowest: float = 0.0,
+    ) -> float:
         dist = self.trailing.get(position_id, 0.0)
         if dist <= 0 or current_price <= 0:
             return stop_price
@@ -49,4 +100,8 @@ class OrderManager:
                 o.updated_at = datetime.now(timezone.utc)
 
     def open_orders(self) -> list[Order]:
-        return [o for o in self.orders.values() if o.status in (OrderStatus.OPEN, OrderStatus.PENDING, OrderStatus.PARTIAL)]
+        return [
+            o
+            for o in self.orders.values()
+            if o.status in (OrderStatus.OPEN, OrderStatus.PENDING, OrderStatus.PARTIAL)
+        ]

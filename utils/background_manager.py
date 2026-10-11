@@ -7,6 +7,7 @@ from config.logger import logger
 class BackgroundTaskManager:
     """مالک تسک‌های پس‌زمینه (قاعده ۲۵): ساخت با create_task و لغو دسته‌جمعی
     با cancel_all در shutdown اپلیکیشن. شامل حلقه ScheduledAnalysis هم می‌شود."""
+
     def __init__(self):
         self._tasks: set[asyncio.Task] = set()
 
@@ -20,7 +21,10 @@ class BackgroundTaskManager:
         except Exception as e:
             logger.error(f"Task {task.get_name()} failed with an exception:", exc_info=e)
         else:
-            logger.info(f"Task {task.get_name()} completed successfully. {len(self._tasks)} tasks remaining.")
+            logger.info(
+                f"Task {task.get_name()} completed successfully. "
+                f"{len(self._tasks)} tasks remaining."
+            )
 
     def create_task(self, coro: Coroutine, name: str = None) -> asyncio.Task:
         """Creates a background task with an optional name for better logging."""
@@ -39,7 +43,7 @@ class BackgroundTaskManager:
         for task in tasks_to_cancel:
             if not task.done():
                 task.cancel()
-        
+
         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         self._tasks.clear()
         logger.info("All background tasks cancelled.")

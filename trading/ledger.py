@@ -61,12 +61,11 @@ class PaperLedger:
                 raise
         self.connection.commit()
 
-    def append_order(
-        self, signal_id: str, symbol: str, side: str, quantity: float
-    ) -> int | None:
+    def append_order(self, signal_id: str, symbol: str, side: str, quantity: float) -> int | None:
         try:
             cursor = self.connection.execute(
-                "INSERT INTO orders(signal_id, symbol, side, quantity, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO orders(signal_id, symbol, side, quantity, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (signal_id, symbol, side, float(quantity), datetime.now(timezone.utc).isoformat()),
             )
             self.connection.commit()
@@ -74,7 +73,9 @@ class PaperLedger:
         except sqlite3.IntegrityError:
             return None
 
-    def snapshot_equity(self, cash: float, positions: Iterable[dict[str, Any]], marks: dict[str, float]) -> float:
+    def snapshot_equity(
+        self, cash: float, positions: Iterable[dict[str, Any]], marks: dict[str, float]
+    ) -> float:
         equity = float(cash)
         for position in positions:
             price = marks.get(position["symbol"])
@@ -87,7 +88,9 @@ class PaperLedger:
                 continue
             self._mark_position_fresh(position)
             sign = 1.0 if position.get("side", "buy").lower() in {"buy", "long"} else -1.0
-            equity += sign * float(position["quantity"]) * (float(price) - float(position["entry_price"]))
+            equity += (
+                sign * float(position["quantity"]) * (float(price) - float(position["entry_price"]))
+            )
         self.connection.execute(
             "INSERT INTO equity_snapshots(equity, mark_prices, captured_at) VALUES (?, ?, ?)",
             (equity, json.dumps(marks, sort_keys=True), datetime.now(timezone.utc).isoformat()),

@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import datetime, timezone
 
 from common.core import (
@@ -17,7 +17,14 @@ from trading.risk_manager import RiskManager
 
 
 class PaperTradingEngine:
-    def __init__(self, portfolio: PortfolioManager | None = None, risk_manager: RiskManager | None = None, fee_rate: float = 0.001, slippage_rate: float = 0.0005, funding_rate_per_day: float = 0.0):
+    def __init__(
+        self,
+        portfolio: PortfolioManager | None = None,
+        risk_manager: RiskManager | None = None,
+        fee_rate: float = 0.001,
+        slippage_rate: float = 0.0005,
+        funding_rate_per_day: float = 0.0,
+    ):
         self.portfolio = portfolio or PortfolioManager()
         self.risk_manager = risk_manager or RiskManager()
         self.fee_rate = fee_rate
@@ -31,15 +38,39 @@ class PaperTradingEngine:
             return price * (1 + self.slippage_rate)
         return price * (1 - self.slippage_rate)
 
-    def submit_signal(self, signal: TradingSignal, equity: float, prices: dict[str, float], current_vol_pct: float = 0.0) -> Order | None:
+    def submit_signal(
+        self,
+        signal: TradingSignal,
+        equity: float,
+        prices: dict[str, float],
+        current_vol_pct: float = 0.0,
+    ) -> Order | None:
         exposure = self.portfolio.exposure_pct(prices)
-        decision = self.risk_manager.evaluate(signal, equity, exposure, len(self.portfolio.positions), current_vol_pct)
+        decision = self.risk_manager.evaluate(
+            signal, equity, exposure, len(self.portfolio.positions), current_vol_pct
+        )
         if not decision.allowed or decision.position_size <= 0:
             return None
         side = OrderSide.BUY if signal.signal_type == SignalType.BUY else OrderSide.SELL
-        return self.create_order(signal.symbol, side, decision.position_size, signal.entry_price, signal_id=getattr(signal, "signal_id", None), timeframe=signal.timeframe)
+        return self.create_order(
+            signal.symbol,
+            side,
+            decision.position_size,
+            signal.entry_price,
+            signal_id=getattr(signal, "signal_id", None),
+            timeframe=signal.timeframe,
+        )
 
-    def create_order(self, symbol: str, side: OrderSide, quantity: float, price: float, order_type: OrderType = OrderType.MARKET, signal_id: str | None = None, timeframe: str | None = None) -> Order:
+    def create_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        price: float,
+        order_type: OrderType = OrderType.MARKET,
+        signal_id: str | None = None,
+        timeframe: str | None = None,
+    ) -> Order:
         order = Order(
             order_id=uuid.uuid4().hex[:12],
             symbol=symbol,
@@ -56,9 +87,15 @@ class PaperTradingEngine:
         self.portfolio.orders[order.order_id] = order
         return order
 
-    def fill_order(self, order_id: str, market_price: float, stop_loss: float = 0.0, take_profit: float = 0.0) -> Position | None:
+    def fill_order(
+        self, order_id: str, market_price: float, stop_loss: float = 0.0, take_profit: float = 0.0
+    ) -> Position | None:
         order = self.orders.get(order_id)
-        if order is None or order.status not in (OrderStatus.OPEN, OrderStatus.PENDING, OrderStatus.PARTIAL):
+        if order is None or order.status not in (
+            OrderStatus.OPEN,
+            OrderStatus.PENDING,
+            OrderStatus.PARTIAL,
+        ):
             return None
         fill_price = self._apply_slippage(market_price, order.side)
         fee = fill_price * order.quantity * self.fee_rate
@@ -83,7 +120,16 @@ class PaperTradingEngine:
         )
         cost = order.quantity * fill_price if side == PositionSide.LONG else 0.0
         self.portfolio.open_position(position, cost, fee if side == PositionSide.LONG else fee)
-        self.trade_history.append({"order_id": order.order_id, "position_id": position.position_id, "symbol": order.symbol, "side": side.value, "price": fill_price, "quantity": order.quantity})
+        self.trade_history.append(
+            {
+                "order_id": order.order_id,
+                "position_id": position.position_id,
+                "symbol": order.symbol,
+                "side": side.value,
+                "price": fill_price,
+                "quantity": order.quantity,
+            }
+        )
         return position
 
     def apply_funding(self, prices: dict[str, float], days: float = 1.0) -> float:
@@ -102,13 +148,29 @@ class PaperTradingEngine:
             price = prices.get(position.symbol)
             if price is None:
                 continue
-            hit_stop = price <= position.stop_loss if position.side == PositionSide.LONG else price >= position.stop_loss
-            hit_target = price >= position.take_profit if position.side == PositionSide.LONG else price <= position.take_profit
+            hit_stop = (
+                price <= position.stop_loss
+                if position.side == PositionSide.LONG
+                else price >= position.stop_loss
+            )
+            hit_target = (
+                price >= position.take_profit
+                if position.side == PositionSide.LONG
+                else price <= position.take_profit
+            )
             if hit_stop or hit_target:
                 exit_price = position.stop_loss if hit_stop else position.take_profit
                 fee = exit_price * position.quantity * self.fee_rate
                 pnl = self.portfolio.close_position(position_id, exit_price, fee)
-                closed.append({"position_id": position_id, "symbol": position.symbol, "exit": exit_price, "pnl": pnl, "reason": "stop" if hit_stop else "target"})
+                closed.append(
+                    {
+                        "position_id": position_id,
+                        "symbol": position.symbol,
+                        "exit": exit_price,
+                        "pnl": pnl,
+                        "reason": "stop" if hit_stop else "target",
+                    }
+                )
         return closed
 
     def resolve_position_with_candles(
