@@ -21,7 +21,6 @@ class NewsFetcher:
         messari_fetcher: MessariFetcher | None = None,
         redis_client: redis.Redis | None = None,
     ):
-
         self.cryptopanic = cryptopanic_fetcher
         self.alternativeme = alternativeme_fetcher
         self.coindesk = coindesk_fetcher
@@ -135,9 +134,7 @@ class NewsFetcher:
                 score -= 1
         return score
 
-    async def fetch_sentiment_analysis(
-        self, currencies: list[str] | None = None
-    ) -> dict[str, Any]:
+    async def fetch_sentiment_analysis(self, currencies: list[str] | None = None) -> dict[str, Any]:
         if currencies is None:
             currencies = ["BTC", "ETH"]
         self._check_if_closed()
@@ -194,9 +191,7 @@ class NewsFetcher:
 
     async def fetch_trending_topics(self) -> list[str]:
         self._check_if_closed()
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.TRENDING, self.source_name, ["topics"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.TRENDING, self.source_name, ["topics"])
 
         try:
             if self.redis:

@@ -37,9 +37,7 @@ class DeFiLlamaFetcher(BaseFetcher):
         return data
 
     async def get_defi_protocols(self) -> list[dict]:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.GENERIC, self.source_name, ["protocols"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.GENERIC, self.source_name, ["protocols"])
         if self.redis:
             cached = await self.redis.get(cache_key)
             if cached:
@@ -73,9 +71,7 @@ class DeFiLlamaFetcher(BaseFetcher):
         return data
 
     async def get_stablecoins(self) -> dict | None:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.GENERIC, self.source_name, ["stablecoins"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.GENERIC, self.source_name, ["stablecoins"])
         if self.redis:
             cached = await self.redis.get(cache_key)
             if cached:
@@ -91,18 +87,14 @@ class DeFiLlamaFetcher(BaseFetcher):
         return data
 
     async def get_yields(self) -> list[dict]:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.YIELD, self.source_name, ["all"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.YIELD, self.source_name, ["all"])
         if self.redis:
             cached = await self.redis.get(cache_key)
             if cached:
                 return json.loads(cached)
 
         url = f"{self.base_url}/pools"
-        data = await self._fetch_json(
-            url, limiter=defillama_rate_limiter, endpoint_name="yields"
-        )
+        data = await self._fetch_json(url, limiter=defillama_rate_limiter, endpoint_name="yields")
 
         if data and "data" in data and self.redis:
             yield_data = data["data"]

@@ -30,9 +30,7 @@ class CryptoPanicFetcher(BaseFetcher):
         return data.get("results", [])
 
     async def fetch_media(self) -> list[dict]:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.GENERIC, self.source_name, ["media"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.GENERIC, self.source_name, ["media"])
         if self.redis:
             cached = await self.redis.get(cache_key)
             if cached:

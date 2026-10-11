@@ -52,8 +52,7 @@ class YFinanceFetcher(BaseFetcher):
         indices = {
             key: float(data[price_column][ticker].iloc[-1])
             for key, ticker in tickers.items()
-            if ticker in data[price_column]
-            and not pd.isna(data[price_column][ticker].iloc[-1])
+            if ticker in data[price_column] and not pd.isna(data[price_column][ticker].iloc[-1])
         }
 
         if self.redis and indices:

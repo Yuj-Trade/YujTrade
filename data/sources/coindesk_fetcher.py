@@ -48,11 +48,10 @@ class CoinDeskFetcher(BaseFetcher):
                     text = await response.text()
                     if "not found" in text.lower() or response.status == 404:
                         raise InvalidSymbolError(
-                            f"Invalid symbol for CoinDesk: {params.get('symbol') if params else endpoint}"
+                            f"Invalid symbol for CoinDesk: "
+                            f"{params.get('symbol') if params else endpoint}"
                         )
-                    raise NetworkError(
-                        f"HTTP Error {response.status} for {url}: {text}"
-                    )
+                    raise NetworkError(f"HTTP Error {response.status} for {url}: {text}")
                 return await response.json()
 
         return await self.circuit_breaker.call(_do_fetch)
@@ -65,7 +64,7 @@ class CoinDeskFetcher(BaseFetcher):
             timeframe_lower = timeframe.lower()
             original_symbol = symbol
             asset_id = symbol.upper().replace("/USDT", "").replace("/", "")
-            
+
             if asset_id not in ["BTC", "ETH"]:
                 logger.debug(f"CoinDesk does not support symbol: {original_symbol}")
                 raise InvalidSymbolError(f"CoinDesk does not support: {original_symbol}")
@@ -107,9 +106,7 @@ class CoinDeskFetcher(BaseFetcher):
             logger.debug(f"Invalid symbol for CoinDesk OHLC: {symbol}")
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching historical OHLC from CoinDesk for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching historical OHLC from CoinDesk for {symbol}: {e}")
             return None
 
     async def get_news(self, symbols: list[str]) -> list[dict]:
@@ -121,9 +118,7 @@ class CoinDeskFetcher(BaseFetcher):
             headers = {"X-CoinDesk-API-Key": self.api_key}
 
             session = await self._get_session()
-            async with session.get(
-                news_url, params=params, headers=headers
-            ) as response:
+            async with session.get(news_url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data and "data" in data:
@@ -147,9 +142,7 @@ class CoinDeskFetcher(BaseFetcher):
 
         try:
             session = await self._get_session()
-            async with session.get(
-                "https://api.coindesk.com/v1/bpi/currentprice.json"
-            ) as response:
+            async with session.get("https://api.coindesk.com/v1/bpi/currentprice.json") as response:
                 if response.status == 200:
                     data = await response.json()
                     if self.redis:
@@ -181,16 +174,12 @@ class CoinDeskFetcher(BaseFetcher):
             headers = {"X-CoinDesk-API-Key": self.api_key}
 
             session = await self._get_session()
-            async with session.get(
-                news_url, params=params, headers=headers
-            ) as response:
+            async with session.get(news_url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     news_items = data.get("data", [])
                     if self.redis and news_items:
-                        await self.redis.set(
-                            cache_key, json.dumps(news_items), ex=cache_ttl
-                        )
+                        await self.redis.set(cache_key, json.dumps(news_items), ex=cache_ttl)
                     return news_items
             return []
         except Exception as e:

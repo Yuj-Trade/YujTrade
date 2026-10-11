@@ -84,22 +84,14 @@ class CoinGeckoFetcher(BaseFetcher):
                 if response.status != 200:
                     text = await response.text()
                     if "invalid vs_currency" in text or "coin not found" in text:
-                        raise InvalidSymbolError(
-                            f"Invalid symbol or currency for CoinGecko: {url}"
-                        )
-                    logger.error(
-                        f"Error fetching from {effective_url}: {response.status} {text}"
-                    )
-                    raise NetworkError(
-                        f"HTTP Error {response.status} for {effective_url}"
-                    )
+                        raise InvalidSymbolError(f"Invalid symbol or currency for CoinGecko: {url}")
+                    logger.error(f"Error fetching from {effective_url}: {response.status} {text}")
+                    raise NetworkError(f"HTTP Error {response.status} for {effective_url}")
                 return await response.json()
 
         return await self.circuit_breaker.call(_do_fetch)
 
-    async def get_historical_ohlc(
-        self, symbol: str, days: int = 365
-    ) -> pd.DataFrame | None:
+    async def get_historical_ohlc(self, symbol: str, days: int = 365) -> pd.DataFrame | None:
         coin_id = await self._get_coin_id(symbol)
         if not coin_id:
             logger.warning(f"Could not find coin ID for symbol {symbol}")
@@ -122,16 +114,12 @@ class CoinGeckoFetcher(BaseFetcher):
         df["volume"] = 0.0  # CoinGecko OHLC does not provide volume
         return df
 
-    async def get_fundamental_data(
-        self, coin_id_or_symbol: str
-    ) -> FundamentalAnalysis | None:
+    async def get_fundamental_data(self, coin_id_or_symbol: str) -> FundamentalAnalysis | None:
         coin_id = await self._get_coin_id(coin_id_or_symbol)
         if not coin_id:
             return None
 
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.FUNDAMENTAL, self.source_name, [coin_id]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.FUNDAMENTAL, self.source_name, [coin_id])
         cache_ttl = self.config_manager.get_cache_ttl("fundamental")
 
         if self.redis:
@@ -175,9 +163,7 @@ class CoinGeckoFetcher(BaseFetcher):
             )
 
             if self.redis:
-                await self.redis.set(
-                    cache_key, json.dumps(fundamental_data.__dict__), ex=cache_ttl
-                )
+                await self.redis.set(cache_key, json.dumps(fundamental_data.__dict__), ex=cache_ttl)
 
             return fundamental_data
         except Exception as e:
@@ -185,9 +171,7 @@ class CoinGeckoFetcher(BaseFetcher):
             return None
 
     async def get_coins_list(self) -> list[dict]:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.COIN_LIST, self.source_name, ["all"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.COIN_LIST, self.source_name, ["all"])
         cache_ttl = self.config_manager.get_cache_ttl("generic")
 
         if self.redis:
@@ -206,9 +190,7 @@ class CoinGeckoFetcher(BaseFetcher):
         return data if data else []
 
     async def get_trending_searches(self) -> list[str]:
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.TRENDING, self.source_name, ["searches"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.TRENDING, self.source_name, ["searches"])
         cache_ttl = self.config_manager.get_cache_ttl("trending")
 
         if self.redis:
@@ -217,16 +199,12 @@ class CoinGeckoFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/search/trending"
-        data = await self._fetch_json(
-            url, limiter=coingecko_rate_limiter, endpoint_name="trending"
-        )
+        data = await self._fetch_json(url, limiter=coingecko_rate_limiter, endpoint_name="trending")
 
         if data and "coins" in data:
             trending_symbols = [coin["item"]["symbol"] for coin in data["coins"]]
             if self.redis:
-                await self.redis.set(
-                    cache_key, json.dumps(trending_symbols), ex=cache_ttl
-                )
+                await self.redis.set(cache_key, json.dumps(trending_symbols), ex=cache_ttl)
             return trending_symbols
         return []
 

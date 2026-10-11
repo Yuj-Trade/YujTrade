@@ -17,9 +17,7 @@ class DataQualityChecker:
     def __init__(self):
         self.min_data_points_map = LONG_TERM_CONFIG.get("min_data_points", {})
 
-    def validate_data_quality(
-        self, data: pd.DataFrame, timeframe: str
-    ) -> tuple[bool, str]:
+    def validate_data_quality(self, data: pd.DataFrame, timeframe: str) -> tuple[bool, str]:
         if data is None or data.empty:
             return False, "Data is None or empty."
 
@@ -50,9 +48,7 @@ class DataQualityChecker:
             )
 
         if "volume" in data.columns and data["volume"].mean() < 1:
-            logger.warning(
-                f"Average volume is extremely low: {data['volume'].mean():.2f}"
-            )
+            logger.warning(f"Average volume is extremely low: {data['volume'].mean():.2f}")
 
         if not self._check_data_freshness(data, timeframe):
             return False, f"Data is stale for timeframe {timeframe}"
@@ -83,13 +79,13 @@ class DataQualityChecker:
         )
         missing = expected.difference(ordered.index)
         if len(missing) > 3:
-            raise ValueError(
-                f"OHLCV gap exceeds repair tolerance: {len(missing)} candles"
-            )
+            raise ValueError(f"OHLCV gap exceeds repair tolerance: {len(missing)} candles")
         if missing.empty:
             return data if ordered.index.equals(data.index) else ordered
         repaired = ordered.reindex(expected)
-        price_columns = [column for column in ("open", "high", "low", "close") if column in repaired]
+        price_columns = [
+            column for column in ("open", "high", "low", "close") if column in repaired
+        ]
         repaired[price_columns] = repaired[price_columns].interpolate(
             method="time", limit_direction="both"
         )
@@ -99,9 +95,7 @@ class DataQualityChecker:
             )
         repaired["high"] = repaired[["open", "high", "close"]].max(axis=1)
         repaired["low"] = repaired[["open", "low", "close"]].min(axis=1)
-        logger.warning(
-            f"Repaired {len(missing)} OHLCV gap candle(s) for timeframe {timeframe}."
-        )
+        logger.warning(f"Repaired {len(missing)} OHLCV gap candle(s) for timeframe {timeframe}.")
         return repaired
 
     def _check_data_freshness(self, data: pd.DataFrame, timeframe: str) -> bool:
@@ -180,18 +174,12 @@ class DataQualityChecker:
 
         for col in data.columns:
             weight = (
-                2.0
-                if col in ["open", "high", "low", "close"]
-                else 0.5 if col == "volume" else 1.0
+                2.0 if col in ["open", "high", "low", "close"] else 0.5 if col == "volume" else 1.0
             )
             weighted_nulls += null_counts[col] * weight
 
         total_weight = sum(
-            (
-                2.0
-                if col in ["open", "high", "low", "close"]
-                else 0.5 if col == "volume" else 1.0
-            )
+            (2.0 if col in ["open", "high", "low", "close"] else 0.5 if col == "volume" else 1.0)
             for col in data.columns
         )
 
@@ -214,27 +202,22 @@ class DataQualityChecker:
 
         direction_changes = np.sign(sma_short.diff().dropna()).diff().ne(0).sum()
 
-        max_allowed_changes = self._get_volatility_adjusted_max_changes(
-            min_bars, volatility
-        )
+        max_allowed_changes = self._get_volatility_adjusted_max_changes(min_bars, volatility)
 
         is_persistent = direction_changes <= max_allowed_changes
         penalty = (
-            min(direction_changes / (max_allowed_changes + 1), 0.3)
-            if not is_persistent
-            else 0.0
+            min(direction_changes / (max_allowed_changes + 1), 0.3) if not is_persistent else 0.0
         )
 
         if not is_persistent:
             logger.debug(
-                f"Trend changed {int(direction_changes)} times in {min_bars} bars (max allowed: {max_allowed_changes})"
+                f"Trend changed {int(direction_changes)} times in {min_bars} bars "
+                f"(max allowed: {max_allowed_changes})"
             )
 
         return is_persistent, penalty
 
-    def _get_volatility_adjusted_max_changes(
-        self, min_bars: int, volatility: float
-    ) -> int:
+    def _get_volatility_adjusted_max_changes(self, min_bars: int, volatility: float) -> int:
         base_divisor = 8
         if volatility is not None:
             if volatility > 0.05:  # High volatility
@@ -246,9 +229,7 @@ class DataQualityChecker:
 
         return max(4, min_bars // base_divisor)
 
-    def check_sufficient_volume(
-        self, data: pd.DataFrame, min_ratio: float = 0.5
-    ) -> bool:
+    def check_sufficient_volume(self, data: pd.DataFrame, min_ratio: float = 0.5) -> bool:
         if "volume" not in data.columns or len(data) < 40:
             return True
 
@@ -284,9 +265,7 @@ class DataQualityChecker:
             return False, 0.0
 
         inferred_freq = self._map_freq_str(pd.infer_freq(data.index))
-        freq_str = (
-            self._map_freq_str(getattr(data.index, "freqstr", None)) or inferred_freq
-        )
+        freq_str = self._map_freq_str(getattr(data.index, "freqstr", None)) or inferred_freq
 
         try:
             expected_interval = pd.to_timedelta(freq_str)
@@ -296,9 +275,7 @@ class DataQualityChecker:
         if expected_interval <= pd.Timedelta(0):
             return False, 0.0
 
-        large_gaps = time_diffs[
-            time_diffs > expected_interval * (max_gap_tolerance + 1)
-        ]
+        large_gaps = time_diffs[time_diffs > expected_interval * (max_gap_tolerance + 1)]
 
         if not large_gaps.empty:
             gap_count = len(large_gaps)

@@ -50,6 +50,7 @@ class MarketDataProvider:
     - fetch_ohlcv_data در شکست یکپارچگی raise می‌کند (InsufficientDataError).
     - متدهای get_* enrichment اختیاری‌اند: None یعنی «در دسترس نیست»
       (تحلیل با degradation ادامه می‌یابد)، نه «شکست»."""
+
     def __init__(
         self,
         resource_manager: ResourceManager,
@@ -80,21 +81,17 @@ class MarketDataProvider:
             return
 
         logger.info("Initializing MarketDataProvider...")
-        
+
         try:
-            self.session = await asyncio.wait_for(
-                self.resource_manager.get_session(),
-                timeout=10.0
-            )
+            self.session = await asyncio.wait_for(self.resource_manager.get_session(), timeout=10.0)
             logger.info("Session initialized successfully.")
         except asyncio.TimeoutError:
             logger.error("Session initialization timed out.")
             raise
-        
+
         try:
             self.redis = await asyncio.wait_for(
-                self.resource_manager.get_redis_client(),
-                timeout=10.0
+                self.resource_manager.get_redis_client(), timeout=10.0
             )
             if self.redis:
                 logger.info("Redis client initialized successfully.")
@@ -114,7 +111,7 @@ class MarketDataProvider:
         }
 
         logger.info("Initializing data fetchers...")
-        
+
         self.binance_fetcher = BinanceFetcher(**common_args)
 
         if SecretsManager.COINDESK_API_KEY:
@@ -181,7 +178,7 @@ class MarketDataProvider:
             ]
             if f is not None
         ]
-        
+
         logger.info("MarketDataProvider initialization completed.")
 
     async def close(self):
@@ -191,9 +188,7 @@ class MarketDataProvider:
         if self._is_closed:
             return
         self._is_closed = True
-        close_tasks = [
-            fetcher.close() for fetcher in self.fetchers if hasattr(fetcher, "close")
-        ]
+        close_tasks = [fetcher.close() for fetcher in self.fetchers if hasattr(fetcher, "close")]
         await asyncio.gather(*close_tasks, return_exceptions=True)
         logger.info("MarketDataProvider and all associated fetchers cleaned up.")
 
@@ -208,7 +203,7 @@ class MarketDataProvider:
         score = 100.0
 
         # قرارداد detect_data_gaps (عنصر اول) «has_gaps» است — همان
-        #‌گونه که calculate_overall_quality_score آن را مصرف می‌کند. قبلاً
+        # ‌گونه که calculate_overall_quality_score آن را مصرف می‌کند. قبلاً
         # برعکس خوانده می‌شد: داده بدون گپ -۳۰ می‌گرفت و داده گپ‌دار
         # جریمه نمی‌شد (Regression P1 — تست‌های فاز ۸ آن را آشکار کردند).
         try:
@@ -227,7 +222,10 @@ class MarketDataProvider:
 
     @async_retry(attempts=3, delay=5, exceptions=(NetworkError, DataError))
     async def fetch_ohlcv_data(
-        self, symbol: str, timeframe: str, limit: int = 1000,
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int = 1000,
         bypass_cache: bool = False,
     ) -> pd.DataFrame | None:
         """نقش Provider در کیفیت داده (قاعده ۲۳): یکپارچگی Source/Data —
@@ -251,9 +249,7 @@ class MarketDataProvider:
                 if cached:
                     df = pd.read_json(StringIO(cached), orient="split")
                     if "timestamp" in df.columns:
-                        df["timestamp"] = pd.to_datetime(
-                            df["timestamp"], unit="ms", utc=True
-                        )
+                        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
                         df.set_index("timestamp", inplace=True)
                     try:
                         df = self.data_quality_checker.repair_ohlcv(df, timeframe)
@@ -266,9 +262,7 @@ class MarketDataProvider:
                         else (False, "OHLCV repair failed")
                     )
                     if not is_valid:
-                        logger.debug(
-                            f"Cached data for {symbol}-{timeframe} is invalid, refetching"
-                        )
+                        logger.debug(f"Cached data for {symbol}-{timeframe} is invalid, refetching")
                     else:
                         return df
             except Exception as e:
@@ -289,9 +283,7 @@ class MarketDataProvider:
 
         fetch_sources = [s for s in fetch_sources if s is not None]
 
-        tasks = [
-            fetch_func(symbol, timeframe, limit) for fetch_func, _ in fetch_sources
-        ]
+        tasks = [fetch_func(symbol, timeframe, limit) for fetch_func, _ in fetch_sources]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         best_df = None
@@ -300,9 +292,7 @@ class MarketDataProvider:
         for i, res_df in enumerate(results):
             source_name = fetch_sources[i][1]
             if isinstance(res_df, Exception) or res_df is None or res_df.empty:
-                logger.warning(
-                    f"Source {source_name} failed for {symbol}/{timeframe}: {res_df}"
-                )
+                logger.warning(f"Source {source_name} failed for {symbol}/{timeframe}: {res_df}")
                 continue
 
             if isinstance(res_df.index, pd.DatetimeIndex):
@@ -313,22 +303,16 @@ class MarketDataProvider:
                 )
             else:
                 if "timestamp" in res_df.columns:
-                    res_df["timestamp"] = pd.to_datetime(
-                        res_df["timestamp"], unit="ms", utc=True
-                    )
+                    res_df["timestamp"] = pd.to_datetime(res_df["timestamp"], unit="ms", utc=True)
                     res_df.set_index("timestamp", inplace=True)
                 else:
-                    logger.warning(
-                        f"No timestamp column in data from {source_name}, skipping"
-                    )
+                    logger.warning(f"No timestamp column in data from {source_name}, skipping")
                     continue
 
             try:
                 res_df = self.data_quality_checker.repair_ohlcv(res_df, timeframe)
             except ValueError as exc:
-                logger.warning(
-                    f"Source {source_name} rejected after OHLCV repair check: {exc}"
-                )
+                logger.warning(f"Source {source_name} rejected after OHLCV repair check: {exc}")
                 continue
 
             score = self._get_data_quality_score(res_df, timeframe)
@@ -344,16 +328,12 @@ class MarketDataProvider:
             if self.redis and not bypass_cache:
                 try:
                     df_to_cache = best_df.reset_index()
-                    df_to_cache["timestamp"] = (
-                        df_to_cache["timestamp"].astype(int) // 10**6
-                    )
+                    df_to_cache["timestamp"] = df_to_cache["timestamp"].astype(int) // 10**6
                     await self.redis.set(
                         cache_key, df_to_cache.to_json(orient="split"), ex=cache_ttl
                     )
                 except Exception as e:
-                    logger.warning(
-                        f"Redis SET failed for {cache_key}: {e}", exc_info=True
-                    )
+                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
             return best_df
 
         raise InsufficientDataError(
@@ -363,21 +343,15 @@ class MarketDataProvider:
     async def get_derivatives_data(self, symbol: str) -> DerivativesAnalysis | None:
         if not self.binance_fetcher:
             return None
-
+        bf = self.binance_fetcher
         try:
             tasks = {
-                "open_interest": self.binance_fetcher.get_open_interest(symbol),
-                "funding_rate": self.binance_fetcher.get_funding_rate(symbol),
-                "long_short_ratio": self.binance_fetcher.get_taker_long_short_ratio(
-                    symbol
-                ),
-                "top_trader_accounts": self.binance_fetcher.get_top_trader_long_short_ratio_accounts(
-                    symbol
-                ),
-                "top_trader_positions": self.binance_fetcher.get_top_trader_long_short_ratio_positions(
-                    symbol
-                ),
-                "mark_price": self.binance_fetcher.get_mark_price(symbol),
+                "open_interest": bf.get_open_interest(symbol),
+                "funding_rate": bf.get_funding_rate(symbol),
+                "long_short_ratio": bf.get_taker_long_short_ratio(symbol),
+                "top_trader_accounts": bf.get_top_trader_long_short_ratio_accounts(symbol),
+                "top_trader_positions": bf.get_top_trader_long_short_ratio_positions(symbol),
+                "mark_price": bf.get_mark_price(symbol),
             }
 
             results = await asyncio.gather(*tasks.values(), return_exceptions=True)

@@ -103,12 +103,8 @@ class MessariFetcher(BaseFetcher):
             analysis_data = {
                 "mvrv": metrics.get("market_data", {}).get("mvrv_usd"),
                 "sopr": metrics.get("on_chain_data", {}).get("sopr"),
-                "active_addresses": metrics.get("on_chain_data", {}).get(
-                    "active_addresses"
-                ),
-                "realized_cap": metrics.get("marketcap", {}).get(
-                    "realized_marketcap_usd"
-                ),
+                "active_addresses": metrics.get("on_chain_data", {}).get("active_addresses"),
+                "realized_cap": metrics.get("marketcap", {}).get("realized_marketcap_usd"),
             }
 
             on_chain_analysis = OnChainAnalysis(**analysis_data)
@@ -121,16 +117,12 @@ class MessariFetcher(BaseFetcher):
 
             return on_chain_analysis
         except Exception as e:
-            logger.error(
-                f"Error processing on-chain data from Messari for {symbol}: {e}"
-            )
+            logger.error(f"Error processing on-chain data from Messari for {symbol}: {e}")
             return None
 
     async def get_all_assets(self) -> list[dict]:
         self._check_if_closed()
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.GENERIC, self.source_name, ["all_assets"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.GENERIC, self.source_name, ["all_assets"])
         try:
             if self.redis:
                 cached = await self.redis.get(cache_key)
@@ -152,9 +144,7 @@ class MessariFetcher(BaseFetcher):
 
     async def get_news(self, symbol: str) -> list[dict]:
         self._check_if_closed()
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.NEWS, self.source_name, ["news"], symbol
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.NEWS, self.source_name, ["news"], symbol)
         try:
             if self.redis:
                 cached = await self.redis.get(cache_key)

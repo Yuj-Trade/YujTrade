@@ -25,9 +25,7 @@ class MarketIndicesFetcher(BaseFetcher):
         session: aiohttp.ClientSession | None = None,
         config_manager: ConfigManager | None = None,
     ):
-        super().__init__(
-            redis_client=redis_client, session=session, config_manager=config_manager
-        )
+        super().__init__(redis_client=redis_client, session=session, config_manager=config_manager)
         self.source_name = "market_indices_aggregator"
 
         common_args = {
@@ -43,9 +41,7 @@ class MarketIndicesFetcher(BaseFetcher):
 
     def _check_if_closed(self):
         if self._is_closed:
-            raise RuntimeError(
-                "MarketIndicesFetcher has been closed and cannot be used"
-            )
+            raise RuntimeError("MarketIndicesFetcher has been closed and cannot be used")
 
     async def close(self):
         if self._is_closed:
@@ -57,9 +53,7 @@ class MarketIndicesFetcher(BaseFetcher):
 
     async def get_crypto_indices(self) -> dict[str, float | None]:
         self._check_if_closed()
-        cache_key = CacheKeyBuilder.build(
-            CacheCategory.INDICES, self.source_name, ["crypto"]
-        )
+        cache_key = CacheKeyBuilder.build(CacheCategory.INDICES, self.source_name, ["crypto"])
         cache_ttl = self.config_manager.get_cache_ttl("indices")
 
         if self.redis:
@@ -87,11 +81,7 @@ class MarketIndicesFetcher(BaseFetcher):
         global_data, defi_llama_tvl_data = results
 
         indices = {}
-        if (
-            not isinstance(global_data, Exception)
-            and global_data
-            and "data" in global_data
-        ):
+        if not isinstance(global_data, Exception) and global_data and "data" in global_data:
             market_data = global_data["data"]
             dominance = market_data.get("market_cap_percentage", {})
             indices["BTC.D"] = dominance.get("btc")

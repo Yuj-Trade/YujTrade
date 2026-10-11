@@ -53,19 +53,18 @@ class BinanceFetcher(BaseFetcher):
                 if response.status == 429:
                     raise APIRateLimitError(f"Rate limit exceeded for {endpoint}")
                 if response.status == 418:
-                    logger.warning(
-                        f"IP banned by Binance for {endpoint}. Sleeping for 120s."
-                    )
+                    logger.warning(f"IP banned by Binance for {endpoint}. Sleeping for 120s.")
                     await asyncio.sleep(120)
                     raise APIRateLimitError(f"IP banned, retrying for {endpoint}")
                 if response.status >= 400:
                     try:
                         error_data = await response.json()
-                        if error_data.get(
-                            "code"
-                        ) == -1121 or "Invalid symbol" in error_data.get("msg", ""):
+                        if error_data.get("code") == -1121 or "Invalid symbol" in error_data.get(
+                            "msg", ""
+                        ):
                             raise InvalidSymbolError(
-                                f"Invalid symbol for Binance: {params.get('symbol') if params else 'N/A'}"
+                                f"Invalid symbol for Binance: "
+                                f"{params.get('symbol') if params else 'N/A'}"
                             )
                     except (aiohttp.ContentTypeError, json.JSONDecodeError):
                         pass  # Raise the original error below
@@ -130,9 +129,7 @@ class BinanceFetcher(BaseFetcher):
             logger.warning(f"Invalid symbol for Binance OHLC: {symbol}")
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching historical OHLC from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching historical OHLC from Binance for {symbol}: {e}")
             raise DataError(f"Failed to fetch OHLC for {symbol}") from e
 
     async def get_open_interest(self, symbol: str) -> float | None:
@@ -141,9 +138,7 @@ class BinanceFetcher(BaseFetcher):
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
 
-        cache_key = CacheKeyBuilder.derivatives_key(
-            self.source_name, "open_interest", symbol
-        )
+        cache_key = CacheKeyBuilder.derivatives_key(self.source_name, "open_interest", symbol)
         cache_ttl = self.config_manager.get_cache_ttl("derivatives")
 
         try:
@@ -163,9 +158,7 @@ class BinanceFetcher(BaseFetcher):
                     if self.redis:
                         await self.redis.set(cache_key, open_interest, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(
-                        f"Redis SET failed for {cache_key}: {e}", exc_info=True
-                    )
+                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
                 return open_interest
             return None
         except InvalidSymbolError:
@@ -180,9 +173,7 @@ class BinanceFetcher(BaseFetcher):
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
 
-        cache_key = CacheKeyBuilder.derivatives_key(
-            self.source_name, "long_short_ratio", symbol
-        )
+        cache_key = CacheKeyBuilder.derivatives_key(self.source_name, "long_short_ratio", symbol)
         cache_ttl = self.config_manager.get_cache_ttl("derivatives")
 
         try:
@@ -195,82 +186,54 @@ class BinanceFetcher(BaseFetcher):
 
         try:
             params = {"symbol": binance_symbol, "period": "5m", "limit": 1}
-            data = await self._fetch(
-                self.futures_data_url, "takerlongshortRatio", params
-            )
+            data = await self._fetch(self.futures_data_url, "takerlongshortRatio", params)
             if data and isinstance(data, list) and data and data[0].get("buySellRatio"):
                 ratio = float(data[0]["buySellRatio"])
                 try:
                     if self.redis:
                         await self.redis.set(cache_key, ratio, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(
-                        f"Redis SET failed for {cache_key}: {e}", exc_info=True
-                    )
+                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
                 return ratio
             return None
         except InvalidSymbolError:
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching taker long/short ratio from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching taker long/short ratio from Binance for {symbol}: {e}")
             return None
 
-    async def get_top_trader_long_short_ratio_accounts(
-        self, symbol: str
-    ) -> float | None:
+    async def get_top_trader_long_short_ratio_accounts(self, symbol: str) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
         try:
             params = {"symbol": binance_symbol, "period": "5m", "limit": 1}
-            data = await self._fetch(
-                self.futures_data_url, "globalLongShortAccountRatio", params
-            )
-            if (
-                data
-                and isinstance(data, list)
-                and data
-                and data[0].get("longShortRatio")
-            ):
+            data = await self._fetch(self.futures_data_url, "globalLongShortAccountRatio", params)
+            if data and isinstance(data, list) and data and data[0].get("longShortRatio"):
                 return float(data[0]["longShortRatio"])
             return None
         except InvalidSymbolError:
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching top trader acc ratio from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching top trader acc ratio from Binance for {symbol}: {e}")
             return None
 
-    async def get_top_trader_long_short_ratio_positions(
-        self, symbol: str
-    ) -> float | None:
+    async def get_top_trader_long_short_ratio_positions(self, symbol: str) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
         try:
             params = {"symbol": binance_symbol, "period": "5m", "limit": 1}
-            data = await self._fetch(
-                self.futures_data_url, "topLongShortPositionRatio", params
-            )
-            if (
-                data
-                and isinstance(data, list)
-                and data
-                and data[0].get("longShortRatio")
-            ):
+            data = await self._fetch(self.futures_data_url, "topLongShortPositionRatio", params)
+            if data and isinstance(data, list) and data and data[0].get("longShortRatio"):
                 return float(data[0]["longShortRatio"])
             return None
         except InvalidSymbolError:
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching top trader pos ratio from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching top trader pos ratio from Binance for {symbol}: {e}")
             return None
 
     async def get_liquidation_orders(self, symbol: str) -> list[dict]:
@@ -302,9 +265,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            logger.error(
-                f"Error fetching order book depth from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching order book depth from Binance for {symbol}: {e}")
             return None
 
     async def get_mark_price(self, symbol: str) -> float | None:
@@ -367,16 +328,12 @@ class BinanceFetcher(BaseFetcher):
 
         try:
             params = {"symbol": binance_symbol, "period": period, "limit": limit}
-            data = await self._fetch(
-                self.futures_data_url, "takerlongshortRatio", params
-            )
+            data = await self._fetch(self.futures_data_url, "takerlongshortRatio", params)
             return data if isinstance(data, list) else []
         except InvalidSymbolError:
             return []
         except Exception as e:
-            logger.error(
-                f"Error fetching long/short ratio history from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching long/short ratio history from Binance for {symbol}: {e}")
             return []
 
     async def get_open_interest_history(
@@ -394,9 +351,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            logger.error(
-                f"Error fetching open interest history from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching open interest history from Binance for {symbol}: {e}")
             return []
 
     async def get_funding_rate(self, symbol: str) -> float | None:
@@ -404,9 +359,7 @@ class BinanceFetcher(BaseFetcher):
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
 
-        cache_key = CacheKeyBuilder.derivatives_key(
-            self.source_name, "funding_rate", symbol
-        )
+        cache_key = CacheKeyBuilder.derivatives_key(self.source_name, "funding_rate", symbol)
         cache_ttl = self.config_manager.get_cache_ttl("derivatives")
 
         try:
@@ -426,9 +379,7 @@ class BinanceFetcher(BaseFetcher):
                     if self.redis:
                         await self.redis.set(cache_key, funding_rate, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(
-                        f"Redis SET failed for {cache_key}: {e}", exc_info=True
-                    )
+                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
                 return funding_rate
             return None
         except InvalidSymbolError:
@@ -491,9 +442,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_exchange_info(self, symbol: str | None = None) -> dict | None:
         self._check_if_closed()
-        cache_key = CacheKeyBuilder.generic_key(
-            self.source_name, "exchange_info", symbol
-        )
+        cache_key = CacheKeyBuilder.generic_key(self.source_name, "exchange_info", symbol)
         cache_ttl = self.config_manager.get_cache_ttl("generic")
         try:
             if self.redis:
@@ -527,9 +476,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            logger.error(
-                f"Error fetching aggregate trades from Binance for {symbol}: {e}"
-            )
+            logger.error(f"Error fetching aggregate trades from Binance for {symbol}: {e}")
             return []
 
     async def get_all_futures_symbols(self) -> list[dict]:

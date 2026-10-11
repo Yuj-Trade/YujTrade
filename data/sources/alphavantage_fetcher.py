@@ -158,9 +158,7 @@ class AlphaVantageFetcher(BaseFetcher):
             and "data" in consumer_sentiment_data
             and consumer_sentiment_data["data"]
         ):
-            macro_data["CONSUMER_SENTIMENT"] = float(
-                consumer_sentiment_data["data"][0]["value"]
-            )
+            macro_data["CONSUMER_SENTIMENT"] = float(consumer_sentiment_data["data"][0]["value"])
         if (
             not isinstance(retail_sales_data, Exception)
             and retail_sales_data
@@ -265,12 +263,7 @@ class AlphaVantageFetcher(BaseFetcher):
 
         for i, result in enumerate(results):
             key = keys_list[i]
-            if (
-                not isinstance(result, Exception)
-                and result
-                and "data" in result
-                and result["data"]
-            ):
+            if not isinstance(result, Exception) and result and "data" in result and result["data"]:
                 try:
                     macro_data[key.upper()] = float(result["data"][0]["value"])
                 except (KeyError, ValueError, IndexError) as e:

@@ -1,4 +1,3 @@
-
 import aiohttp
 import redis.asyncio as redis
 
@@ -18,6 +17,7 @@ class BaseFetcher:
     """قرارداد مالکیت Cache (قاعده ۲۴): هر Fetcher فقط کش دامنه خودش را با
     کلید source_name خودش مدیریت می‌کند. کش یکپارچه OHLCV متعلق به
     MarketDataProvider است و هیچ Fetcher آن را دوباره کش نمی‌کند."""
+
     def __init__(
         self,
         redis_client: redis.Redis | None = None,
@@ -33,16 +33,15 @@ class BaseFetcher:
 
     def _check_if_closed(self):
         if self._is_closed:
-            raise ObjectClosedError(
-                f"{self.class_name} has been closed and cannot be used"
-            )
+            raise ObjectClosedError(f"{self.class_name} has been closed and cannot be used")
 
     async def _get_session(self) -> aiohttp.ClientSession:
         self._check_if_closed()
         if self.session is None or self.session.closed:
             # This should ideally not be hit if ResourceManager is used correctly
             raise RuntimeError(
-                f"Session for {self.class_name} is not available. It should be provided by ResourceManager."
+                f"Session for {self.class_name} is not available. "
+                "It should be provided by ResourceManager."
             )
         return self.session
 
@@ -52,9 +51,7 @@ class BaseFetcher:
         if self._is_closed:
             return
         self._is_closed = True
-        logger.debug(
-            f"Fetcher {self.class_name} instance closed (shared session not affected)."
-        )
+        logger.debug(f"Fetcher {self.class_name} instance closed (shared session not affected).")
 
     @async_retry(
         attempts=3,
