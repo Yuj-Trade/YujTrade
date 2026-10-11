@@ -144,7 +144,7 @@ class MarketIndicesFetcher(BaseFetcher):
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         all_indices = {}
-        for key, result in zip(tasks.keys(), results, strict=False):
+        for _key, result in zip(tasks.keys(), results, strict=False):
             if not isinstance(result, Exception) and result:
                 all_indices.update(result)
 

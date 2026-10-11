@@ -225,7 +225,6 @@ class WyckoffVolumeSpreadIndicator(TechnicalIndicator):
         last_range = data['high'].iloc[-1] - data['low'].iloc[-1]
 
         is_high_volume = last_vol > vol_ma.iloc[-1] * 1.5
-        is_low_volume = last_vol < vol_ma.iloc[-1] * 0.5
         is_wide_spread = last_range > data['close'].rolling(20).std().iloc[-1] * 2
 
         if is_high_volume and is_wide_spread and data['close'].iloc[-1] > data['open'].iloc[-1]:

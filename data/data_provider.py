@@ -456,8 +456,10 @@ class MarketDataProvider:
         return None
 
     async def get_news_sentiment(
-        self, currencies: list[str] = ["BTC", "ETH"]
+        self, currencies: list[str] | None = None
     ) -> dict[str, Any] | None:
+        if currencies is None:
+            currencies = ["BTC", "ETH"]
         if self.news_fetcher:
             try:
                 return await self.news_fetcher.fetch_sentiment_analysis(currencies)

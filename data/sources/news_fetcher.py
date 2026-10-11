@@ -52,8 +52,10 @@ class NewsFetcher:
         return await self.alternativeme.fetch_fear_greed(limit)
 
     async def fetch_news(
-        self, currencies: list[str] = ["BTC", "ETH"], kind: str | None = None
+        self, currencies: list[str] | None = None, kind: str | None = None
     ) -> list[dict]:
+        if currencies is None:
+            currencies = ["BTC", "ETH"]
         self._check_if_closed()
         key_parts = sorted(currencies) + ([kind] if kind else [])
         key = CacheKeyBuilder.build(CacheCategory.NEWS, self.source_name, key_parts)
@@ -134,8 +136,10 @@ class NewsFetcher:
         return score
 
     async def fetch_sentiment_analysis(
-        self, currencies: list[str] = ["BTC", "ETH"]
+        self, currencies: list[str] | None = None
     ) -> dict[str, Any]:
+        if currencies is None:
+            currencies = ["BTC", "ETH"]
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.SENTIMENT, self.source_name, sorted(currencies)
@@ -207,7 +211,6 @@ class NewsFetcher:
 
             topics = []
             for item in trending_news[:20]:
-                title = item.get("title", "").lower()
                 currencies = item.get("currencies", [])
                 for currency in currencies:
                     code = currency.get("code")

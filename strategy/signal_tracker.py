@@ -94,7 +94,6 @@ class SignalTracker:
                     continue
                 details = dict(data.get("details", {}))
                 parts = sid.split("|")
-                symbol = details.get("symbol") or (parts[0] if parts else None)
                 timeframe = details.get("timeframe") or (
                     parts[1] if len(parts) > 1 else None
                 )

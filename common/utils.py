@@ -596,7 +596,7 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
             timeperiod=14,
         )
         current_adx = adx[-1] if len(adx) > 0 and not pd.isna(adx[-1]) else 20
-    except:
+    except Exception:
         current_adx = 20
 
     if current_adx > 25:

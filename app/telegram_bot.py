@@ -592,7 +592,7 @@ class TelegramBotHandler:
                     reasons_list.append(f"{emoji} {escaped_reason}")
                 else:
                     reasons_list.append(f"• {escape_markdown_v2(r)}")
-            except:
+            except Exception:
                 reasons_list.append(f"• {escape_markdown_v2(r)}")
 
         reasons_text = "\n*🧠 KEY ANALYSIS FACTORS*\n" + "\n".join(reasons_list)

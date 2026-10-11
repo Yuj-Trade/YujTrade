@@ -80,7 +80,7 @@ class BinanceFetcher(BaseFetcher):
             if e.status == 400:
                 raise InvalidSymbolError(
                     f"Invalid symbol for Binance: {params.get('symbol') if params else 'N/A'}"
-                )
+                ) from e
             raise NetworkError(f"HTTP Error {e.status} for {full_url}") from e
         except Exception as e:
             if isinstance(e, (NetworkError, APIRateLimitError, InvalidSymbolError)):
