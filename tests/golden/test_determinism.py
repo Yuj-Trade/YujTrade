@@ -22,19 +22,28 @@ def _sha256(path):
 
 
 def test_baselines_reproduce_byte_identical():
+    import json
+
     signals_path = ROOT / "tests/golden/signals_baseline.json"
     backtest_path = ROOT / "tests/golden/backtest_baseline.json"
     assert signals_path.exists()
     assert backtest_path.exists()
     before = (_sha256(signals_path), _sha256(backtest_path))
+    before_bytes = (signals_path.read_bytes(), backtest_path.read_bytes())
 
     recorder = _load("golden_signal_recorder", "tests/golden/record_signals.py")
-    asyncio.run(recorder.record_signals_baseline())
+    signals = asyncio.run(recorder.record_signals_baseline())
     backtest = _load("golden_backtest_recorder", "scripts/record_backtest.py")
-    backtest.record_backtest_baseline()
+    report = backtest.record_backtest_baseline()
 
+    assert len(signals) >= 10
+    assert report["trades_count"] >= 5
+    assert all(report["per_timeframe"][tf]["signals_evaluated"] > 0 for tf in ("1h", "1d"))
     assert _sha256(signals_path) == before[0]
     assert _sha256(backtest_path) == before[1]
+    assert signals_path.read_bytes() == before_bytes[0]
+    assert backtest_path.read_bytes() == before_bytes[1]
+    assert json.loads(signals_path.read_text(encoding="utf-8")) is not None
 
 
 def test_baseline_files_use_sorted_keys():

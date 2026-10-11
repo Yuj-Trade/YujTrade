@@ -10,7 +10,7 @@ sys.path.insert(0, ".")
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from strategy.signal_tracker import make_signal_id
 
-EQUITY_START = 10000.0
+EQUITY_START = 1_000_000.0
 
 
 def _candles(frame: pd.DataFrame) -> list[dict]:

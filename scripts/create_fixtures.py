@@ -2,47 +2,93 @@ import sys
 
 sys.path.insert(0, ".")
 
-from datetime import timedelta
+import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-np.random.seed(42)
+FIXED_END = pd.Timestamp("2025-01-01T00:00:00Z")
+SEED = 20250101
+CANDLES = 1500
+REGIME_LENGTH = 150
+REGIMES = (
+    ("up", 0.0025, 0.008),
+    ("down", -0.0025, 0.008),
+    ("range", 0.0, 0.012),
+)
+FIXTURE_DIR = Path("tests/fixtures")
 
-# Use a fixed end date that's within freshness thresholds (2 hours ago), rounded to hour
-FIXED_END_DATE = pd.Timestamp.now(tz="UTC").floor("1h") - timedelta(hours=2)
+
+def _regime_returns(rng: np.random.Generator, periods: int) -> np.ndarray:
+    chunks = []
+    cycle = 0
+    while sum(len(c) for c in chunks) < periods:
+        name, drift, vol = REGIMES[cycle % len(REGIMES)]
+        chunks.append(rng.normal(drift, vol, REGIME_LENGTH))
+        cycle += 1
+    return np.concatenate(chunks)[:periods]
 
 
-def create_ohlcv_data(periods, freq, base_price=50000, end_date=None):
-    if end_date is None:
-        end_date = FIXED_END_DATE
-    dates = pd.date_range(end=end_date, periods=periods, freq=freq, tz="UTC")
-    returns = np.random.normal(0, 0.01, periods)
-    prices = base_price * np.exp(np.cumsum(returns))
-
-    df = pd.DataFrame(
-        {
-            "open": prices * (1 + np.random.uniform(-0.002, 0.002, periods)),
-            "high": prices * (1 + np.random.uniform(0, 0.005, periods)),
-            "low": prices * (1 - np.random.uniform(0, 0.005, periods)),
-            "close": prices,
-            "volume": np.random.uniform(100, 10000, periods),
-        },
+def create_ohlcv_data(periods: int, freq: str, base_price: float, end: pd.Timestamp, seed: int):
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range(end=end, periods=periods, freq=freq, tz="UTC")
+    prices = base_price * np.exp(np.cumsum(_regime_returns(rng, periods)))
+    opens = prices * (1 + rng.uniform(-0.002, 0.002, periods))
+    highs = prices * (1 + rng.uniform(0, 0.005, periods))
+    lows = prices * (1 - rng.uniform(0, 0.005, periods))
+    volumes = rng.uniform(100, 10000, periods)
+    frame = pd.DataFrame(
+        {"open": opens, "high": highs, "low": lows, "close": prices, "volume": volumes},
         index=dates,
     )
-    df["high"] = df[["open", "high", "close"]].max(axis=1)
-    df["low"] = df[["open", "low", "close"]].min(axis=1)
-    return df
+    frame["high"] = frame[["open", "high", "close"]].max(axis=1)
+    frame["low"] = frame[["open", "low", "close"]].min(axis=1)
+    return frame
 
 
-# Create 1h data (1500 candles) - recent data
-df_1h = create_ohlcv_data(1500, "1h", end_date=FIXED_END_DATE)
-df_1h.to_csv("tests/fixtures/ohlcv_1h.csv")
-print(f"Created 1h fixture: {len(df_1h)} rows, last date: {df_1h.index[-1]}")
+def build_fixtures() -> tuple[pd.DataFrame, pd.DataFrame]:
+    df_1h = create_ohlcv_data(CANDLES, "1h", 50000.0, FIXED_END, SEED)
+    df_1d = create_ohlcv_data(CANDLES, "1D", 50000.0, FIXED_END.floor("1D"), SEED + 1)
+    return df_1h, df_1d
 
-# Create 1d data (1500 candles) - recent data
-df_1d = create_ohlcv_data(1500, "1D", end_date=FIXED_END_DATE.floor("1D"))
-df_1d.to_csv("tests/fixtures/ohlcv_1d.csv")
-print(f"Created 1d fixture: {len(df_1d)} rows, last date: {df_1d.index[-1]}")
 
-print("Fixtures created successfully")
+def from_warehouse(path: str, symbol: str = "BTC/USDT") -> tuple[pd.DataFrame, pd.DataFrame]:
+    import sqlite3
+
+    with sqlite3.connect(path) as conn:
+        frames = {}
+        for timeframe in ("1h", "1d"):
+            frame = pd.read_sql_query(
+                "SELECT timestamp, open, high, low, close, volume FROM ohlcv "
+                "WHERE symbol = ? AND timeframe = ? ORDER BY timestamp DESC LIMIT ?",
+                conn,
+                params=(symbol, timeframe, CANDLES),
+            )
+            frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+            frame = frame.sort_values("timestamp").set_index("timestamp")
+            frames[timeframe] = frame
+    return frames["1h"], frames["1d"]
+
+
+def write_fixtures(df_1h: pd.DataFrame, df_1d: pd.DataFrame, out_dir: Path = FIXTURE_DIR) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, frame in (("ohlcv_1h.csv", df_1h), ("ohlcv_1d.csv", df_1d)):
+        frame.to_csv(out_dir / name, lineterminator="\n", float_format="%.10f")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Generate deterministic OHLCV fixtures")
+    parser.add_argument("--from-warehouse", dest="warehouse", default=None)
+    args = parser.parse_args(argv)
+    if args.warehouse:
+        df_1h, df_1d = from_warehouse(args.warehouse)
+    else:
+        df_1h, df_1d = build_fixtures()
+    write_fixtures(df_1h, df_1d)
+    print(f"1h rows={len(df_1h)} last={df_1h.index[-1]}")
+    print(f"1d rows={len(df_1d)} last={df_1d.index[-1]}")
+
+
+if __name__ == "__main__":
+    main()
