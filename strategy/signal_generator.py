@@ -81,9 +81,7 @@ class SignalGenerator:
         همیشه True است و رفتار آن بدون تغییر می‌ماند."""
         analysis_timestamp = datetime.now(timezone.utc)
 
-        is_valid, quality_msg = self.data_validator.validate_data_quality(
-            data, timeframe
-        )
+        is_valid, quality_msg = self.data_validator.validate_data_quality(data, timeframe)
         if not is_valid:
             # نقش Signal (قاعده ۲۳): داده آماده تحلیل نیست → شکست تحلیل، نه «بدون سیگنال».
             raise InsufficientDataError(
@@ -93,21 +91,14 @@ class SignalGenerator:
         market_regime = detect_market_regime(data)
         market_context = self.market_analyzer.analyze_market_condition(data)
 
-        last_indicator_results = self.feature_engineer.get_last_indicator_results(
-            data, timeframe
-        )
+        last_indicator_results = self.feature_engineer.get_last_indicator_results(data, timeframe)
 
         # قاعده ۶: Market Data → Market Regime → Existing Weight Adjustment → Scoring
         base_weights = self.config_manager.get_indicator_weights(timeframe) or {}
-        regime_weights = self.adjust_weights_by_regime(
-            dict(base_weights), market_regime
-        )
-        decorr_weights = self.feature_engineer.get_decorrelation_weights(
-            last_indicator_results
-        )
+        regime_weights = self.adjust_weights_by_regime(dict(base_weights), market_regime)
+        decorr_weights = self.feature_engineer.get_decorrelation_weights(last_indicator_results)
         combined_weights = {
-            name: float(regime_weights.get(name, 1.0))
-            * float(decorr_weights.get(name, 1.0))
+            name: float(regime_weights.get(name, 1.0)) * float(decorr_weights.get(name, 1.0))
             for name in last_indicator_results.keys()
         }
 
@@ -166,9 +157,7 @@ class SignalGenerator:
 
         signal_type = self.determine_signal_type(final_score, threshold)
         if signal_type == SignalType.HOLD:
-            logger.info(
-                f"No signal for {symbol}-{timeframe}. Final Score: {final_score:.2f}"
-            )
+            logger.info(f"No signal for {symbol}-{timeframe}. Final Score: {final_score:.2f}")
             return None
 
         levels = calculate_dynamic_levels(
@@ -249,7 +238,9 @@ class SignalGenerator:
                 entry=signal.entry_price,
                 stop=signal.stop_loss,
                 target=signal.exit_price,
-                trend_strength=str(getattr(market_context.trend_strength, "value", market_context.trend_strength)),
+                trend_strength=str(
+                    getattr(market_context.trend_strength, "value", market_context.trend_strength)
+                ),
                 volume_surge=float(market_context.volume_ratio),
                 details={"ml_predictions": ml_predictions},
             ),
@@ -289,9 +280,7 @@ class SignalGenerator:
 
         try:
             base_currency = symbol.split("/")[0]
-            news_sentiment = await self.data_provider.get_news_sentiment(
-                [base_currency]
-            )
+            news_sentiment = await self.data_provider.get_news_sentiment([base_currency])
             # قرارداد واحد: همه مقادیر external_data خام ذخیره می‌شوند
             # (بدون wrapper موازی {"data": ...})؛ Scorer هم همان را می‌خواند.
             external_data["news"] = news_sentiment
@@ -314,9 +303,7 @@ class SignalGenerator:
                 predictions[model_types[i]] = res
         return predictions
 
-    def determine_signal_type(
-        self, score: float, threshold: float = None
-    ) -> SignalType:
+    def determine_signal_type(self, score: float, threshold: float = None) -> SignalType:
         if threshold is None:
             threshold = self.config_manager.get("signal_threshold", 50)
         if score > threshold:

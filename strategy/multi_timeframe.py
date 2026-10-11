@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 import redis
@@ -61,20 +60,14 @@ class MultiTimeframeAnalyzer:
                 total_weight += weight
 
             except InsufficientDataError:
-                logger.warning(
-                    f"Insufficient data for multi-timeframe analysis on {symbol}-{tf}"
-                )
+                logger.warning(f"Insufficient data for multi-timeframe analysis on {symbol}-{tf}")
             except Exception as e:
-                logger.error(
-                    f"Error in multi-timeframe analysis for {symbol}-{tf}: {e}"
-                )
+                logger.error(f"Error in multi-timeframe analysis for {symbol}-{tf}: {e}")
 
         final_score = (total_score / total_weight) if total_weight > 0 else 1.0
         return final_score, analyses, direction_conflict
 
-    async def _get_higher_tf_data(
-        self, symbol: str, timeframe: str
-    ) -> pd.DataFrame | None:
+    async def _get_higher_tf_data(self, symbol: str, timeframe: str) -> pd.DataFrame | None:
         cache_key = CacheKeyBuilder.mtf_analysis_key(symbol, timeframe)
         if self.redis:
             try:
@@ -87,9 +80,7 @@ class MultiTimeframeAnalyzer:
         data = await self.data_provider.fetch_ohlcv_data(symbol, timeframe, limit=200)
         if data is not None and not data.empty and self.redis:
             try:
-                await self.redis.set(
-                    cache_key, data.to_json(orient="split"), ex=self.cache_ttl
-                )
+                await self.redis.set(cache_key, data.to_json(orient="split"), ex=self.cache_ttl)
             except Exception as e:
                 logger.warning(f"Redis SET for MTF data failed: {e}")
 

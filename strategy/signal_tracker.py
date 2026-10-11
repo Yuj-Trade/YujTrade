@@ -10,9 +10,7 @@ from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
 from domain.signal_id import make_signal_id as _make_signal_id
 
 
-def make_signal_id(
-    symbol: str, timeframe: str, timestamp: datetime, signal_type: str
-) -> str:
+def make_signal_id(symbol: str, timeframe: str, timestamp: datetime, signal_type: str) -> str:
     return _make_signal_id(symbol, timeframe, timestamp, signal_type)
 
 
@@ -54,11 +52,7 @@ class SignalTracker:
         # outcome=None نباید آن را به pending برگرداند (شمارش دوباره در
         # کالیبراسیون). details ادغام می‌شود ولی outcome حفظ می‌شود.
         existing = self.history.get(signal_id)
-        if (
-            existing is not None
-            and existing.get("outcome") is not None
-            and outcome is None
-        ):
+        if existing is not None and existing.get("outcome") is not None and outcome is None:
             merged_details = dict(existing.get("details", {}))
             merged_details.update(details)
             self.history[signal_id] = {
@@ -77,9 +71,7 @@ class SignalTracker:
                 merged.update(details)
             await self._record_locked(signal_id, outcome, merged)
 
-    async def get_pending_expired(
-        self, now: datetime | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_pending_expired(self, now: datetime | None = None) -> list[dict[str, Any]]:
         """Snapshot of pending signals whose per-timeframe expiry window has
         passed (SIGNAL_EXPIRY_BY_TIMEFRAME). The lock is taken so the snapshot
         cannot race with concurrent record/resolve calls; callers use it for
@@ -94,9 +86,7 @@ class SignalTracker:
                     continue
                 details = dict(data.get("details", {}))
                 parts = sid.split("|")
-                timeframe = details.get("timeframe") or (
-                    parts[1] if len(parts) > 1 else None
-                )
+                timeframe = details.get("timeframe") or (parts[1] if len(parts) > 1 else None)
                 expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
                 if not expiry_hours:
                     continue
@@ -109,9 +99,7 @@ class SignalTracker:
             return expired
 
     @staticmethod
-    def _extract_created_at(
-        signal_id: str, details: dict[str, Any]
-    ) -> datetime | None:
+    def _extract_created_at(signal_id: str, details: dict[str, Any]) -> datetime | None:
         """Creation time from details, falling back to the timestamp embedded
         in the signal id (third '|'-separated segment). Naive datetimes are
         treated as UTC."""
@@ -137,13 +125,21 @@ class SignalTracker:
         return created
 
     def get_performance_summary(self) -> dict[str, float]:
-        resolved = {sid: data for sid, data in self.history.items() if data.get("outcome") is True or data.get("outcome") is False}
+        resolved = {
+            sid: data
+            for sid, data in self.history.items()
+            if data.get("outcome") is True or data.get("outcome") is False
+        }
         total_signals = len(resolved)
         if total_signals == 0:
             return {"total": 0, "win_rate": 0.0, "pending": len(self.history)}
         wins = sum(1 for data in resolved.values() if data.get("outcome"))
         win_rate = (wins / total_signals) * 100
-        return {"total": total_signals, "win_rate": win_rate, "pending": len(self.history) - total_signals}
+        return {
+            "total": total_signals,
+            "win_rate": win_rate,
+            "pending": len(self.history) - total_signals,
+        }
 
 
 class AdaptiveThresholdManager:
@@ -159,17 +155,30 @@ class AdaptiveThresholdManager:
     def _key(volatility_regime: str, hurst_range: str) -> tuple:
         return (str(volatility_regime), str(hurst_range))
 
-    def record_performance(self, volatility_regime: str, hurst_range: str, threshold: float, signal_success: bool):
+    def record_performance(
+        self, volatility_regime: str, hurst_range: str, threshold: float, signal_success: bool
+    ):
         key = self._key(volatility_regime, hurst_range)
         if key not in self.performance_history:
             self.performance_history[key] = []
-        self.performance_history[key].append({"threshold": threshold, "success": signal_success, "timestamp": datetime.now(timezone.utc)})
+        self.performance_history[key].append(
+            {
+                "threshold": threshold,
+                "success": signal_success,
+                "timestamp": datetime.now(timezone.utc),
+            }
+        )
         if len(self.performance_history[key]) > 100:
             self.performance_history[key] = self.performance_history[key][-100:]
 
-    def get_optimal_threshold(self, volatility_regime: str, hurst_range: str, default_threshold: float) -> float:
+    def get_optimal_threshold(
+        self, volatility_regime: str, hurst_range: str, default_threshold: float
+    ) -> float:
         key = self._key(volatility_regime, hurst_range)
-        if key not in self.performance_history or len(self.performance_history[key]) < self.min_samples:
+        if (
+            key not in self.performance_history
+            or len(self.performance_history[key]) < self.min_samples
+        ):
             return default_threshold
         history = self.performance_history[key]
         threshold_performance = {}
@@ -198,7 +207,9 @@ class MLConfidenceCalibrator:
         self.calibration_data: dict[str, list[tuple[float, bool, float]]] = {}
         self.calibration_bins = 10
 
-    def add_prediction(self, model_name: str, confidence: float, actual_result: bool, timestamp: datetime = None):
+    def add_prediction(
+        self, model_name: str, confidence: float, actual_result: bool, timestamp: datetime = None
+    ):
         if model_name not in self.calibration_data:
             self.calibration_data[model_name] = []
         time_decay_factor = 1.0
@@ -217,12 +228,20 @@ class MLConfidenceCalibrator:
             bin_index = self.calibration_bins - 1
         else:
             bin_index = int(raw_confidence * self.calibration_bins / 100)
-        bin_predictions = [(conf, result, weight) for conf, result, weight in history if int(conf * self.calibration_bins / 100) == bin_index]
+        bin_predictions = [
+            (conf, result, weight)
+            for conf, result, weight in history
+            if int(conf * self.calibration_bins / 100) == bin_index
+        ]
         if not bin_predictions:
             for offset in [-1, 1]:
                 adjacent_bin_index = bin_index + offset
                 if 0 <= adjacent_bin_index < self.calibration_bins:
-                    bin_predictions = [(conf, result, weight) for conf, result, weight in history if int(conf * self.calibration_bins / 100) == adjacent_bin_index]
+                    bin_predictions = [
+                        (conf, result, weight)
+                        for conf, result, weight in history
+                        if int(conf * self.calibration_bins / 100) == adjacent_bin_index
+                    ]
                     if bin_predictions:
                         break
         if not bin_predictions:
@@ -233,5 +252,7 @@ class MLConfidenceCalibrator:
             return raw_confidence
         accuracy_in_bin = correct_weight / total_weight
         data_points_weight = min(len(bin_predictions) / 50.0, 1.0) * 0.5
-        calibrated = raw_confidence * (1 - data_points_weight) + (accuracy_in_bin * 100) * data_points_weight
+        calibrated = (
+            raw_confidence * (1 - data_points_weight) + (accuracy_in_bin * 100) * data_points_weight
+        )
         return np.clip(calibrated, 0, 100)
