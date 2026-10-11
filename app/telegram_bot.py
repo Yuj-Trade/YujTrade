@@ -50,11 +50,9 @@ class TelegramBotHandler:
         self.trading_service = trading_service
         self.background_tasks = background_tasks
         self.admin_chat_id = admin_chat_id.strip() if admin_chat_id else None
-        
+
         if not self.admin_chat_id:
-            logger.error(
-                "CRITICAL: Admin Chat ID is not configured!"
-            )
+            logger.error("CRITICAL: Admin Chat ID is not configured!")
         else:
             logger.info(f"Admin Chat ID configured as: {self.admin_chat_id}")
 
@@ -67,9 +65,7 @@ class TelegramBotHandler:
             pool_timeout=10.0,
         )
 
-        self.application = (
-            ApplicationBuilder().token(bot_token).request(request).build()
-        )
+        self.application = ApplicationBuilder().token(bot_token).request(request).build()
         self._register_handlers()
 
     def _register_handlers(self):
@@ -90,11 +86,7 @@ class TelegramBotHandler:
         if not await self._is_admin(update, context):
             return
         keyboard = [
-            [
-                InlineKeyboardButton(
-                    "⚡ Quick Analyze (1h)", callback_data="quick_analyze"
-                )
-            ],
+            [InlineKeyboardButton("⚡ Quick Analyze (1h)", callback_data="quick_analyze")],
             [
                 InlineKeyboardButton(
                     f"📊 Full Analyze ({_focus_label()})",
@@ -134,14 +126,14 @@ class TelegramBotHandler:
             )
             chat_id = str(query.message.chat_id)
         else:
-            await context.bot.send_message(self.admin_chat_id, escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+            await context.bot.send_message(
+                self.admin_chat_id, escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
+            )
             chat_id = self.admin_chat_id
-            
+
         async def analysis_task():
             # تعریف واحد Quick Analysis (قاعده ۱۷) — همان implementation سرویس.
-            signals = await self.trading_service.run_quick_analysis(
-                QUICK_TIMEFRAMES
-            )
+            signals = await self.trading_service.run_quick_analysis(QUICK_TIMEFRAMES)
 
             await self.send_signals_to_telegram(
                 signals,
@@ -150,9 +142,7 @@ class TelegramBotHandler:
                 self._no_signals_text("❌ No signals found on 1h timeframe."),
             )
 
-        self.background_tasks.create_task(
-            analysis_task(), name=f"QuickAnalyze-{chat_id}"
-        )
+        self.background_tasks.create_task(analysis_task(), name=f"QuickAnalyze-{chat_id}")
 
     async def full_analyze(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -163,7 +153,9 @@ class TelegramBotHandler:
             )
             chat_id = str(query.message.chat_id)
         else:
-            await context.bot.send_message(self.admin_chat_id, escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+            await context.bot.send_message(
+                self.admin_chat_id, escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
+            )
             chat_id = self.admin_chat_id
 
         async def analysis_task():
@@ -175,9 +167,7 @@ class TelegramBotHandler:
                 self._no_signals_text("❌ No signals found across all timeframes."),
             )
 
-        self.background_tasks.create_task(
-            analysis_task(), name=f"FullAnalyze-{chat_id}"
-        )
+        self.background_tasks.create_task(analysis_task(), name=f"FullAnalyze-{chat_id}")
 
     def _no_signals_text(self, base_text: str) -> str:
         """تفکیک معنایی قاعده ۳۰: اگر آخرین اجرا خطا داشته، «بدون سیگنال»
@@ -203,11 +193,15 @@ class TelegramBotHandler:
         args = context.args or []
         timeframe = args[0] if args else ""
         try:
-            signals = await self.trading_service.run_quick_analysis([timeframe] if timeframe else ["1h"])
+            signals = await self.trading_service.run_quick_analysis(
+                [timeframe] if timeframe else ["1h"]
+            )
         except Exception:
             signals = []
         if not signals:
-            await update.message.reply_text(escape_markdown_v2("No signals right now."), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(
+                escape_markdown_v2("No signals right now."), parse_mode=ParseMode.MARKDOWN_V2
+            )
             return
         for signal in signals[:5]:
             for message in self.format_signal_message(signal):
@@ -242,7 +236,11 @@ class TelegramBotHandler:
             summary = self.trading_service.signal_tracker.get_performance_summary()
         except Exception:
             summary = {}
-        text = f"Total: {summary.get('total', 0)} | Win rate: {summary.get('win_rate', 0.0):.1f}% | Pending: {summary.get('pending', 0)}"
+        text = (
+            f"Total: {summary.get('total', 0)} | "
+            f"Win rate: {summary.get('win_rate', 0.0):.1f}% | "
+            f"Pending: {summary.get('pending', 0)}"
+        )
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
     async def risk_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,7 +248,11 @@ class TelegramBotHandler:
             return
         try:
             cfg = build_risk_config(self.config_manager)
-            text = f"Risk per trade: {cfg.risk_per_trade_pct}% | Max exposure: {cfg.max_portfolio_exposure_pct}% | Max positions: {cfg.max_concurrent_positions}"
+            text = (
+                f"Risk per trade: {cfg.risk_per_trade_pct}% | "
+                f"Max exposure: {cfg.max_portfolio_exposure_pct}% | "
+                f"Max positions: {cfg.max_concurrent_positions}"
+            )
         except Exception:
             text = "Risk config unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
@@ -260,7 +262,14 @@ class TelegramBotHandler:
             return
         try:
             snap = await self.trading_service.portfolio_snapshot()
-            text = f"Equity: {snap.get('equity', 0):.2f} | Cash: {snap.get('cash', 0):.2f} | Exposure: {snap.get('exposure_pct', 0):.1f}% | Open: {snap.get('open_positions', 0)} | Unrealized: {snap.get('unrealized_pnl', 0):.2f} | Realized: {snap.get('realized_pnl', 0):.2f}"
+            text = (
+                f"Equity: {snap.get('equity', 0):.2f} | "
+                f"Cash: {snap.get('cash', 0):.2f} | "
+                f"Exposure: {snap.get('exposure_pct', 0):.1f}% | "
+                f"Open: {snap.get('open_positions', 0)} | "
+                f"Unrealized: {snap.get('unrealized_pnl', 0):.2f} | "
+                f"Realized: {snap.get('realized_pnl', 0):.2f}"
+            )
         except Exception:
             text = "Portfolio unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
@@ -277,7 +286,11 @@ class TelegramBotHandler:
             src_text = "Sources: n/a"
         try:
             snap = await self.trading_service.portfolio_snapshot()
-            pf_text = f"Equity: {snap.get('equity', 0):.0f} | Exposure: {snap.get('exposure_pct', 0):.1f}% | Open: {snap.get('open_positions', 0)}"
+            pf_text = (
+                f"Equity: {snap.get('equity', 0):.0f} | "
+                f"Exposure: {snap.get('exposure_pct', 0):.1f}% | "
+                f"Open: {snap.get('open_positions', 0)}"
+            )
         except Exception:
             pf_text = "Portfolio: n/a"
         text = f"Health OK. Last errors: {errors} | {src_text} | {pf_text}"
@@ -303,9 +316,10 @@ class TelegramBotHandler:
         if incoming_chat_id == self.admin_chat_id:
             logger.debug(f"Admin access granted for chat ID: {incoming_chat_id}")
             return True
-        
+
         logger.warning(
-            f"Unauthorized access attempt from chat ID: {incoming_chat_id} (Expected: {self.admin_chat_id})"
+            f"Unauthorized access attempt from chat ID: {incoming_chat_id} "
+            f"(Expected: {self.admin_chat_id})"
         )
         if chat_id:
             await context.bot.send_message(chat_id, "You are not authorized to use this bot.")
@@ -408,14 +422,10 @@ class TelegramBotHandler:
         condition = escape_markdown_v2(str(ctx.get("market_condition", "N/A")))
         volatility_str = escape_markdown_v2(f"{ctx.get('volatility', 0):.2f}")
         support_str = escape_markdown_v2(
-            f"{ctx.get('support_levels', [0])[0]:.8f}"
-            if ctx.get("support_levels")
-            else "N/A"
+            f"{ctx.get('support_levels', [0])[0]:.8f}" if ctx.get("support_levels") else "N/A"
         )
         resistance_str = escape_markdown_v2(
-            f"{ctx.get('resistance_levels', [0])[0]:.8f}"
-            if ctx.get("resistance_levels")
-            else "N/A"
+            f"{ctx.get('resistance_levels', [0])[0]:.8f}" if ctx.get("resistance_levels") else "N/A"
         )
 
         market_info = (
@@ -586,9 +596,7 @@ class TelegramBotHandler:
                     else:
                         emoji = "➖"
 
-                    escaped_reason = escape_markdown_v2(
-                        f"{reason_text} (Score: {score_value:.2f})"
-                    )
+                    escaped_reason = escape_markdown_v2(f"{reason_text} (Score: {score_value:.2f})")
                     reasons_list.append(f"{emoji} {escaped_reason}")
                 else:
                     reasons_list.append(f"• {escape_markdown_v2(r)}")

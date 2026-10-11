@@ -36,12 +36,8 @@ class TrainingDataProvider(ModelDataProvider):
         )
         limit = limit_map.get(timeframe, 2000)
         if for_prediction:
-            limit = min(
-                limit, self._config_manager.get("model_prediction_limit", 300)
-            )
-        return await self._market_data_provider.fetch_ohlcv_data(
-            symbol, timeframe, limit=limit
-        )
+            limit = min(limit, self._config_manager.get("model_prediction_limit", 300))
+        return await self._market_data_provider.fetch_ohlcv_data(symbol, timeframe, limit=limit)
 
 
 class ModelTrainer:
@@ -56,9 +52,7 @@ class ModelTrainer:
         self.model_manager = model_manager
 
     async def train_and_save_model(self, symbol: str, timeframe: str, model_type: str):
-        logger.info(
-            f"--- Starting training for {symbol}-{timeframe} ({model_type}) ---"
-        )
+        logger.info(f"--- Starting training for {symbol}-{timeframe} ({model_type}) ---")
         try:
             limit_map = self.config.get(
                 "model_data_limits",
@@ -66,27 +60,21 @@ class ModelTrainer:
             )
             limit = limit_map.get(timeframe, 2000)
 
-            data = await self.market_data_provider.fetch_ohlcv_data(
-                symbol, timeframe, limit=limit
-            )
+            data = await self.market_data_provider.fetch_ohlcv_data(symbol, timeframe, limit=limit)
             if data is None or data.empty or len(data) < 200:
                 logger.warning(f"Insufficient data for {symbol}-{timeframe}. Skipping.")
                 return
 
             # The model manager now uses the data provider passed to it,
             # so we just need to call its train_model method.
-            is_trained = await self.model_manager.train_model(
-                model_type, symbol, timeframe, data
-            )
+            is_trained = await self.model_manager.train_model(model_type, symbol, timeframe, data)
 
             if is_trained:
                 logger.info(
                     f"✅ Successfully trained and saved {model_type} model for {symbol}-{timeframe}"
                 )
             else:
-                logger.error(
-                    f"❌ Failed to train model for {symbol}-{timeframe} ({model_type})."
-                )
+                logger.error(f"❌ Failed to train model for {symbol}-{timeframe} ({model_type}).")
 
         except Exception as e:
             logger.error(
@@ -105,9 +93,7 @@ class ModelTrainer:
             for symbol in symbols:
                 for timeframe in timeframes:
                     for model_type in model_types:
-                        tasks.append(
-                            self.train_and_save_model(symbol, timeframe, model_type)
-                        )
+                        tasks.append(self.train_and_save_model(symbol, timeframe, model_type))
 
         await asyncio.gather(*tasks)
         logger.info("--- Model training process finished. ---")
@@ -124,13 +110,9 @@ async def main():
     )
     await market_data_provider.initialize()
 
-    training_data_provider = TrainingDataProvider(
-        market_data_provider, config_manager
-    )
+    training_data_provider = TrainingDataProvider(market_data_provider, config_manager)
 
-    model_manager = ModelManager(
-        data_provider=training_data_provider, model_path="models"
-    )
+    model_manager = ModelManager(data_provider=training_data_provider, model_path="models")
 
     trainer = ModelTrainer(config_manager, market_data_provider, model_manager)
     await trainer.train_all_models()

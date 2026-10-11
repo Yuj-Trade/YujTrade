@@ -19,12 +19,9 @@ def _sha256(path: Path) -> str:
 
 def _git_revision() -> str | None:
     try:
-        return (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-            )
-            .strip()
-        )
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
 
@@ -56,9 +53,7 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     output = args.output if args.output.is_absolute() else root / args.output
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(build_report(root), indent=2, sort_keys=True), encoding="utf-8"
-    )
+    output.write_text(json.dumps(build_report(root), indent=2, sort_keys=True), encoding="utf-8")
     print(output)
 
 
