@@ -1,7 +1,8 @@
 import asyncio
 import time
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, Any, Set, Type
+from typing import Any
 
 from common.exceptions import APIRateLimitError, NetworkError, TradingBotException
 
@@ -24,7 +25,7 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         timeout: int = 60,
         half_open_attempts: int = 3,
-        failure_exceptions: Set[Type[Exception]] = None,
+        failure_exceptions: set[type[Exception]] = None,
     ):
         self.failure_threshold = failure_threshold
         self.timeout = timeout

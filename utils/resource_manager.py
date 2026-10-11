@@ -1,6 +1,7 @@
 import asyncio
-from contextlib import contextmanager, asynccontextmanager
-from typing import Optional, AsyncGenerator, Any, Generator
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any
 
 import aiohttp
 import redis.asyncio as redis
@@ -16,8 +17,8 @@ class ResourceManager:
     را دست نمی‌زند). سلسله‌مراتب cleanup:
     Application → Services/TradingService → Providers/Models → این‌جا."""
     def __init__(self):
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._redis_client: Optional[redis.Redis] = None
+        self._session: aiohttp.ClientSession | None = None
+        self._redis_client: redis.Redis | None = None
         self._lock = asyncio.Lock()
 
     async def get_session(self) -> aiohttp.ClientSession:
@@ -28,7 +29,7 @@ class ResourceManager:
                 logger.info("AIOHTTP session created.")
             return self._session
 
-    async def get_redis_client(self) -> Optional[redis.Redis]:
+    async def get_redis_client(self) -> redis.Redis | None:
         async with self._lock:
             if self._redis_client is None:
                 host = SecretsManager.REDIS_HOST

@@ -1,4 +1,3 @@
-import tests.mocks.pandas_ta_mock  # Mock pandas_ta before any real imports
 """
 import tests.mocks.pandas_ta_mock  # Mock pandas_ta before any real imports
 Pytest configuration and shared fixtures for YujTrade tests.
@@ -10,15 +9,14 @@ All secrets, API keys, and Redis connections are monkeypatched to fake values.
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
-import pytest_asyncio
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -282,7 +280,7 @@ def small_gap_ohlcv() -> pd.DataFrame:
 # ─── TradingSignal Fixtures ───
 
 @pytest.fixture
-def buy_valid_signal() -> Dict[str, Any]:
+def buy_valid_signal() -> dict[str, Any]:
     """Valid BUY TradingSignal with all fields populated."""
     from common.core import SignalType
     return {
@@ -331,7 +329,7 @@ def buy_valid_signal() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sell_valid_signal() -> Dict[str, Any]:
+def sell_valid_signal() -> dict[str, Any]:
     """Valid SELL TradingSignal with all fields populated."""
     from common.core import SignalType
     return {
@@ -380,9 +378,9 @@ def sell_valid_signal() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def signal_with_macro_data() -> Dict[str, Any]:
+def signal_with_macro_data() -> dict[str, Any]:
     """Signal with macro data for SignalRanking fed_rate tests."""
-    from common.core import SignalType, MacroEconomicData
+    from common.core import MacroEconomicData, SignalType
     signal = {
         "symbol": "BTC/USDT",
         "signal_type": SignalType.BUY,
@@ -430,7 +428,7 @@ def signal_with_macro_data() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def signal_without_external_data() -> Dict[str, Any]:
+def signal_without_external_data() -> dict[str, Any]:
     """Signal with all external data None (for backtest path)."""
     from common.core import SignalType
     return {
@@ -481,9 +479,9 @@ def signal_without_external_data() -> Dict[str, Any]:
 # ─── MarketAnalysis Fixtures ───
 
 @pytest.fixture
-def bullish_strong_analysis() -> Dict[str, Any]:
+def bullish_strong_analysis() -> dict[str, Any]:
     """Strong bullish MarketAnalysis."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.BULLISH,
         "trend_strength": TrendStrength.STRONG,
@@ -504,9 +502,9 @@ def bullish_strong_analysis() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def bearish_strong_analysis() -> Dict[str, Any]:
+def bearish_strong_analysis() -> dict[str, Any]:
     """Strong bearish MarketAnalysis."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.BEARISH,
         "trend_strength": TrendStrength.STRONG,
@@ -527,9 +525,9 @@ def bearish_strong_analysis() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sideways_weak_analysis() -> Dict[str, Any]:
+def sideways_weak_analysis() -> dict[str, Any]:
     """Weak sideways MarketAnalysis."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -550,9 +548,9 @@ def sideways_weak_analysis() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def market_analysis_hurst_low() -> Dict[str, Any]:
+def market_analysis_hurst_low() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent < 0.45 (mean-reverting)."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -573,9 +571,9 @@ def market_analysis_hurst_low() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def market_analysis_hurst_mid() -> Dict[str, Any]:
+def market_analysis_hurst_mid() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent 0.45-0.55 (random walk)."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.SIDEWAYS,
         "trend_strength": TrendStrength.WEAK,
@@ -596,9 +594,9 @@ def market_analysis_hurst_mid() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def market_analysis_hurst_high() -> Dict[str, Any]:
+def market_analysis_hurst_high() -> dict[str, Any]:
     """MarketAnalysis with hurst_exponent > 0.55 (persistent)."""
-    from common.core import TrendDirection, TrendStrength, MarketCondition
+    from common.core import MarketCondition, TrendDirection, TrendStrength
     return {
         "trend": TrendDirection.BULLISH,
         "trend_strength": TrendStrength.STRONG,
@@ -621,7 +619,7 @@ def market_analysis_hurst_high() -> Dict[str, Any]:
 # ─── Model Prediction Fixtures ───
 
 @pytest.fixture
-def model_prediction_full() -> Dict[str, float]:
+def model_prediction_full() -> dict[str, float]:
     """Full model prediction with all fields (for gap 33)."""
     return {
         "prediction": 51000.0,
@@ -633,7 +631,7 @@ def model_prediction_full() -> Dict[str, float]:
 
 
 @pytest.fixture
-def model_prediction_calibrated_equals_confidence() -> Dict[str, float]:
+def model_prediction_calibrated_equals_confidence() -> dict[str, float]:
     """Prediction where calibrated_confidence == confidence (ambiguous behavior)."""
     return {
         "prediction": 51000.0,
@@ -645,7 +643,7 @@ def model_prediction_calibrated_equals_confidence() -> Dict[str, float]:
 
 
 @pytest.fixture
-def model_prediction_calibrated_diverges() -> Dict[str, float]:
+def model_prediction_calibrated_diverges() -> dict[str, float]:
     """Prediction where calibrated_confidence != confidence (tests gap 33)."""
     return {
         "prediction": 51000.0,
@@ -659,11 +657,15 @@ def model_prediction_calibrated_diverges() -> Dict[str, float]:
 # ─── External Data Bundle Fixtures ───
 
 @pytest.fixture
-def external_data_full() -> Dict[str, Any]:
+def external_data_full() -> dict[str, Any]:
     """Full external data bundle with all sources."""
     from common.core import (
-        DerivativesAnalysis, FundamentalAnalysis, OnChainAnalysis,
-        OrderBook, MacroEconomicData, TrendingData
+        DerivativesAnalysis,
+        FundamentalAnalysis,
+        MacroEconomicData,
+        OnChainAnalysis,
+        OrderBook,
+        TrendingData,
     )
     return {
         "news": {"score": 5.0, "fear_greed_index": 50},
@@ -695,7 +697,7 @@ def external_data_full() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def external_data_partial() -> Dict[str, Any]:
+def external_data_partial() -> dict[str, Any]:
     """Partial external data with some None values."""
     from common.core import DerivativesAnalysis, MacroEconomicData
     return {
@@ -711,7 +713,7 @@ def external_data_partial() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def external_data_all_none() -> Dict[str, Any]:
+def external_data_all_none() -> dict[str, Any]:
     """All external data None (for include_external=False path)."""
     return {
         "news": None,

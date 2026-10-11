@@ -1,14 +1,13 @@
 import asyncio
 import warnings
-from typing import List, Optional
 
 import pandas as pd
 
-from config.settings import ConfigManager
 from common.constants import SYMBOLS, TIME_FRAMES
 from config.logger import logger
-from modeling.model_manager import ModelManager, ModelDataProvider
+from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
+from modeling.model_manager import ModelDataProvider, ModelManager
 from utils.resource_manager import ResourceManager
 
 warnings.filterwarnings("ignore")
@@ -23,14 +22,14 @@ class TrainingDataProvider(ModelDataProvider):
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
-        config_manager: Optional[ConfigManager] = None,
+        config_manager: ConfigManager | None = None,
     ):
         self._market_data_provider = market_data_provider
         self._config_manager = config_manager or ConfigManager()
 
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         limit_map = self._config_manager.get(
             "model_data_limits",
             {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
@@ -97,8 +96,8 @@ class ModelTrainer:
 
     async def train_all_models(self):
         logger.info("Starting model training for all symbols and timeframes.")
-        symbols: List[str] = self.config.get("symbols", SYMBOLS)
-        timeframes: List[str] = self.config.get("timeframes", TIME_FRAMES)
+        symbols: list[str] = self.config.get("symbols", SYMBOLS)
+        timeframes: list[str] = self.config.get("timeframes", TIME_FRAMES)
         model_types = ["lstm", "xgboost"]
 
         tasks = []

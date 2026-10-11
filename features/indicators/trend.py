@@ -1,13 +1,12 @@
 import numpy as np
 import pandas as pd
-import talib
-
 import pandas_ta as ta
-from pandas_ta.overlap import ichimoku, supertrend, kama
-from pandas_ta.trend import adx, aroon, psar, dpo
+import talib
+from pandas_ta.overlap import ichimoku, supertrend
+from pandas_ta.trend import adx, aroon, dpo, psar
 
 from common.core import IndicatorResult
-from common.exceptions import InsufficientDataError, IndicatorError
+from common.exceptions import IndicatorError, InsufficientDataError
 from features.indicators.base import TechnicalIndicator
 
 

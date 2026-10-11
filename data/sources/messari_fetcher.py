@@ -1,19 +1,16 @@
-import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 import redis
 
-from config.logger import logger
-from utils.circuit_breaker import CircuitBreaker
+from common.cache import CacheCategory, CacheKeyBuilder
 from common.core import OnChainAnalysis
 from common.exceptions import APIRateLimitError, DataError, NetworkError
 from common.utils import RateLimiter, async_retry
-from common.cache import CacheKeyBuilder, CacheCategory
-from data.sources.base_fetcher import BaseFetcher
+from config.logger import logger
 from config.settings import ConfigManager
-
+from data.sources.base_fetcher import BaseFetcher
 
 messari_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
@@ -22,9 +19,9 @@ class MessariFetcher(BaseFetcher):
     def __init__(
         self,
         api_key: str,
-        redis_client: Optional[redis.Redis] = None,
-        session: Optional[aiohttp.ClientSession] = None,
-        config_manager: Optional[ConfigManager] = None,
+        redis_client: redis.Redis | None = None,
+        session: aiohttp.ClientSession | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         super().__init__(redis_client=redis_client, session=session, config_manager=config_manager)
         self.api_key = api_key
@@ -33,7 +30,7 @@ class MessariFetcher(BaseFetcher):
         self.source_name = "messari"
 
     @async_retry(attempts=3, delay=5, exceptions=(NetworkError, APIRateLimitError))
-    async def _fetch(self, endpoint: str, params: Optional[Dict] = None):
+    async def _fetch(self, endpoint: str, params: dict | None = None):
         self._check_if_closed()
         headers = {"x-messari-api-key": self.api_key}
         url = f"{self.base_url}/{endpoint}"
@@ -55,7 +52,7 @@ class MessariFetcher(BaseFetcher):
             logger.error(f"Error in Messari _fetch for {url}: {e}", exc_info=True)
             raise DataError(f"Failed to fetch data from Messari API: {url}") from e
 
-    async def get_asset_metrics(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_asset_metrics(self, symbol: str) -> dict[str, Any] | None:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.METRICS, self.source_name, ["asset"], symbol
@@ -84,7 +81,7 @@ class MessariFetcher(BaseFetcher):
             logger.error(f"Error fetching asset metrics from Messari for {symbol}: {e}")
             return None
 
-    async def get_on_chain_data(self, symbol: str) -> Optional[OnChainAnalysis]:
+    async def get_on_chain_data(self, symbol: str) -> OnChainAnalysis | None:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.METRICS, self.source_name, ["onchain"], symbol
@@ -129,7 +126,7 @@ class MessariFetcher(BaseFetcher):
             )
             return None
 
-    async def get_all_assets(self) -> List[Dict]:
+    async def get_all_assets(self) -> list[dict]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.GENERIC, self.source_name, ["all_assets"]
@@ -153,7 +150,7 @@ class MessariFetcher(BaseFetcher):
             logger.error(f"Error fetching all assets: {e}")
             return []
 
-    async def get_news(self, symbol: str) -> List[Dict]:
+    async def get_news(self, symbol: str) -> list[dict]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.NEWS, self.source_name, ["news"], symbol

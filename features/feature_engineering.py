@@ -1,14 +1,14 @@
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
+from analysis.correlation import IndicatorCorrelationManager
 from common.core import IndicatorResult
-from common.exceptions import IndicatorError, ModelError, InsufficientDataError
+from common.exceptions import IndicatorError, InsufficientDataError, ModelError
 from config.logger import logger
 from config.settings import ConfigManager
-from analysis.correlation import IndicatorCorrelationManager
 from features.indicators.factory import IndicatorFactory
 
 
@@ -24,13 +24,13 @@ class FeatureEngineer:
         self.config_manager = config_manager if config_manager else ConfigManager()
         self.indicator_factory = IndicatorFactory()
         self.scaler = MinMaxScaler(feature_range=(0, 1))
-        self.feature_columns: Optional[List[str]] = None
+        self.feature_columns: list[str] | None = None
         self.correlation_manager = IndicatorCorrelationManager()
         self.history_provider = history_provider
 
     def _compute_indicator(
         self, indicator_name: str, data: pd.DataFrame
-    ) -> Optional[IndicatorResult]:
+    ) -> IndicatorResult | None:
         """primitive واحد محاسبه اندیکاتور برای هر دو مسیر (Signal و ML)."""
         indicator_instance = self.indicator_factory.create(indicator_name)
         if not indicator_instance:
@@ -47,7 +47,7 @@ class FeatureEngineer:
         return None
 
     def create_features(
-        self, data: pd.DataFrame, indicators_to_run: List[str] = None
+        self, data: pd.DataFrame, indicators_to_run: list[str] = None
     ) -> pd.DataFrame:
         """
         Adds multiple indicator features to the dataframe.
@@ -104,7 +104,7 @@ class FeatureEngineer:
 
     def scale_features(
         self, features: pd.DataFrame, fit: bool = False
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         if features.empty:
             return None
         if fit:
@@ -148,7 +148,7 @@ class FeatureEngineer:
 
     def create_sequences(
         self, features: np.ndarray, target: np.ndarray, sequence_length: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         X, y = [], []
         for i in range(len(features) - sequence_length):
             X.append(features[i : (i + sequence_length)])
@@ -162,7 +162,7 @@ class FeatureEngineer:
 
     def get_last_indicator_results(
         self, data: pd.DataFrame, timeframe: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calculates and retrieves the last result for all active indicators for a given timeframe.
         This is the primary method used by the SignalGenerator (مسیر Signal).
@@ -199,6 +199,6 @@ class FeatureEngineer:
                     self.history_provider.write(name, timestamp, float(value))
         return results
 
-    def get_decorrelation_weights(self, results: Dict[str, Any]) -> Dict[str, float]:
+    def get_decorrelation_weights(self, results: dict[str, Any]) -> dict[str, float]:
         """وزن‌های ضد‌همبستگی برای مسیر Signal؛ بدون history واقعی خنثی (1.0)."""
         return self.correlation_manager.get_decorrelation_weights(results)

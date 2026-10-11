@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
-import talib
-
 import pandas_ta as ta
-from pandas_ta.volume import cmf, obv, ad, eom, efi, pvt, kvo, pvo, nvi, pvi
+import talib
+from pandas_ta.volume import ad, cmf, efi, eom, kvo, nvi, obv, pvi, pvo, pvt
 
 from common.core import IndicatorResult
-from config.logger import logger
 from common.exceptions import InsufficientDataError
 from features.indicators.base import TechnicalIndicator
 

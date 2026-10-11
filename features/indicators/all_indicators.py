@@ -1,4 +1,3 @@
-from typing import Dict, Type
 
 from .base import TechnicalIndicator
 from .custom import (
@@ -30,17 +29,17 @@ from .momentum import (
     MoneyFlowIndexIndicator,
     PPOIndicator,
     QQEIndicator,
+    RelativeVigorIndexIndicator,
     RMIIndicator,
     ROCIndicator,
     RSI2Indicator,
     RSIIndicator,
-    RelativeVigorIndexIndicator,
     SchaffTrendCycleIndicator,
     SmartMoneyConceptIndicator,
     SqueezeMomentumIndicator,
-    StochRSIIndicator,
     StochasticIndicator,
     StochasticMomentumIndexIndicator,
+    StochRSIIndicator,
     TRIXIndicator,
     TSIIndicator,
     UltimateOscillatorIndicator,
@@ -51,8 +50,8 @@ from .trend import (
     AroonIndicator,
     DEMAIndicator,
     DetrendedPriceOscillatorIndicator,
-    FRAMAIndicator,
     FractalIndicator,
+    FRAMAIndicator,
     GannHiLoActivatorIndicator,
     HullMovingAverageIndicator,
     IchimokuIndicator,
@@ -89,9 +88,9 @@ from .volatility import (
     UlcerIndexIndicator,
 )
 from .volume import (
-    ADLineIndicator,
     AccumulationDistributionIndexIndicator,
     AccumulationDistributionOscillatorIndicator,
+    ADLineIndicator,
     ChaikinMoneyFlowIndicator,
     EaseOfMovementIndicator,
     ForceIndexIndicator,
@@ -100,19 +99,19 @@ from .volume import (
     NVIIndicator,
     OBVIndicator,
     OrderFlowImbalanceIndicator,
-    PVIIndicator,
-    PVOIndicator,
     PriceVolumeRankIndicator,
     PriceVolumeTrendIndicator,
-    VWAPIndicator,
-    VWMAIndicator,
+    PVIIndicator,
+    PVOIndicator,
     VolumeIndicator,
     VolumeOscillatorIndicator,
     VolumeWeightedRSIIndicator,
+    VWAPIndicator,
+    VWMAIndicator,
 )
 
 
-def get_all_indicators() -> Dict[str, Type[TechnicalIndicator]]:
+def get_all_indicators() -> dict[str, type[TechnicalIndicator]]:
     """
     Returns a dictionary mapping indicator names to their corresponding class types.
     This avoids instantiating all indicators at once.

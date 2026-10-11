@@ -1,28 +1,25 @@
-import asyncio
 import json
-from typing import Dict, List, Optional
 
 import pandas as pd
 
-from config.logger import logger
+from common.cache import CacheCategory, CacheKeyBuilder
 from common.core import FundamentalAnalysis
-from common.exceptions import APIRateLimitError, NetworkError, InvalidSymbolError
+from common.exceptions import APIRateLimitError, InvalidSymbolError, NetworkError
 from common.utils import RateLimiter, async_retry
-from common.cache import CacheKeyBuilder, CacheCategory
+from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
-
 
 coingecko_rate_limiter = RateLimiter(max_requests=8, time_window=60)
 
 
 class CoinGeckoFetcher(BaseFetcher):
-    def __init__(self, api_key: Optional[str] = None, **kwargs):
+    def __init__(self, api_key: str | None = None, **kwargs):
         super().__init__(**kwargs)
         self.api_key = api_key
         self.base_url = "https://api.coingecko.com/api/v3"
         self.pro_base_url = "https://pro-api.coingecko.com/api/v3"
-        self._coin_list: Optional[List[Dict]] = None
-        self._coin_map: Optional[Dict[str, str]] = None
+        self._coin_list: list[dict] | None = None
+        self._coin_map: dict[str, str] | None = None
         self.source_name = "coingecko"
 
     async def _ensure_coin_list(self):
@@ -34,7 +31,7 @@ class CoinGeckoFetcher(BaseFetcher):
             else:
                 raise NetworkError("Failed to fetch coin list from CoinGecko.")
 
-    async def _get_coin_id(self, symbol: str) -> Optional[str]:
+    async def _get_coin_id(self, symbol: str) -> str | None:
         try:
             await self._ensure_coin_list()
             base_symbol = symbol.upper().split("/")[0]
@@ -56,7 +53,7 @@ class CoinGeckoFetcher(BaseFetcher):
         url,
         params=None,
         headers=None,
-        limiter: Optional[RateLimiter] = None,
+        limiter: RateLimiter | None = None,
         endpoint_name: str = "default",
     ):
         self._check_if_closed()
@@ -102,7 +99,7 @@ class CoinGeckoFetcher(BaseFetcher):
 
     async def get_historical_ohlc(
         self, symbol: str, days: int = 365
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         coin_id = await self._get_coin_id(symbol)
         if not coin_id:
             logger.warning(f"Could not find coin ID for symbol {symbol}")
@@ -127,7 +124,7 @@ class CoinGeckoFetcher(BaseFetcher):
 
     async def get_fundamental_data(
         self, coin_id_or_symbol: str
-    ) -> Optional[FundamentalAnalysis]:
+    ) -> FundamentalAnalysis | None:
         coin_id = await self._get_coin_id(coin_id_or_symbol)
         if not coin_id:
             return None
@@ -187,7 +184,7 @@ class CoinGeckoFetcher(BaseFetcher):
             logger.warning(f"Could not fetch fundamental data for {coin_id}: {e}")
             return None
 
-    async def get_coins_list(self) -> List[Dict]:
+    async def get_coins_list(self) -> list[dict]:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.COIN_LIST, self.source_name, ["all"]
         )
@@ -208,7 +205,7 @@ class CoinGeckoFetcher(BaseFetcher):
             await self.redis.set(cache_key, json.dumps(data), ex=cache_ttl)
         return data if data else []
 
-    async def get_trending_searches(self) -> List[str]:
+    async def get_trending_searches(self) -> list[str]:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.TRENDING, self.source_name, ["searches"]
         )
@@ -233,7 +230,7 @@ class CoinGeckoFetcher(BaseFetcher):
             return trending_symbols
         return []
 
-    async def get_circulating_supply(self, coin_id_or_symbol: str) -> Optional[float]:
+    async def get_circulating_supply(self, coin_id_or_symbol: str) -> float | None:
         self._check_if_closed()
         coin_id = await self._get_coin_id(coin_id_or_symbol)
         if not coin_id:

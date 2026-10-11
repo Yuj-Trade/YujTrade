@@ -1,31 +1,31 @@
 import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Set, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pandas as pd
 
-from config.settings import ConfigManager
-from common.core import TradingSignal
-from data.data_provider import MarketDataProvider
-from config.logger import logger
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME
-from strategy.signal_generator import SignalGenerator
+from common.core import TradingSignal
+from common.exceptions import InvalidSymbolError
+from config.logger import logger
+from config.settings import ConfigManager
+from data.data_provider import MarketDataProvider
+from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
+from strategy.signal_generator import SignalGenerator
 from strategy.signal_ranking import SignalRanking
 from strategy.signal_tracker import SignalTracker, make_signal_id
-from modeling.model_manager import ModelManager, ModelDataProvider
-from common.exceptions import InvalidSymbolError
-from utils.resource_manager import ResourceManager
-from trading.risk_manager import RiskConfig, RiskManager, build_risk_config
-from trading.portfolio import PortfolioManager
-from trading.paper_trading import PaperTradingEngine
 from trading.execution import ExchangeAdapter, ExecutionEngine
+from trading.paper_trading import PaperTradingEngine
+from trading.portfolio import PortfolioManager
+from trading.risk_manager import RiskManager, build_risk_config
+from utils.resource_manager import ResourceManager
 
 
 async def create_trading_stack(
-    config_manager: Optional[ConfigManager] = None,
-    resource_manager: Optional[ResourceManager] = None,
-) -> Tuple[ConfigManager, ResourceManager, MarketDataProvider, "TradingService"]:
+    config_manager: ConfigManager | None = None,
+    resource_manager: ResourceManager | None = None,
+) -> tuple[ConfigManager, ResourceManager, MarketDataProvider, "TradingService"]:
     """تنها Composition Root سیستم (قاعده ۱۸). MainApp، TaskServiceContainer و
     ابزارهای بهینه‌سازی همگی از همین مسیر stack را می‌سازند تا dependency
     graph دوباره‌کاری و drift نشود. خروجی: (config, resources, provider, service).
@@ -69,7 +69,7 @@ class TradingService(ModelDataProvider):
         self.market_data_provider = market_data_provider
         self.config_manager = config_manager
         self.resource_manager = resource_manager
-        self.invalid_symbols: Set[str] = set()
+        self.invalid_symbols: set[str] = set()
         self._initialized = False
         # شمارنده خطاهای آخرین اجرا (قاعده ۳۰): caller با آن «سیگنالی نیست»
         # را از «تحلیل شکست خورد» تشخیص می‌دهد.
@@ -123,7 +123,7 @@ class TradingService(ModelDataProvider):
 
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         # همان قرارداد TrainingDataProvider: محدودیت‌ها فقط از Config.
         limit_map = self.config_manager.get(
             "model_data_limits",
@@ -154,7 +154,7 @@ class TradingService(ModelDataProvider):
 
     async def analyze_symbol(
         self, symbol: str, timeframe: str
-    ) -> Optional[TradingSignal]:
+    ) -> TradingSignal | None:
         """قرارداد خطای واحد (قاعده ۳۰):
         - None یعنی «سیگنالی نیست» (HOLD/رد RR/رد multi-TF/رد گیت‌ها) یا
           سمبل دائماً نامعتبر (ignore-list).
@@ -245,7 +245,7 @@ class TradingService(ModelDataProvider):
             self.invalid_symbols.add(symbol)
             return None
 
-    def _partition_results(self, results) -> List[TradingSignal]:
+    def _partition_results(self, results) -> list[TradingSignal]:
         """تفکیک معنایی نتایج gather (قاعده ۳۰): سیگنال‌ها برمی‌گردند؛
         خطاها شمرده و لاگ می‌شوند و در last_errors می‌مانند تا caller
         «سیگنالی نیست» را از «تحلیل شکست خورد» تشخیص دهد."""
@@ -321,7 +321,7 @@ class TradingService(ModelDataProvider):
 
         return True
 
-    async def run_analysis_for_all_symbols(self) -> List[TradingSignal]:
+    async def run_analysis_for_all_symbols(self) -> list[TradingSignal]:
         # Reconciliation دوره‌ای pendingهای منقضی (قاعده ۳۱): مشابه
         # BacktestingEngine._flush_calibration اما برای مسیر Production.
         # خطای آن هرگز اجرای تحلیل را نمی‌شکند (قرارداد قاعده ۳۰).
@@ -391,8 +391,8 @@ class TradingService(ModelDataProvider):
         return final_signals
 
     async def run_quick_analysis(
-        self, timeframes: Optional[List[str]] = None
-    ) -> List[TradingSignal]:
+        self, timeframes: list[str] | None = None
+    ) -> list[TradingSignal]:
         """تعریف واحد Quick Analysis (قاعده ۱۷): اسکن فقط تایم‌فریم‌های داده‌شده
         (پیش‌فرض ["1h"]) بدون رتبه‌بندی/محدودسازی نهایی. هم Telegram و هم
         TaskService از همین implementation استفاده می‌کنند.
@@ -472,10 +472,10 @@ class TradingService(ModelDataProvider):
         self,
         symbol: str,
         timeframe: str,
-        details: Dict[str, Any],
-        created_at: Optional[datetime],
-        expiry_hours: Optional[float],
-    ) -> Optional[Tuple[bool, float]]:
+        details: dict[str, Any],
+        created_at: datetime | None,
+        expiry_hours: float | None,
+    ) -> tuple[bool, float] | None:
         """قضاوت نتیجه سیگنال منقضی (قاعده ۴۲): اول کندل‌های پنجره
         [created_at, created_at+expiry] بررسی می‌شوند —
         برخورد به stop یعنی شکست، برخورد به target یعنی موفقیت (اگر هر دو
@@ -545,7 +545,7 @@ class TradingService(ModelDataProvider):
 
     async def _get_reference_price(
         self, symbol: str, timeframe: str
-    ) -> Optional[float]:
+    ) -> float | None:
         """قیمت مرجع برای reconciliation (قاعده ۳۱): آخرین close از Provider
         در لحظه اجرا. قاعده ۴۴: با bypass_cache=True تا قیمت کهنه از کش Redis
         (TTL تایم‌فریم) برنگردد. None یعنی قیمت در دسترس نیست (skip، نه
@@ -579,7 +579,7 @@ class TradingService(ModelDataProvider):
         return max(0.0, min(100.0, conf))
 
     async def _record_live_calibration(
-        self, symbol: str, timeframe: str, details: Dict[str, Any], success: bool
+        self, symbol: str, timeframe: str, details: dict[str, Any], success: bool
     ) -> None:
         """تغذیه حلقه کالیبراسیون از نتیجه سیگنال زنده (قاعده ۳۱) — همان
         قرارداد BacktestingEngine._flush_calibration: confidence ترکیبی

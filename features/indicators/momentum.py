@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
-import talib
-
 import pandas_ta as ta
-from pandas_ta.momentum import roc, stochrsi, trix, uo, squeeze, cmo
+import talib
+from pandas_ta.momentum import cmo, squeeze, stochrsi, trix
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError

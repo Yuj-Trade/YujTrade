@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import List, Optional
 
 
 class CacheCategory(Enum):
@@ -28,8 +27,8 @@ class CacheKeyBuilder:
     def build(
         category: CacheCategory,
         source: str,
-        parts: List[str],
-        symbol: Optional[str] = None,
+        parts: list[str],
+        symbol: str | None = None,
     ) -> str:
         """
         Constructs a standardized cache key.
@@ -56,7 +55,7 @@ class CacheKeyBuilder:
         )
 
     @staticmethod
-    def generic_key(source: str, identifier: str, symbol: Optional[str] = None) -> str:
+    def generic_key(source: str, identifier: str, symbol: str | None = None) -> str:
         return CacheKeyBuilder.build(
             CacheCategory.GENERIC, source, [identifier], symbol
         )

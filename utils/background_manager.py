@@ -1,5 +1,5 @@
 import asyncio
-from typing import Set, Coroutine
+from collections.abc import Coroutine
 
 from config.logger import logger
 
@@ -8,7 +8,7 @@ class BackgroundTaskManager:
     """مالک تسک‌های پس‌زمینه (قاعده ۲۵): ساخت با create_task و لغو دسته‌جمعی
     با cancel_all در shutdown اپلیکیشن. شامل حلقه ScheduledAnalysis هم می‌شود."""
     def __init__(self):
-        self._tasks: Set[asyncio.Task] = set()
+        self._tasks: set[asyncio.Task] = set()
 
     def _log_task_completion(self, task: asyncio.Task):
         self._tasks.discard(task)

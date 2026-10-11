@@ -1,10 +1,10 @@
-from typing import Tuple
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 
-from config.logger import logger
+import numpy as np
+import pandas as pd
+
 from common.constants import LONG_TERM_CONFIG
+from config.logger import logger
 
 
 class DataQualityChecker:
@@ -19,7 +19,7 @@ class DataQualityChecker:
 
     def validate_data_quality(
         self, data: pd.DataFrame, timeframe: str
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         if data is None or data.empty:
             return False, "Data is None or empty."
 
@@ -46,7 +46,7 @@ class DataQualityChecker:
         price_changes = data["close"].pct_change().abs()
         if (price_changes > 0.75).any():
             logger.warning(
-                f"Excessive volatility detected: price changed more than 75% in one candle."
+                "Excessive volatility detected: price changed more than 75% in one candle."
             )
 
         if "volume" in data.columns and data["volume"].mean() < 1:
@@ -203,7 +203,7 @@ class DataQualityChecker:
 
     def check_trend_persistence(
         self, data: pd.DataFrame, min_bars: int = 30, volatility: float = None
-    ) -> Tuple[bool, float]:
+    ) -> tuple[bool, float]:
         if len(data) < min_bars:
             return False, 0.3
 
@@ -275,7 +275,7 @@ class DataQualityChecker:
 
     def detect_data_gaps(
         self, data: pd.DataFrame, max_gap_tolerance: int = 3
-    ) -> Tuple[bool, float]:
+    ) -> tuple[bool, float]:
         if not isinstance(data.index, pd.DatetimeIndex) or len(data) < 2:
             return False, 0.0
 

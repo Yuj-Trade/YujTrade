@@ -1,10 +1,9 @@
 import json
-from typing import List, Dict, Any
+from typing import Any
 
-from data.sources.base_fetcher import BaseFetcher
+from common.cache import CacheCategory, CacheKeyBuilder
 from common.utils import RateLimiter
-from common.cache import CacheKeyBuilder, CacheCategory
-
+from data.sources.base_fetcher import BaseFetcher
 
 alternative_me_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
@@ -14,7 +13,7 @@ class AlternativeMeFetcher(BaseFetcher):
         super().__init__(**kwargs)
         self.source_name = "alternative.me"
 
-    async def fetch_fear_greed(self, limit: int = 1) -> List[Dict[str, Any]]:
+    async def fetch_fear_greed(self, limit: int = 1) -> list[dict[str, Any]]:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.FEAR_GREED, self.source_name, [str(limit)]
         )

@@ -1,11 +1,9 @@
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from common.core import MarketAnalysis, TrendDirection, TrendStrength
-from common.exceptions import InsufficientDataError
-from common.core import MarketCondition
+from common.core import MarketAnalysis, MarketCondition, TrendDirection, TrendStrength
+
 
 class MarketConditionAnalyzer:
     def __init__(self):
@@ -151,7 +149,7 @@ class MarketConditionAnalyzer:
 
     def _calculate_hurst_exponent(
         self, series: pd.Series, max_lag=100
-    ) -> Optional[float]:
+    ) -> float | None:
         if len(series) < max_lag:
             return None
         series_np = series.to_numpy()

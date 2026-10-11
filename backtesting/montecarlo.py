@@ -1,6 +1,6 @@
 import random
+from collections.abc import Iterable
 from statistics import mean
-from typing import Iterable
 
 
 def simulate_r_multiples(

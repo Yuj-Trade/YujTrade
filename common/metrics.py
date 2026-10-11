@@ -1,5 +1,5 @@
 try:
-    from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
     _signals_total = Counter("yujtrade_signals_total", "Signals generated", ["symbol", "timeframe", "side"])
     _orders_total = Counter("yujtrade_orders_total", "Orders executed", ["symbol", "mode", "status"])
     _equity = Gauge("yujtrade_equity", "Portfolio equity")

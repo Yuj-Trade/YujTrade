@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from decouple import config as decouple_config
 
@@ -28,7 +28,7 @@ class SecretsManager:
             _encryptor = None
 
     @staticmethod
-    def get_secret(key: str, cast: type = str, default: Any = None) -> Optional[Any]:
+    def get_secret(key: str, cast: type = str, default: Any = None) -> Any | None:
         encrypted_key = f"ENCRYPTED_{key}"
         value = decouple_config(encrypted_key, default=None)
         if value and SecretsManager._encryptor:
@@ -120,20 +120,20 @@ class ConfigManager:
         self.config = self._load_config()
         self.weights_config = self._load_weights_config()
 
-    def _load_json_file(self, path: Path, default: Dict = None) -> Dict:
+    def _load_json_file(self, path: Path, default: dict = None) -> dict:
         if path.exists():
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
                 logger.warning(f"Error loading {path}: {e}. Using defaults.")
         return default or {}
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         loaded_config = self._load_json_file(self.config_path)
         return {**self.DEFAULT_CONFIG, **loaded_config}
 
-    def _load_weights_config(self) -> Dict[str, Any]:
+    def _load_weights_config(self) -> dict[str, Any]:
         loaded_weights = self._load_json_file(self.weights_path)
         if "cache_config" in loaded_weights:
             for key, value in self.DEFAULT_WEIGHTS_CONFIG["cache_config"].items():
@@ -157,7 +157,7 @@ class ConfigManager:
         self.config[key] = value
         self.save_config()
 
-    def get_component_weights(self, timeframe: str) -> Dict[str, float]:
+    def get_component_weights(self, timeframe: str) -> dict[str, float]:
         if self.get("timeframe_based_weights", True):
             timeframe_weights = self.weights_config.get(
                 "timeframe_based_settings", {}
@@ -175,7 +175,7 @@ class ConfigManager:
             },
         )
 
-    def get_indicator_weights(self, timeframe: str) -> Dict[str, float]:
+    def get_indicator_weights(self, timeframe: str) -> dict[str, float]:
         if self.get("timeframe_based_weights", True):
             timeframe_weights = self.weights_config.get(
                 "timeframe_based_settings", {}
@@ -187,12 +187,12 @@ class ConfigManager:
             "indicator_weights", {}
         )
 
-    def get_cache_config(self) -> Dict[str, Any]:
+    def get_cache_config(self) -> dict[str, Any]:
         return self.weights_config.get(
             "cache_config", self.DEFAULT_WEIGHTS_CONFIG["cache_config"]
         )
 
-    def get_cache_ttl(self, category: str, sub_category: Optional[str] = None) -> int:
+    def get_cache_ttl(self, category: str, sub_category: str | None = None) -> int:
         cache_config = self.get_cache_config()
         category_config = cache_config.get(category)
 

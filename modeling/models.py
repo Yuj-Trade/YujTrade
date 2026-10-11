@@ -1,27 +1,22 @@
-import asyncio
-import pickle
-from concurrent.futures import ThreadPoolExecutor, CancelledError
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Type
 import os
-import redis
+import pickle
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
-
 import tensorflow as tf
 import xgboost as xgb
-from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau  # type: ignore
 from tensorflow.keras.layers import LSTM, BatchNormalization, Dense, Dropout  # type: ignore
 from tensorflow.keras.models import Sequential  # type: ignore
 from tensorflow.keras.optimizers import Adam  # type: ignore
 
-from config.logger import logger
-from utils.resource_manager import managed_tf_session
 from common.exceptions import ModelError, ObjectClosedError
+from config.logger import logger
 from features.feature_engineering import FeatureEngineer
 from strategy.signal_tracker import MLConfidenceCalibrator
+from utils.resource_manager import managed_tf_session
 
 tf.get_logger().setLevel("ERROR")
 try:
@@ -57,7 +52,7 @@ class BaseModel:
                 f"Model {self.symbol}-{self.timeframe} has been closed and cannot be used"
             )
 
-    def _get_model_paths(self, model_name: str, extension: str) -> Tuple[Path, Path]:
+    def _get_model_paths(self, model_name: str, extension: str) -> tuple[Path, Path]:
         safe_symbol = self.symbol.lower().replace("/", "").replace("\\", "")
         model_suffix = f"{safe_symbol}_{self.timeframe}"
         model_file = self.model_path / f"{model_name}_{model_suffix}.{extension}"
@@ -140,7 +135,7 @@ class LSTMModel(BaseModel):
         self.units = max(32, units // (2 if timeframe in ["1w", "1M"] else 1))
         self.lr = lr
         self.batch_size = 16 if timeframe in ["1w", "1M"] else 32
-        self.input_shape: Optional[Tuple[int, int]] = None
+        self.input_shape: tuple[int, int] | None = None
 
     def _create_model(self):
         self._check_if_closed()
@@ -294,7 +289,7 @@ class LSTMModel(BaseModel):
             self.is_trained = False
             return False
 
-    def predict(self, data: pd.DataFrame) -> Optional[Tuple[np.ndarray, float]]:
+    def predict(self, data: pd.DataFrame) -> tuple[np.ndarray, float] | None:
         self._check_if_closed()
         if not self.model or not self.is_trained:
             self.logger.debug(
@@ -546,7 +541,7 @@ class XGBoostModel(BaseModel):
             self.is_trained = False
             return False
 
-    def predict(self, data: pd.DataFrame) -> Optional[Tuple[np.ndarray, float]]:
+    def predict(self, data: pd.DataFrame) -> tuple[np.ndarray, float] | None:
         self._check_if_closed()
         if not self.is_trained or self.model is None:
             self.logger.debug(

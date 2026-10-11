@@ -1,7 +1,6 @@
-﻿from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
-from common.core import Order, OrderStatus, Position, PositionSide
+﻿from dataclasses import dataclass
+
+from common.core import Order, Position, PositionSide
 
 
 @dataclass
@@ -18,11 +17,11 @@ class PortfolioManager:
     def __init__(self, initial_cash: float = 10000.0):
         self.initial_cash = float(initial_cash)
         self.cash = float(initial_cash)
-        self.positions: Dict[str, Position] = {}
+        self.positions: dict[str, Position] = {}
         self.realized_pnl = 0.0
-        self.orders: Dict[str, Order] = {}
+        self.orders: dict[str, Order] = {}
 
-    def equity(self, prices: Dict[str, float]) -> float:
+    def equity(self, prices: dict[str, float]) -> float:
         total = self.cash
         for position in self.positions.values():
             price = prices.get(position.symbol, position.entry_price)
@@ -32,7 +31,7 @@ class PortfolioManager:
                 total += position.quantity * (2 * position.entry_price - price)
         return float(total)
 
-    def exposure_pct(self, prices: Dict[str, float]) -> float:
+    def exposure_pct(self, prices: dict[str, float]) -> float:
         equity = self.equity(prices)
         if equity <= 0:
             return 0.0
@@ -42,7 +41,7 @@ class PortfolioManager:
             notional += abs(position.quantity * price)
         return notional / equity * 100.0
 
-    def unrealized_pnl(self, prices: Dict[str, float]) -> float:
+    def unrealized_pnl(self, prices: dict[str, float]) -> float:
         total = 0.0
         for position in self.positions.values():
             price = prices.get(position.symbol, position.entry_price)
@@ -69,14 +68,14 @@ class PortfolioManager:
         self.realized_pnl += pnl - fee
         return float(pnl - fee)
 
-    def portfolio_heat(self, prices: Dict[str, float]) -> float:
+    def portfolio_heat(self, prices: dict[str, float]) -> float:
         equity = self.equity(prices)
         if equity <= 0:
             return 0.0
         total_risk = sum(getattr(p, "risk_amount", 0.0) or 0.0 for p in self.positions.values())
         return total_risk / equity * 100.0
 
-    def snapshot(self, prices: Dict[str, float]) -> PortfolioSnapshot:
+    def snapshot(self, prices: dict[str, float]) -> PortfolioSnapshot:
         equity = self.equity(prices)
         return PortfolioSnapshot(
             equity=equity,
@@ -87,5 +86,5 @@ class PortfolioManager:
             realized_pnl=self.realized_pnl,
         )
 
-    def positions_by_symbol(self, symbol: str) -> List[Position]:
+    def positions_by_symbol(self, symbol: str) -> list[Position]:
         return [p for p in self.positions.values() if p.symbol == symbol]

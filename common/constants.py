@@ -1,5 +1,6 @@
 import os
 from enum import Enum
+
 from config.logger import logger
 
 TIME_FRAMES = [
@@ -91,7 +92,7 @@ def load_symbols():
         if not os.path.exists(path):
             logger.error("symbols.txt file not found")
             return []
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(path, encoding='utf-8', errors='ignore') as f:
             lines = [line.rstrip('\n\r') for line in f]
         seen = set()
         symbols = []

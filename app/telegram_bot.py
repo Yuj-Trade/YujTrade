@@ -1,27 +1,25 @@
 import asyncio
 from datetime import datetime
-import os
-from typing import List
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
-    CallbackQueryHandler,
     MessageHandler,
     filters,
 )
 from telegram.request import HTTPXRequest
 
-from utils.background_manager import BackgroundTaskManager
-from config.settings import ConfigManager
-from common.core import TradingSignal
 from common.constants import LONG_TERM_CONFIG
+from common.core import TradingSignal
 from config.logger import logger
+from config.settings import ConfigManager
 from services.trading_service import TradingService
 from trading.risk_manager import build_risk_config
+from utils.background_manager import BackgroundTaskManager
 
 
 # تعریف واحد Full Analysis (قاعده ۱۶): همان focus_timeframes سرویس.
@@ -358,7 +356,7 @@ class TelegramBotHandler:
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
 
-    def format_signal_message(self, signal: TradingSignal) -> List[str]:
+    def format_signal_message(self, signal: TradingSignal) -> list[str]:
         messages = []
 
         signal_type_str = signal.signal_type.value.upper()
@@ -367,10 +365,10 @@ class TelegramBotHandler:
         symbol = escape_markdown_v2(signal.symbol)
         timeframe = escape_markdown_v2(signal.timeframe)
 
-        header = f"*═══════════════════════*\n"
+        header = "*═══════════════════════*\n"
         header += f"*{signal_type} SIGNAL*\n"
         header += f"*{symbol} • {timeframe}*\n"
-        header += f"*═══════════════════════*"
+        header += "*═══════════════════════*"
 
         confidence_score_str = escape_markdown_v2(f"{signal.confidence_score:.2f}")
         entry_price_str = escape_markdown_v2(f"{signal.entry_price:.8f}")
@@ -601,9 +599,9 @@ class TelegramBotHandler:
         messages.append(reasons_text)
 
         footer = (
-            f"\n*═══════════════════════*\n"
-            f"🤖 *Powered by AI Trading Bot*\n"
-            f"⚠️ *Risk Warning:* Trading involves risk\\. Always use proper risk management\\."
+            "\n*═══════════════════════*\n"
+            "🤖 *Powered by AI Trading Bot*\n"
+            "⚠️ *Risk Warning:* Trading involves risk\\. Always use proper risk management\\."
         )
         messages.append(footer)
 

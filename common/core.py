@@ -1,7 +1,7 @@
 ﻿from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
 class OrderSide(Enum):
@@ -38,16 +38,16 @@ class Order:
     side: OrderSide
     order_type: OrderType
     quantity: float
-    price: Optional[float] = None
-    stop_price: Optional[float] = None
+    price: float | None = None
+    stop_price: float | None = None
     status: OrderStatus = OrderStatus.PENDING
     filled_quantity: float = 0.0
     average_fill_price: float = 0.0
     fee_paid: float = 0.0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    signal_id: Optional[str] = None
-    timeframe: Optional[str] = None
+    signal_id: str | None = None
+    timeframe: str | None = None
     paper: bool = True
     notes: str = ""
 
@@ -62,8 +62,8 @@ class Position:
     stop_loss: float
     take_profit: float
     opened_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    signal_id: Optional[str] = None
-    timeframe: Optional[str] = None
+    signal_id: str | None = None
+    timeframe: str | None = None
     leverage: float = 1.0
     risk_amount: float = 0.0
     fees_paid: float = 0.0
@@ -76,7 +76,7 @@ class RiskDecision:
     risk_amount: float = 0.0
     leverage: float = 1.0
     reason: str = ""
-    checks: Dict[str, Any] = field(default_factory=dict)
+    checks: dict[str, Any] = field(default_factory=dict)
 
 
 
@@ -122,51 +122,51 @@ class FundamentalAnalysis:
 
 @dataclass
 class OnChainAnalysis:
-    mvrv: Optional[float] = None
-    sopr: Optional[float] = None
-    active_addresses: Optional[int] = None
-    realized_cap: Optional[float] = None
+    mvrv: float | None = None
+    sopr: float | None = None
+    active_addresses: int | None = None
+    realized_cap: float | None = None
 
 
 @dataclass
 class OrderBook:
-    bids: List[Tuple[float, float]] = field(default_factory=list)
-    asks: List[Tuple[float, float]] = field(default_factory=list)
-    bid_ask_spread: Optional[float] = None
-    total_bid_volume: Optional[float] = None
-    total_ask_volume: Optional[float] = None
+    bids: list[tuple[float, float]] = field(default_factory=list)
+    asks: list[tuple[float, float]] = field(default_factory=list)
+    bid_ask_spread: float | None = None
+    total_bid_volume: float | None = None
+    total_ask_volume: float | None = None
 
 
 @dataclass
 class BinanceFuturesData:
-    top_trader_long_short_ratio_accounts: Optional[float] = None
-    top_trader_long_short_ratio_positions: Optional[float] = None
-    liquidation_orders: List[Dict[str, Any]] = field(default_factory=list)
-    mark_price: Optional[float] = None
+    top_trader_long_short_ratio_accounts: float | None = None
+    top_trader_long_short_ratio_positions: float | None = None
+    liquidation_orders: list[dict[str, Any]] = field(default_factory=list)
+    mark_price: float | None = None
 
 
 @dataclass
 class DerivativesAnalysis:
-    open_interest: Optional[float] = None
-    funding_rate: Optional[float] = None
-    taker_long_short_ratio: Optional[float] = None
-    coingecko_derivatives: List[Dict[str, Any]] = field(default_factory=list)
-    binance_futures_data: Optional[BinanceFuturesData] = None
-    cumulative_funding_rate: Optional[float] = None
+    open_interest: float | None = None
+    funding_rate: float | None = None
+    taker_long_short_ratio: float | None = None
+    coingecko_derivatives: list[dict[str, Any]] = field(default_factory=list)
+    binance_futures_data: BinanceFuturesData | None = None
+    cumulative_funding_rate: float | None = None
 
 
 @dataclass
 class MacroEconomicData:
-    cpi: Optional[float] = None
-    fed_rate: Optional[float] = None
-    treasury_yield_10y: Optional[float] = None
-    gdp: Optional[float] = None
-    unemployment: Optional[float] = None
+    cpi: float | None = None
+    fed_rate: float | None = None
+    treasury_yield_10y: float | None = None
+    gdp: float | None = None
+    unemployment: float | None = None
 
 
 @dataclass
 class TrendingData:
-    coingecko_trending: List[str] = field(default_factory=list)
+    coingecko_trending: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -175,17 +175,17 @@ class MarketAnalysis:
     trend_strength: TrendStrength
     volatility: float
     volume_trend: str
-    support_levels: List[float]
-    resistance_levels: List[float]
+    support_levels: list[float]
+    resistance_levels: list[float]
     momentum_score: float
     market_condition: MarketCondition
     trend_acceleration: float
     volume_confirmation: bool
-    hurst_exponent: Optional[float] = None
-    volume_trend_score: Optional[float] = None
-    volume_ratio: Optional[float] = None
-    adx: Optional[float] = None
-    candle_patterns: List[str] = field(default_factory=list)
+    hurst_exponent: float | None = None
+    volume_trend_score: float | None = None
+    volume_ratio: float | None = None
+    adx: float | None = None
+    candle_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -210,23 +210,23 @@ class TradingSignal:
     timestamp: datetime
     timeframe: str
     confidence_score: float
-    reasons: List[str]
+    reasons: list[str]
     risk_reward_ratio: float
     predicted_profit: float
-    volume_analysis: Dict[str, float]
-    market_context: Dict[str, Any]
-    dynamic_levels: Dict[str, float]
-    fundamental_analysis: Optional[FundamentalAnalysis] = None
-    on_chain_analysis: Optional[OnChainAnalysis] = None
-    derivatives_analysis: Optional[DerivativesAnalysis] = None
-    order_book: Optional[OrderBook] = None
-    macro_data: Optional[MacroEconomicData] = None
-    trending_data: Optional[TrendingData] = None
-    market_indices: Optional[Dict[str, Any]] = None
-    ml_confidence: Optional[float] = None
-    threshold_used: Optional[float] = None
-    threshold_regime: Optional[str] = None
-    expiry_time: Optional[datetime] = None
-    position_size: Optional[float] = None
-    data_collection_timestamp: Optional[datetime] = None
-    analysis_timestamp: Optional[datetime] = None
+    volume_analysis: dict[str, float]
+    market_context: dict[str, Any]
+    dynamic_levels: dict[str, float]
+    fundamental_analysis: FundamentalAnalysis | None = None
+    on_chain_analysis: OnChainAnalysis | None = None
+    derivatives_analysis: DerivativesAnalysis | None = None
+    order_book: OrderBook | None = None
+    macro_data: MacroEconomicData | None = None
+    trending_data: TrendingData | None = None
+    market_indices: dict[str, Any] | None = None
+    ml_confidence: float | None = None
+    threshold_used: float | None = None
+    threshold_regime: str | None = None
+    expiry_time: datetime | None = None
+    position_size: float | None = None
+    data_collection_timestamp: datetime | None = None
+    analysis_timestamp: datetime | None = None

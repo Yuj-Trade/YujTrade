@@ -1,8 +1,9 @@
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime, timezone, timedelta
+from typing import Any
+
 import numpy as np
 
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
@@ -21,12 +22,12 @@ class SignalTracker:
         self.history = self._load_history()
         self._lock = asyncio.Lock()
 
-    def _load_history(self) -> Dict[str, Any]:
+    def _load_history(self) -> dict[str, Any]:
         if self.storage_path.exists():
             try:
-                with open(self.storage_path, "r") as f:
+                with open(self.storage_path) as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 return {}
         return {}
 
@@ -38,11 +39,11 @@ class SignalTracker:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._save_history_sync)
 
-    async def record(self, signal_id: str, outcome: Optional[bool], details: Dict[str, Any]):
+    async def record(self, signal_id: str, outcome: bool | None, details: dict[str, Any]):
         async with self._lock:
             await self._record_locked(signal_id, outcome, details)
 
-    async def _record_locked(self, signal_id: str, outcome: Optional[bool], details: Dict[str, Any]):
+    async def _record_locked(self, signal_id: str, outcome: bool | None, details: dict[str, Any]):
         """Write the outcome and persist it. The caller must already hold
         self._lock — asyncio.Lock is not reentrant, so resolve must route
         through this helper instead of calling record under the lock."""
@@ -68,7 +69,7 @@ class SignalTracker:
             self.history[signal_id] = {"outcome": outcome, "details": details}
         await self._save_history()
 
-    async def resolve(self, signal_id: str, outcome: bool, details: Dict[str, Any] = None):
+    async def resolve(self, signal_id: str, outcome: bool, details: dict[str, Any] = None):
         async with self._lock:
             entry = self.history.get(signal_id, {})
             merged = dict(entry.get("details", {}))
@@ -77,8 +78,8 @@ class SignalTracker:
             await self._record_locked(signal_id, outcome, merged)
 
     async def get_pending_expired(
-        self, now: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+        self, now: datetime | None = None
+    ) -> list[dict[str, Any]]:
         """Snapshot of pending signals whose per-timeframe expiry window has
         passed (SIGNAL_EXPIRY_BY_TIMEFRAME). The lock is taken so the snapshot
         cannot race with concurrent record/resolve calls; callers use it for
@@ -87,7 +88,7 @@ class SignalTracker:
         # Production. ساعت انقضا از SIGNAL_EXPIRY_BY_TIMEFRAME (منبع واحد).
         now = now or datetime.now(timezone.utc)
         async with self._lock:
-            expired: List[Dict[str, Any]] = []
+            expired: list[dict[str, Any]] = []
             for sid, data in self.history.items():
                 if data.get("outcome") is not None:
                     continue
@@ -110,13 +111,13 @@ class SignalTracker:
 
     @staticmethod
     def _extract_created_at(
-        signal_id: str, details: Dict[str, Any]
-    ) -> Optional[datetime]:
+        signal_id: str, details: dict[str, Any]
+    ) -> datetime | None:
         """Creation time from details, falling back to the timestamp embedded
         in the signal id (third '|'-separated segment). Naive datetimes are
         treated as UTC."""
         raw = details.get("created_at")
-        created: Optional[datetime] = None
+        created: datetime | None = None
         if isinstance(raw, datetime):
             created = raw
         elif isinstance(raw, str):
@@ -136,7 +137,7 @@ class SignalTracker:
             created = created.replace(tzinfo=timezone.utc)
         return created
 
-    def get_performance_summary(self) -> Dict[str, float]:
+    def get_performance_summary(self) -> dict[str, float]:
         resolved = {sid: data for sid, data in self.history.items() if data.get("outcome") is True or data.get("outcome") is False}
         total_signals = len(resolved)
         if total_signals == 0:
@@ -152,7 +153,7 @@ class AdaptiveThresholdManager:
     # threshold_regime همچنان "vol|hurst" می‌ماند (قرارداد بک‌تست)؛ تبدیل
     # در نقطه مصرف (partition("|")) انجام می‌شود، نه روی کلید داخلی.
     def __init__(self):
-        self.performance_history: Dict[tuple, List[Dict]] = {}
+        self.performance_history: dict[tuple, list[dict]] = {}
         self.min_samples = 50
 
     @staticmethod
@@ -195,7 +196,7 @@ class AdaptiveThresholdManager:
 
 class MLConfidenceCalibrator:
     def __init__(self):
-        self.calibration_data: Dict[str, List[Tuple[float, bool, float]]] = {}
+        self.calibration_data: dict[str, list[tuple[float, bool, float]]] = {}
         self.calibration_bins = 10
 
     def add_prediction(self, model_name: str, confidence: float, actual_result: bool, timestamp: datetime = None):

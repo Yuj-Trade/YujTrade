@@ -1,11 +1,8 @@
 import json
-from typing import Dict, List, Optional
 
-from config.logger import logger
+from common.cache import CacheCategory, CacheKeyBuilder
 from common.utils import RateLimiter
-from common.cache import CacheKeyBuilder, CacheCategory
 from data.sources.base_fetcher import BaseFetcher
-
 
 defillama_rate_limiter = RateLimiter(max_requests=30, time_window=60)
 
@@ -16,12 +13,12 @@ class DeFiLlamaFetcher(BaseFetcher):
         self.base_url = "https://api.llama.fi"
         self.source_name = "defillama"
 
-    async def get_total_tvl_for_chains(self) -> List:
+    async def get_total_tvl_for_chains(self) -> list:
         url = f"{self.base_url}/tvl/chains"
         data = await self._fetch_json(url, limiter=defillama_rate_limiter)
         return data if isinstance(data, list) else []
 
-    async def get_protocol_chart(self, protocol: str) -> Optional[Dict]:
+    async def get_protocol_chart(self, protocol: str) -> dict | None:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.GENERIC, self.source_name, ["protocol_chart", protocol]
         )
@@ -39,7 +36,7 @@ class DeFiLlamaFetcher(BaseFetcher):
             await self.redis.set(cache_key, json.dumps(data), ex=3600)
         return data
 
-    async def get_defi_protocols(self) -> List[Dict]:
+    async def get_defi_protocols(self) -> list[dict]:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.GENERIC, self.source_name, ["protocols"]
         )
@@ -57,7 +54,7 @@ class DeFiLlamaFetcher(BaseFetcher):
             await self.redis.set(cache_key, json.dumps(data), ex=3600)
         return data if data else []
 
-    async def get_chain_tvl(self, chain: str) -> Optional[Dict]:
+    async def get_chain_tvl(self, chain: str) -> dict | None:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.METRICS, self.source_name, ["chain_tvl", chain]
         )
@@ -75,7 +72,7 @@ class DeFiLlamaFetcher(BaseFetcher):
             await self.redis.set(cache_key, json.dumps(data), ex=3600)
         return data
 
-    async def get_stablecoins(self) -> Optional[Dict]:
+    async def get_stablecoins(self) -> dict | None:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.GENERIC, self.source_name, ["stablecoins"]
         )
@@ -93,7 +90,7 @@ class DeFiLlamaFetcher(BaseFetcher):
             await self.redis.set(cache_key, json.dumps(data), ex=3600)
         return data
 
-    async def get_yields(self) -> List[Dict]:
+    async def get_yields(self) -> list[dict]:
         cache_key = CacheKeyBuilder.build(
             CacheCategory.YIELD, self.source_name, ["all"]
         )

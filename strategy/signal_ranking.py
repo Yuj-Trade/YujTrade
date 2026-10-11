@@ -1,4 +1,3 @@
-from typing import List
 
 from common.constants import LONG_TERM_CONFIG
 from common.core import SignalType, TradingSignal
@@ -44,6 +43,6 @@ class SignalRanking:
         return base_score
 
     @staticmethod
-    def rank_signals(signals: List[TradingSignal]) -> List[TradingSignal]:
+    def rank_signals(signals: list[TradingSignal]) -> list[TradingSignal]:
         return sorted(signals, key=SignalRanking.calculate_signal_score, reverse=True)
 

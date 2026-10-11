@@ -1,16 +1,17 @@
-from typing import Optional
+
 import aiohttp
 import redis.asyncio as redis
-from config.logger import logger
-from utils.circuit_breaker import CircuitBreaker
+
 from common.exceptions import (
     APIRateLimitError,
+    InvalidSymbolError,
     NetworkError,
     ObjectClosedError,
-    InvalidSymbolError,
 )
 from common.utils import RateLimiter, async_retry
+from config.logger import logger
 from config.settings import ConfigManager
+from utils.circuit_breaker import CircuitBreaker
 
 
 class BaseFetcher:
@@ -19,9 +20,9 @@ class BaseFetcher:
     MarketDataProvider است و هیچ Fetcher آن را دوباره کش نمی‌کند."""
     def __init__(
         self,
-        redis_client: Optional[redis.Redis] = None,
-        session: Optional[aiohttp.ClientSession] = None,
-        config_manager: Optional[ConfigManager] = None,
+        redis_client: redis.Redis | None = None,
+        session: aiohttp.ClientSession | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         self.redis = redis_client
         self.session = session
@@ -66,7 +67,7 @@ class BaseFetcher:
         url,
         params=None,
         headers=None,
-        limiter: Optional[RateLimiter] = None,
+        limiter: RateLimiter | None = None,
         endpoint_name: str = "default",
     ):
         self._check_if_closed()

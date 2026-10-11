@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
-import talib
-
 import pandas_ta as ta
+import talib
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError

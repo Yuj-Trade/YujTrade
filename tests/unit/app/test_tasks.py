@@ -17,11 +17,9 @@ import pytest
 
 from app.tasks import (
     TaskServiceContainer,
-    deliver_task_signals,
     run_full_analysis_task,
     run_quick_scan_task,
 )
-from app.telegram_bot import TelegramBotHandler
 
 ROOT = Path(__file__).resolve().parents[3]
 

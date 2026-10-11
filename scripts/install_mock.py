@@ -1,7 +1,7 @@
-import sys
-import pandas as pd
-import numpy as np
 from types import ModuleType
+
+import numpy as np
+import pandas as pd
 
 mock_pandas_ta = ModuleType("pandas_ta")
 mock_momentum = ModuleType("pandas_ta.momentum")

@@ -14,19 +14,17 @@ Gap 37: SignalTracker._save_history writes entire file sync (json.dump, no lock,
 import asyncio
 import json
 import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from strategy.signal_tracker import (
-    SignalTracker,
     AdaptiveThresholdManager,
     MLConfidenceCalibrator,
+    SignalTracker,
     make_signal_id,
 )
-from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
 
 
 class TestSignalTrackerGap31:
@@ -208,7 +206,7 @@ class TestSignalTrackerGap37:
         await asyncio.sleep(0.1)
 
         # Reload from file and verify count
-        with open(tracker.storage_path, 'r') as f:
+        with open(tracker.storage_path) as f:
             history = json.load(f)
 
         assert len(history) == num_signals, (
@@ -263,7 +261,7 @@ class TestSignalTrackerGap37:
         await asyncio.gather(do_record(), do_resolve())
 
         # One should win, but neither should crash
-        with open(tracker.storage_path, 'r') as f:
+        with open(tracker.storage_path) as f:
             history = json.load(f)
 
         assert signal_id in history
@@ -426,7 +424,7 @@ class TestSignalTrackerGap40:
         await tracker.resolve(signal_id, False, {"resolved_price": 49000})
         await tracker.record(signal_id, None, {"extra": "info"})
 
-        with open(tracker.storage_path, 'r') as f:
+        with open(tracker.storage_path) as f:
             history = json.load(f)
 
         assert history[signal_id]["outcome"] is False
@@ -499,7 +497,7 @@ class TestSignalTrackerPerformanceSummary:
         await tracker.record(signal_id, None, {"original": "data", "entry": 50000})
         await tracker.resolve(signal_id, True, {"exit": 51000})
 
-        with open(tracker.storage_path, 'r') as f:
+        with open(tracker.storage_path) as f:
             history = json.load(f)
 
         details = history[signal_id]["details"]

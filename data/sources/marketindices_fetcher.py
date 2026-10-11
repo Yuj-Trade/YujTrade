@@ -1,30 +1,29 @@
 import asyncio
 import json
-from typing import Dict, Optional
 
 import aiohttp
 import redis
 
+from common.cache import CacheCategory, CacheKeyBuilder
 from config.logger import logger
-from common.cache import CacheKeyBuilder, CacheCategory
 from config.settings import ConfigManager
 from data.sources.alphavantage_fetcher import AlphaVantageFetcher
+from data.sources.base_fetcher import BaseFetcher
 from data.sources.coingecko_fetcher import CoinGeckoFetcher
 from data.sources.defillama_fetcher import DeFiLlamaFetcher
 from data.sources.yfinance_fetcher import YFinanceFetcher
-from data.sources.base_fetcher import BaseFetcher
 
 
 class MarketIndicesFetcher(BaseFetcher):
     def __init__(
         self,
-        coingecko_fetcher: Optional[CoinGeckoFetcher] = None,
-        defillama_fetcher: Optional[DeFiLlamaFetcher] = None,
-        yfinance_fetcher: Optional[YFinanceFetcher] = None,
-        alphavantage_fetcher: Optional[AlphaVantageFetcher] = None,
-        redis_client: Optional[redis.Redis] = None,
-        session: Optional[aiohttp.ClientSession] = None,
-        config_manager: Optional[ConfigManager] = None,
+        coingecko_fetcher: CoinGeckoFetcher | None = None,
+        defillama_fetcher: DeFiLlamaFetcher | None = None,
+        yfinance_fetcher: YFinanceFetcher | None = None,
+        alphavantage_fetcher: AlphaVantageFetcher | None = None,
+        redis_client: redis.Redis | None = None,
+        session: aiohttp.ClientSession | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         super().__init__(
             redis_client=redis_client, session=session, config_manager=config_manager
@@ -56,7 +55,7 @@ class MarketIndicesFetcher(BaseFetcher):
         # Session is also managed externally.
         logger.debug("MarketIndicesFetcher instance closed.")
 
-    async def get_crypto_indices(self) -> Dict[str, Optional[float]]:
+    async def get_crypto_indices(self) -> dict[str, float | None]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.INDICES, self.source_name, ["crypto"]
@@ -132,7 +131,7 @@ class MarketIndicesFetcher(BaseFetcher):
                 logger.warning(f"Redis set failed for {cache_key}: {e}")
         return indices
 
-    async def get_all_indices(self) -> Dict[str, Optional[float]]:
+    async def get_all_indices(self) -> dict[str, float | None]:
         self._check_if_closed()
         tasks = {
             "crypto": self.get_crypto_indices(),
@@ -145,7 +144,7 @@ class MarketIndicesFetcher(BaseFetcher):
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         all_indices = {}
-        for key, result in zip(tasks.keys(), results):
+        for key, result in zip(tasks.keys(), results, strict=False):
             if not isinstance(result, Exception) and result:
                 all_indices.update(result)
 

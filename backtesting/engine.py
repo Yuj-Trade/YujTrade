@@ -2,10 +2,9 @@ import asyncio
 
 import backtrader as bt
 import pandas as pd
-from typing import Dict, List, Optional
 
-from config.logger import logger
 from common.core import TradingSignal
+from config.logger import logger
 from strategy.signal_tracker import make_signal_id
 
 
@@ -109,7 +108,7 @@ class BacktraderStrategy(bt.Strategy):
                 self.log(f"CLOSE (BUY) CREATE, {self.datas[0].close[0]:.2f}")
                 self.order = self.close()
 
-    def _capture_signal(self, current_dt, signal_row) -> Dict:
+    def _capture_signal(self, current_dt, signal_row) -> dict:
         try:
             confidence = float(signal_row.get("confidence_score", 0.0) or 0.0)
         except (TypeError, ValueError):
@@ -138,7 +137,7 @@ class BacktestingEngine:
         self.trading_service = trading_service
         self.signal_tracker = trading_service.signal_tracker
         self.full_data = None
-        self.pending_outcomes: List[Dict] = []
+        self.pending_outcomes: list[dict] = []
         self.symbol = None
         self.timeframe = None
 

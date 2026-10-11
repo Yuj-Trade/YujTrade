@@ -1,13 +1,12 @@
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
 from common.constants import AnalysisComponent
 from common.core import (
+    IndicatorResult,
     MarketAnalysis,
     TrendDirection,
-    DerivativesAnalysis,
-    IndicatorResult,
 )
 from config.logger import logger
 from config.settings import ConfigManager
@@ -23,9 +22,9 @@ class AnalysisScorer:
 
     def score_technical_results(
         self,
-        processed_results: Dict[str, Any],
+        processed_results: dict[str, Any],
         market_context: MarketAnalysis,
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
     ) -> float:
         """
         Calculates a score based on technical indicators.
@@ -118,7 +117,7 @@ class AnalysisScorer:
 
         return base_score
 
-    def score_market_context(self, context: MarketAnalysis) -> Tuple[float, List[str]]:
+    def score_market_context(self, context: MarketAnalysis) -> tuple[float, list[str]]:
         """
         Scores the overall market context.
         قرارداد MarketAnalysis (قاعده ۸): trend/trend_strength/market_condition/
@@ -253,8 +252,8 @@ class AnalysisScorer:
         return value
 
     def score_external_data(
-        self, data: Dict[str, Any], market_context: MarketAnalysis, symbol: str
-    ) -> Tuple[float, List[str]]:
+        self, data: dict[str, Any], market_context: MarketAnalysis, symbol: str
+    ) -> tuple[float, list[str]]:
         """
         زنجیره واحد (قاعده ۳):
             MarketDataProvider (DerivativesAnalysis و...) → SignalGenerator
@@ -391,7 +390,7 @@ class AnalysisScorer:
         # 7) Trending (CoinGecko)
         try:
             trending = self._unwrap(data.get("trending"))
-            coins: List[str] = []
+            coins: list[str] = []
             if trending is not None:
                 if isinstance(trending, dict):
                     coins = trending.get("coingecko_trending", []) or []
@@ -460,8 +459,8 @@ class AnalysisScorer:
         return 0.0
 
     def score_ml_predictions(
-        self, predictions: Dict[str, Dict[str, float]], current_price: float
-    ) -> Tuple[float, List[str], float]:
+        self, predictions: dict[str, dict[str, float]], current_price: float
+    ) -> tuple[float, list[str], float]:
         """
         Scores predictions from machine learning models.
         """
@@ -517,10 +516,10 @@ class AnalysisScorer:
 
     def calculate_combined_score(
         self,
-        scores: Dict[AnalysisComponent, float],
-        reasons: List[str],
+        scores: dict[AnalysisComponent, float],
+        reasons: list[str],
         timeframe: str,
-    ) -> Tuple[float, List[str]]:
+    ) -> tuple[float, list[str]]:
         """
         Combines scores from all analysis parts into a single final score.
         """

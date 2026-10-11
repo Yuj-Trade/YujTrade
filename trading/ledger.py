@@ -1,8 +1,9 @@
-import sqlite3
 import json
+import sqlite3
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from config.logger import logger
 

@@ -1,23 +1,23 @@
 import asyncio
 import os
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, CancelledError
-from typing import Any, Dict, Optional, Type, Protocol, Awaitable
+from typing import Any, Optional, Protocol
 
 import numpy as np
 import pandas as pd
 import redis
 
-from config.logger import logger
 from common.exceptions import ObjectClosedError
-from modeling.models import BaseModel, LSTMModel, XGBoostModel
+from config.logger import logger
 from modeling.artifacts import ArtifactRegistry
+from modeling.models import BaseModel, LSTMModel, XGBoostModel
 
 
 class ModelDataProvider(Protocol):
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
-    ) -> Optional[pd.DataFrame]: ...
+    ) -> pd.DataFrame | None: ...
 
 
 class ModelManager:
@@ -25,7 +25,7 @@ class ModelManager:
         self,
         data_provider: ModelDataProvider,
         model_path: str = "models",
-        redis_client: Optional[redis.Redis] = None,
+        redis_client: redis.Redis | None = None,
         auto_train_on_predict: bool = False,
     ):
         self.model_path = Path(model_path)
@@ -35,7 +35,7 @@ class ModelManager:
         # هنگام Prediction)؛ False = Prediction فقط از lifecycle موجود
         # تبعیت می‌کند و مالک آموزش مسیر صریح است.
         self.auto_train_on_predict = auto_train_on_predict
-        self._cache: Dict[str, "BaseModel"] = {}
+        self._cache: dict[str, BaseModel] = {}
         self._lock = asyncio.Lock()
         self._is_closed = False
         self.logger = logger
@@ -77,7 +77,7 @@ class ModelManager:
         executor = await self._get_executor(executor_type)
         return await loop.run_in_executor(executor, lambda: func(*args, **kwargs))
 
-    def _get_model_class(self, model_type: str) -> Type["BaseModel"]:
+    def _get_model_class(self, model_type: str) -> type["BaseModel"]:
         if model_type == "lstm":
             return LSTMModel
         if model_type == "xgboost":
@@ -296,7 +296,7 @@ class ModelManager:
 
     async def predict_with_confidence(
         self, model_type: str, symbol: str, timeframe: str
-    ) -> Optional[Dict[str, float]]:
+    ) -> dict[str, float] | None:
         """قرارداد قاعده ۳۰: None یعنی «مدل در دسترس نیست» (آموزش‌ندیده/بی‌داده/
         پیش‌بینی نامعتبر) و مؤلفه ML در Scorer به صفر degrade می‌شود — نه شکست
         تحلیل. خطاهای غیرمنتظره منتشر می‌شوند (به‌جز لغو task)."""

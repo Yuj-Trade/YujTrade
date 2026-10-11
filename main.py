@@ -3,11 +3,11 @@ import signal
 import sys
 from datetime import datetime, timezone
 
-from services.trading_service import TradingService
-from config.settings import SecretsManager
-from config.logger import logger
-from utils.resource_manager import ResourceManager
 from app.telegram_bot import TelegramBotHandler
+from config.logger import logger
+from config.settings import SecretsManager
+from services.trading_service import TradingService
+from utils.resource_manager import ResourceManager
 from utils.scheduler_store import SchedulerStore
 
 

@@ -1,31 +1,30 @@
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any
 
-import numpy as np
 import pandas as pd
 
-from common.core import TradingSignal, SignalType
-from common.exceptions import InsufficientDataError
-from strategy.signal_tracker import AdaptiveThresholdManager
-from data.data_provider import MarketDataProvider
-from data.data_validator import DataQualityChecker
-from features.feature_engineering import FeatureEngineer
 from analysis.market_analyzer import MarketConditionAnalyzer
 from analysis.scoring import AnalysisScorer
-from modeling.model_manager import ModelManager
-from config.settings import ConfigManager
-from config.logger import logger
-from common.utils import (
-    calculate_risk_reward_ratio,
-    calculate_dynamic_levels,
-    detect_market_regime,
-)
-from common.constants import LONG_TERM_CONFIG, AnalysisComponent
 from application.decide import decide
 from application.snapshot import build_snapshot
-from domain.types import Candle, GateConfig, Reject
+from common.constants import LONG_TERM_CONFIG, AnalysisComponent
+from common.core import SignalType, TradingSignal
+from common.exceptions import InsufficientDataError
+from common.utils import (
+    calculate_dynamic_levels,
+    calculate_risk_reward_ratio,
+    detect_market_regime,
+)
+from config.logger import logger
+from config.settings import ConfigManager
+from data.data_provider import MarketDataProvider
+from data.data_validator import DataQualityChecker
 from data.warehouse import IndicatorHistoryWarehouse
+from domain.types import Candle, GateConfig, Reject
+from features.feature_engineering import FeatureEngineer
+from modeling.model_manager import ModelManager
+from strategy.signal_tracker import AdaptiveThresholdManager
 
 
 class SignalGenerator:
@@ -71,7 +70,7 @@ class SignalGenerator:
         data: pd.DataFrame,
         include_external: bool = True,
         include_ml: bool = True,
-    ) -> Optional[TradingSignal]:
+    ) -> TradingSignal | None:
         """قرارداد خطای واحد (قاعده ۳۰):
         - بازگرداندن None یعنی «سیگنالی نیست» (HOLD، رد RR، رد multi-TF ندارد
           — آن در TradingService است): تصمیم سالم تحلیل، نه خطا.
@@ -265,7 +264,7 @@ class SignalGenerator:
 
         return signal
 
-    async def _gather_external_data(self, symbol: str) -> Dict[str, Any]:
+    async def _gather_external_data(self, symbol: str) -> dict[str, Any]:
         tasks = {
             "derivatives": self.data_provider.get_derivatives_data(symbol),
             "fundamental": self.data_provider.get_fundamental_data(symbol),
@@ -281,7 +280,7 @@ class SignalGenerator:
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         external_data = {}
-        for key, result in zip(tasks.keys(), results):
+        for key, result in zip(tasks.keys(), results, strict=False):
             if isinstance(result, Exception):
                 logger.warning(f"Failed to fetch {key} for {symbol}: {result}")
                 external_data[key] = None
@@ -302,7 +301,7 @@ class SignalGenerator:
 
         return external_data
 
-    async def get_ml_predictions(self, symbol: str, timeframe: str) -> Dict[str, Dict]:
+    async def get_ml_predictions(self, symbol: str, timeframe: str) -> dict[str, dict]:
         predictions = {}
         model_types = ["lstm", "xgboost"]
         tasks = [
@@ -327,8 +326,8 @@ class SignalGenerator:
         return SignalType.HOLD
 
     def adjust_weights_by_regime(
-        self, base_weights: Dict[str, float], market_regime: Dict[str, Any]
-    ) -> Dict[str, float]:
+        self, base_weights: dict[str, float], market_regime: dict[str, Any]
+    ) -> dict[str, float]:
         adjusted = base_weights.copy()
 
         if market_regime.get("market_type") == "ranging":

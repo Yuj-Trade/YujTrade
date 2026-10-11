@@ -1,13 +1,12 @@
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 import pandas as pd
 import redis.asyncio as redis
 
-from config.logger import logger
-from utils.circuit_breaker import CircuitBreaker
+from common.cache import CacheKeyBuilder
 from common.core import OrderBook
 from common.exceptions import (
     APIRateLimitError,
@@ -16,9 +15,8 @@ from common.exceptions import (
     NetworkError,
 )
 from common.utils import RateLimiter, async_retry
+from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
-from common.cache import CacheKeyBuilder, CacheCategory
-
 
 binance_rate_limiter = RateLimiter(max_requests=1200, time_window=60)
 
@@ -28,8 +26,8 @@ class BinanceFetcher(BaseFetcher):
 
     def __init__(
         self,
-        redis_client: Optional[redis.Redis] = None,
-        session: Optional[aiohttp.ClientSession] = None,
+        redis_client: redis.Redis | None = None,
+        session: aiohttp.ClientSession | None = None,
         **kwargs,
     ):
         super().__init__(redis_client=redis_client, session=session, **kwargs)
@@ -44,7 +42,7 @@ class BinanceFetcher(BaseFetcher):
         exceptions=(NetworkError, APIRateLimitError),
         ignore_exceptions=(InvalidSymbolError,),
     )
-    async def _fetch(self, url: str, endpoint: str, params: Optional[Dict] = None):
+    async def _fetch(self, url: str, endpoint: str, params: dict | None = None):
         self._check_if_closed()
         full_url = f"{url}/{endpoint}"
         await binance_rate_limiter.wait_if_needed(endpoint)
@@ -92,7 +90,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_historical_ohlc(
         self, symbol: str, timeframe: str, limit: int
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -137,7 +135,7 @@ class BinanceFetcher(BaseFetcher):
             )
             raise DataError(f"Failed to fetch OHLC for {symbol}") from e
 
-    async def get_open_interest(self, symbol: str) -> Optional[float]:
+    async def get_open_interest(self, symbol: str) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -176,7 +174,7 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching open interest from Binance for {symbol}: {e}")
             return None
 
-    async def get_taker_long_short_ratio(self, symbol: str) -> Optional[float]:
+    async def get_taker_long_short_ratio(self, symbol: str) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -221,7 +219,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_top_trader_long_short_ratio_accounts(
         self, symbol: str
-    ) -> Optional[float]:
+    ) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -249,7 +247,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_top_trader_long_short_ratio_positions(
         self, symbol: str
-    ) -> Optional[float]:
+    ) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -275,14 +273,14 @@ class BinanceFetcher(BaseFetcher):
             )
             return None
 
-    async def get_liquidation_orders(self, symbol: str) -> List[Dict]:
+    async def get_liquidation_orders(self, symbol: str) -> list[dict]:
         self._check_if_closed()
         logger.debug(
             f"Skipping get_liquidation_orders for {symbol} as the endpoint is likely deprecated."
         )
         return []
 
-    async def get_order_book_depth(self, symbol: str) -> Optional[OrderBook]:
+    async def get_order_book_depth(self, symbol: str) -> OrderBook | None:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -309,7 +307,7 @@ class BinanceFetcher(BaseFetcher):
             )
             return None
 
-    async def get_mark_price(self, symbol: str) -> Optional[float]:
+    async def get_mark_price(self, symbol: str) -> float | None:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -326,7 +324,7 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching mark price from Binance for {symbol}: {e}")
             return None
 
-    async def get_24h_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_24h_ticker(self, symbol: str) -> dict[str, Any] | None:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -361,7 +359,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_long_short_ratio_history(
         self, symbol: str, period: str = "5m", limit: int = 30
-    ) -> List[Dict]:
+    ) -> list[dict]:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -383,7 +381,7 @@ class BinanceFetcher(BaseFetcher):
 
     async def get_open_interest_history(
         self, symbol: str, period: str = "5m", limit: int = 30
-    ) -> List[Dict]:
+    ) -> list[dict]:
         self._check_if_closed()
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
@@ -401,7 +399,7 @@ class BinanceFetcher(BaseFetcher):
             )
             return []
 
-    async def get_funding_rate(self, symbol: str) -> Optional[float]:
+    async def get_funding_rate(self, symbol: str) -> float | None:
         binance_symbol = symbol.replace("/", "").upper()
         if binance_symbol in self.FUTURES_BLACKLIST:
             return None
@@ -456,10 +454,10 @@ class BinanceFetcher(BaseFetcher):
         self,
         symbol: str,
         interval: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         limit: int = 500,
-    ) -> List:
+    ) -> list:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -476,7 +474,7 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching kline data from Binance for {symbol}: {e}")
             return []
 
-    async def get_ticker_price(self, symbol: str) -> Optional[float]:
+    async def get_ticker_price(self, symbol: str) -> float | None:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -491,7 +489,7 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching ticker price from Binance for {symbol}: {e}")
             return None
 
-    async def get_exchange_info(self, symbol: Optional[str] = None) -> Optional[Dict]:
+    async def get_exchange_info(self, symbol: str | None = None) -> dict | None:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.generic_key(
             self.source_name, "exchange_info", symbol
@@ -519,7 +517,7 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching exchange info from Binance: {e}")
             return None
 
-    async def get_agg_trades(self, symbol: str, limit: int = 500) -> List[Dict]:
+    async def get_agg_trades(self, symbol: str, limit: int = 500) -> list[dict]:
         self._check_if_closed()
         try:
             binance_symbol = symbol.replace("/", "").upper()
@@ -534,7 +532,7 @@ class BinanceFetcher(BaseFetcher):
             )
             return []
 
-    async def get_all_futures_symbols(self) -> List[Dict]:
+    async def get_all_futures_symbols(self) -> list[dict]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.generic_key(self.source_name, "futures_symbols")
         cache_ttl = self.config_manager.get_cache_ttl("generic")

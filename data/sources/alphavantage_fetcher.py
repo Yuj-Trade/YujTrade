@@ -1,12 +1,11 @@
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any
 
-from data.sources.base_fetcher import BaseFetcher
-from common.cache import CacheKeyBuilder, CacheCategory
+from common.cache import CacheKeyBuilder
 from common.utils import RateLimiter
 from config.logger import logger
-
+from data.sources.base_fetcher import BaseFetcher
 
 alpha_vantage_rate_limiter = RateLimiter(max_requests=5, time_window=60)
 
@@ -18,7 +17,7 @@ class AlphaVantageFetcher(BaseFetcher):
         self.base_url = "https://www.alphavantage.co/query"
         self.source_name = "alphavantage"
 
-    async def get_macro_economic_data(self) -> Dict[str, Any]:
+    async def get_macro_economic_data(self) -> dict[str, Any]:
         cache_key = CacheKeyBuilder.macro_key(self.source_name, "all")
         cache_ttl = self.config_manager.get_cache_ttl("macro")
 
@@ -175,7 +174,7 @@ class AlphaVantageFetcher(BaseFetcher):
 
         return macro_data
 
-    async def get_comprehensive_macro_data(self) -> Dict[str, Any]:
+    async def get_comprehensive_macro_data(self) -> dict[str, Any]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.macro_key(self.source_name, "comprehensive")
         cache_ttl = self.config_manager.get_cache_ttl("macro")

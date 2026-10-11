@@ -38,7 +38,7 @@ def run():
     new_env_content = ""
     updated_keys = set()
 
-    with open(env_file, "r") as f:
+    with open(env_file) as f:
         for line in f:
             key_in_line = line.split("=")[0].strip()
             if key_in_line in keys_to_encrypt:

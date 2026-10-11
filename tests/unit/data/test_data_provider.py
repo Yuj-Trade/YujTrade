@@ -12,27 +12,18 @@ Contracts under test:
   returns 0.0 — unlike the orphan calculate_overall_quality_score which propagates.
 """
 
-import asyncio
-import json
-from io import StringIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from data.data_provider import MarketDataProvider
-from data.data_validator import DataQualityChecker
-from common.exceptions import InsufficientDataError, NetworkError, ObjectClosedError
 from common.core import (
     DerivativesAnalysis,
-    FundamentalAnalysis,
-    OnChainAnalysis,
-    OrderBook,
-    MacroEconomicData,
-    TrendingData,
 )
-
+from common.exceptions import InsufficientDataError, NetworkError, ObjectClosedError
+from data.data_provider import MarketDataProvider
+from data.data_validator import DataQualityChecker
 
 # ─── Helpers ───
 

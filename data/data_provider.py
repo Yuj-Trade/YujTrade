@@ -1,42 +1,42 @@
 import asyncio
-from typing import Optional, List, Union, Dict, Any
 from io import StringIO
-import pandas as pd
+from typing import Any
+
 import aiohttp
+import pandas as pd
 
-from data.sources.binance_fetcher import BinanceFetcher
-from data.sources.coindesk_fetcher import CoinDeskFetcher
-from data.sources.marketindices_fetcher import MarketIndicesFetcher
-from data.sources.coingecko_fetcher import CoinGeckoFetcher
-from data.sources.alphavantage_fetcher import AlphaVantageFetcher
-from data.sources.messari_fetcher import MessariFetcher
-from data.sources.news_fetcher import NewsFetcher
-from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
-from data.sources.alternativeme_fetcher import AlternativeMeFetcher
-from data.sources.defillama_fetcher import DeFiLlamaFetcher
-from data.sources.yfinance_fetcher import YFinanceFetcher
-
-from common.exceptions import (
-    InsufficientDataError,
-    NetworkError,
-    DataError,
-    ObjectClosedError,
-)
-from config.logger import logger
-from common.utils import async_retry
-from data.data_validator import DataQualityChecker
 from common.cache import CacheKeyBuilder
-from utils.resource_manager import ResourceManager
-from config.settings import ConfigManager, SecretsManager
 from common.core import (
-    DerivativesAnalysis,
     BinanceFuturesData,
+    DerivativesAnalysis,
     FundamentalAnalysis,
+    MacroEconomicData,
     OnChainAnalysis,
     OrderBook,
-    MacroEconomicData,
     TrendingData,
 )
+from common.exceptions import (
+    DataError,
+    InsufficientDataError,
+    NetworkError,
+    ObjectClosedError,
+)
+from common.utils import async_retry
+from config.logger import logger
+from config.settings import ConfigManager, SecretsManager
+from data.data_validator import DataQualityChecker
+from data.sources.alphavantage_fetcher import AlphaVantageFetcher
+from data.sources.alternativeme_fetcher import AlternativeMeFetcher
+from data.sources.binance_fetcher import BinanceFetcher
+from data.sources.coindesk_fetcher import CoinDeskFetcher
+from data.sources.coingecko_fetcher import CoinGeckoFetcher
+from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
+from data.sources.defillama_fetcher import DeFiLlamaFetcher
+from data.sources.marketindices_fetcher import MarketIndicesFetcher
+from data.sources.messari_fetcher import MessariFetcher
+from data.sources.news_fetcher import NewsFetcher
+from data.sources.yfinance_fetcher import YFinanceFetcher
+from utils.resource_manager import ResourceManager
 
 
 class MarketDataProvider:
@@ -58,20 +58,20 @@ class MarketDataProvider:
         self._is_closed = False
         self.resource_manager = resource_manager
         self.config_manager = config_manager
-        self.redis: Optional[aiohttp.ClientSession] = None
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.redis: aiohttp.ClientSession | None = None
+        self.session: aiohttp.ClientSession | None = None
 
-        self.binance_fetcher: Optional[BinanceFetcher] = None
-        self.coindesk_fetcher: Optional[CoinDeskFetcher] = None
-        self.market_indices_fetcher: Optional[MarketIndicesFetcher] = None
-        self.coingecko_fetcher: Optional[CoinGeckoFetcher] = None
-        self.alphavantage_fetcher: Optional[AlphaVantageFetcher] = None
-        self.messari_fetcher: Optional[MessariFetcher] = None
-        self.news_fetcher: Optional[NewsFetcher] = None
-        self.defillama_fetcher: Optional[DeFiLlamaFetcher] = None
-        self.yfinance_fetcher: Optional[YFinanceFetcher] = None
+        self.binance_fetcher: BinanceFetcher | None = None
+        self.coindesk_fetcher: CoinDeskFetcher | None = None
+        self.market_indices_fetcher: MarketIndicesFetcher | None = None
+        self.coingecko_fetcher: CoinGeckoFetcher | None = None
+        self.alphavantage_fetcher: AlphaVantageFetcher | None = None
+        self.messari_fetcher: MessariFetcher | None = None
+        self.news_fetcher: NewsFetcher | None = None
+        self.defillama_fetcher: DeFiLlamaFetcher | None = None
+        self.yfinance_fetcher: YFinanceFetcher | None = None
 
-        self.fetchers: List[Any] = []
+        self.fetchers: list[Any] = []
 
         self.data_quality_checker = DataQualityChecker()
 
@@ -229,7 +229,7 @@ class MarketDataProvider:
     async def fetch_ohlcv_data(
         self, symbol: str, timeframe: str, limit: int = 1000,
         bypass_cache: bool = False,
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         """نقش Provider در کیفیت داده (قاعده ۲۳): یکپارچگی Source/Data —
         فقط بهترین Source با امتیاز مثبت برگردانده می‌شود، وگرنه
         InsufficientDataError. آمادگی تحلیل (Signal) و نیازهای مدل (Model)
@@ -360,7 +360,7 @@ class MarketDataProvider:
             f"Failed to fetch sufficient OHLCV for {symbol} on {timeframe} from all sources."
         )
 
-    async def get_derivatives_data(self, symbol: str) -> Optional[DerivativesAnalysis]:
+    async def get_derivatives_data(self, symbol: str) -> DerivativesAnalysis | None:
         if not self.binance_fetcher:
             return None
 
@@ -404,7 +404,7 @@ class MarketDataProvider:
             logger.error(f"Error fetching derivatives data for {symbol}: {e}")
             return None
 
-    async def get_fundamental_data(self, symbol: str) -> Optional[FundamentalAnalysis]:
+    async def get_fundamental_data(self, symbol: str) -> FundamentalAnalysis | None:
         if self.coingecko_fetcher:
             try:
                 return await self.coingecko_fetcher.get_fundamental_data(symbol)
@@ -412,7 +412,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching fundamental data for {symbol}: {e}")
         return None
 
-    async def get_onchain_data(self, symbol: str) -> Optional[OnChainAnalysis]:
+    async def get_onchain_data(self, symbol: str) -> OnChainAnalysis | None:
         """داده آن‌چین (MVRV/SOPR/active_addresses) از Messari موجود."""
         if self.messari_fetcher:
             try:
@@ -421,7 +421,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching on-chain data for {symbol}: {e}")
         return None
 
-    async def get_order_book(self, symbol: str) -> Optional[OrderBook]:
+    async def get_order_book(self, symbol: str) -> OrderBook | None:
         if self.binance_fetcher:
             try:
                 return await self.binance_fetcher.get_order_book_depth(symbol)
@@ -429,7 +429,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching order book for {symbol}: {e}")
         return None
 
-    async def get_macro_data(self) -> Optional[MacroEconomicData]:
+    async def get_macro_data(self) -> MacroEconomicData | None:
         if self.alphavantage_fetcher:
             try:
                 data = await self.alphavantage_fetcher.get_comprehensive_macro_data()
@@ -445,7 +445,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching macro data: {e}")
         return None
 
-    async def get_trending_data(self) -> Optional[TrendingData]:
+    async def get_trending_data(self) -> TrendingData | None:
         if self.coingecko_fetcher:
             try:
                 trending = await self.coingecko_fetcher.get_trending_searches()
@@ -456,8 +456,8 @@ class MarketDataProvider:
         return None
 
     async def get_news_sentiment(
-        self, currencies: List[str] = ["BTC", "ETH"]
-    ) -> Optional[Dict[str, Any]]:
+        self, currencies: list[str] = ["BTC", "ETH"]
+    ) -> dict[str, Any] | None:
         if self.news_fetcher:
             try:
                 return await self.news_fetcher.fetch_sentiment_analysis(currencies)
@@ -465,7 +465,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching news sentiment: {e}")
         return None
 
-    async def get_market_indices(self) -> Optional[Dict[str, Any]]:
+    async def get_market_indices(self) -> dict[str, Any] | None:
         """شاخص‌های کریپتو (TOTAL/BTC.D/DEFI_TVL/...) از مسیر موجود MarketIndicesFetcher."""
         if self.market_indices_fetcher:
             try:
@@ -474,7 +474,7 @@ class MarketDataProvider:
                 logger.error(f"Error fetching market indices: {e}")
         return None
 
-    async def get_all_indices(self) -> Optional[Dict[str, Any]]:
+    async def get_all_indices(self) -> dict[str, Any] | None:
         """ترکیب شاخص‌های کریپتو + سنتی + ماکرو از همان Aggregator موجود."""
         if self.market_indices_fetcher:
             try:

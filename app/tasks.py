@@ -1,11 +1,11 @@
 import asyncio
-from typing import Any, List
+from typing import Any
 
 from telegram import Bot
 
-from utils.background_manager import BackgroundTaskManager
-from config.settings import ConfigManager, SecretsManager
 from config.logger import logger
+from config.settings import ConfigManager, SecretsManager
+from utils.background_manager import BackgroundTaskManager
 
 
 class TaskServiceContainer:
@@ -67,7 +67,7 @@ class TaskServiceContainer:
 
 
 async def deliver_task_signals(
-    bot_token: str, chat_id: int, signals: List[Any], summary_text: str
+    bot_token: str, chat_id: int, signals: list[Any], summary_text: str
 ) -> int:
     """قاعده ۳۲ (وصل شد): تحویل نتایج task به تلگرام — همان chat_id که قبلاً
     فقط لاگ می‌شد. متن ساده (بدون ParseMode) تا escape لازم نباشد.

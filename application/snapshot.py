@@ -1,6 +1,6 @@
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Mapping, Sequence
 
 from domain.types import Candle
 

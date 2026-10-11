@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
-from typing import Optional
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -63,7 +62,7 @@ class KeyEncryptor:
         try:
             return self.fernet.decrypt(encrypted_data.encode()).decode()
         except Exception:
-            logger.error(f"Decryption failed for data. It might be invalid or corrupted.")
+            logger.error("Decryption failed for data. It might be invalid or corrupted.")
             return ""
 
 
@@ -84,7 +83,7 @@ def verify_hashed_data(stored_hash: str, provided_data: str) -> bool:
         return False
 
 
-def get_password_from_key_manager() -> Optional[str]:
+def get_password_from_key_manager() -> str | None:
     secret_path = Path("/run/secrets/SECRET_ENCRYPTION_PASSWORD")
     try:
         password = secret_path.read_text(encoding="utf-8").strip()

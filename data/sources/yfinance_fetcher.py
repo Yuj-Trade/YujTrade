@@ -1,11 +1,11 @@
 import json
+
 import pandas as pd
 import yfinance as yf
-from typing import Dict
 
-from config.logger import logger
+from common.cache import CacheKeyBuilder
 from common.utils import async_retry
-from common.cache import CacheKeyBuilder, CacheCategory
+from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
 
 
@@ -15,7 +15,7 @@ class YFinanceFetcher(BaseFetcher):
         self.source_name = "yfinance"
 
     @async_retry(attempts=3, delay=5)
-    async def get_traditional_indices(self) -> Dict:
+    async def get_traditional_indices(self) -> dict:
         cache_key = CacheKeyBuilder.indices_key(self.source_name, "traditional")
         cache_ttl = self.config_manager.get_cache_ttl("indices")
 

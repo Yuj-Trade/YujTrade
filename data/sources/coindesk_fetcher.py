@@ -1,16 +1,15 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 import pandas as pd
 import redis
-from config.logger import logger
-from utils.circuit_breaker import CircuitBreaker
-from common.exceptions import APIRateLimitError, NetworkError, InvalidSymbolError
-from common.utils import RateLimiter, async_retry
-from data.sources.base_fetcher import BaseFetcher
-from common.cache import CacheKeyBuilder, CacheCategory
 
+from common.cache import CacheCategory, CacheKeyBuilder
+from common.exceptions import APIRateLimitError, InvalidSymbolError, NetworkError
+from common.utils import RateLimiter, async_retry
+from config.logger import logger
+from data.sources.base_fetcher import BaseFetcher
 
 coindesk_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
@@ -19,8 +18,8 @@ class CoinDeskFetcher(BaseFetcher):
     def __init__(
         self,
         api_key: str,
-        redis_client: Optional[redis.Redis] = None,
-        session: Optional[aiohttp.ClientSession] = None,
+        redis_client: redis.Redis | None = None,
+        session: aiohttp.ClientSession | None = None,
         **kwargs,
     ):
         super().__init__(redis_client=redis_client, session=session, **kwargs)
@@ -34,7 +33,7 @@ class CoinDeskFetcher(BaseFetcher):
         exceptions=(NetworkError, APIRateLimitError),
         ignore_exceptions=(InvalidSymbolError,),
     )
-    async def _fetch(self, endpoint: str, params: Optional[Dict] = None):
+    async def _fetch(self, endpoint: str, params: dict | None = None):
         self._check_if_closed()
         headers = {"x-api-key": self.api_key}
         url = f"{self.base_url}/{endpoint}"
@@ -60,7 +59,7 @@ class CoinDeskFetcher(BaseFetcher):
 
     async def get_historical_ohlc(
         self, symbol: str, timeframe: str, limit: int
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         self._check_if_closed()
         try:
             timeframe_lower = timeframe.lower()
@@ -113,7 +112,7 @@ class CoinDeskFetcher(BaseFetcher):
             )
             return None
 
-    async def get_news(self, symbols: List[str]) -> List[Dict]:
+    async def get_news(self, symbols: list[str]) -> list[dict]:
         self._check_if_closed()
         try:
             all_news = []
@@ -136,7 +135,7 @@ class CoinDeskFetcher(BaseFetcher):
             logger.error(f"Error fetching news from CoinDesk: {e}")
             return []
 
-    async def get_bitcoin_price_index(self) -> Optional[Dict[str, Any]]:
+    async def get_bitcoin_price_index(self) -> dict[str, Any] | None:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.indices_key(self.source_name, "bpi")
         cache_ttl = self.config_manager.get_cache_ttl("indices")
@@ -161,7 +160,7 @@ class CoinDeskFetcher(BaseFetcher):
             logger.error(f"Error fetching Bitcoin Price Index from CoinDesk: {e}")
             return None
 
-    async def get_latest_news(self, limit: int = 20) -> List[Dict]:
+    async def get_latest_news(self, limit: int = 20) -> list[dict]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.NEWS, self.source_name, ["latest", str(limit)]

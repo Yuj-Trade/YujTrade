@@ -1,6 +1,6 @@
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 
 class IndicatorHistoryWarehouse:

@@ -1,22 +1,23 @@
 import asyncio
-import time
-from functools import wraps
-from typing import Dict, Tuple, Type, Coroutine, Any, Callable
 import random
+import time
+from collections.abc import Callable, Coroutine
+from functools import wraps
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import talib
 
-from config.logger import logger
 from common.core import MarketAnalysis, SignalType
+from config.logger import logger
 
 
 class RateLimiter:
     def __init__(self, max_requests: int, time_window: int):
         self.max_requests = max_requests
         self.time_window = time_window
-        self.requests: Dict[str, list] = {}
+        self.requests: dict[str, list] = {}
         self._lock = asyncio.Lock()
 
     async def wait_if_needed(self, endpoint: str):
@@ -214,8 +215,8 @@ def async_retry(
     delay: float = 1.0,
     backoff: float = 2.0,
     jitter: float = 0.5,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    ignore_exceptions: Tuple[Type[Exception], ...] = (),
+    exceptions: tuple[type[Exception], ...] = (Exception,),
+    ignore_exceptions: tuple[type[Exception], ...] = (),
 ):
     def decorator(
         func: Callable[..., Coroutine[Any, Any, Any]],
@@ -326,7 +327,7 @@ def get_support_resistance_strength(data: pd.DataFrame, level: float) -> float:
 
 def calculate_fibonacci_levels(
     data: pd.DataFrame, lookback: int = 100
-) -> Dict[str, float]:
+) -> dict[str, float]:
     if len(data) < lookback:
         lookback = len(data)
 
@@ -363,7 +364,7 @@ def calculate_fibonacci_levels(
     return levels
 
 
-def calculate_pivot_points(data: pd.DataFrame) -> Dict[str, float]:
+def calculate_pivot_points(data: pd.DataFrame) -> dict[str, float]:
     if len(data) < 1:
         return {}
 
@@ -421,7 +422,7 @@ def calculate_dynamic_levels(
     signal_type: SignalType,
     market_context: MarketAnalysis,
     order_book=None,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     last_close = data["close"].iloc[-1]
 
     adx_val = market_context.adx if hasattr(market_context, "adx") else 25
@@ -529,7 +530,7 @@ def calculate_risk_reward_ratio(
 
 def validate_signal_timing(
     data: pd.DataFrame, signal_type, min_candles_from_extreme: int = 3
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     if len(data) < min_candles_from_extreme + 5:
         return True, "Not enough data for validation"
 
@@ -581,7 +582,7 @@ def validate_signal_timing(
     return True, "Signal timing validated"
 
 
-def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> Dict[str, Any]:
+def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, Any]:
     if len(data) < lookback:
         lookback = len(data)
 
@@ -693,7 +694,7 @@ def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float = 0.02) ->
     return round(sortino, 3)
 
 
-def calculate_max_drawdown(data: pd.DataFrame) -> Tuple[float, int]:
+def calculate_max_drawdown(data: pd.DataFrame) -> tuple[float, int]:
     if len(data) < 2:
         return 0.0, 0
 
@@ -721,7 +722,7 @@ def format_number(value: float, decimals: int = 2) -> str:
     return f"{value:,.{decimals}f}"
 
 
-def calculate_correlation_matrix(symbols_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+def calculate_correlation_matrix(symbols_data: dict[str, pd.DataFrame]) -> pd.DataFrame:
     if not symbols_data:
         return pd.DataFrame()
 

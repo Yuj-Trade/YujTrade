@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
+
 from common.core import PositionSide, RiskDecision, SignalType, TradingSignal
 
 
@@ -35,7 +35,7 @@ def build_risk_config(config_manager: Any) -> RiskConfig:
 
 
 class RiskManager:
-    def __init__(self, config: Optional[RiskConfig] = None):
+    def __init__(self, config: RiskConfig | None = None):
         self.config = config or RiskConfig()
         self.equity_peak = 0.0
         self.daily_pnl = 0.0
@@ -87,8 +87,8 @@ class RiskManager:
             return 0.0
         return equity * f / price_risk
 
-    def check_limits(self, equity: float, open_exposure_pct: float, open_count: int, new_position_pct: float) -> Dict[str, Any]:
-        checks: Dict[str, Any] = {}
+    def check_limits(self, equity: float, open_exposure_pct: float, open_count: int, new_position_pct: float) -> dict[str, Any]:
+        checks: dict[str, Any] = {}
         checks["drawdown"] = self.drawdown_pct(equity) < self.config.max_drawdown_pct
         checks["daily_loss"] = self.daily_pnl > -self.config.max_daily_loss_pct
         checks["weekly_loss"] = self.weekly_pnl > -self.config.max_weekly_loss_pct

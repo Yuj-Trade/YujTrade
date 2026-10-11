@@ -1,16 +1,7 @@
-from abc import ABC, abstractmethod
-from typing import Protocol, Dict, Optional
 
 import numpy as np
 import pandas as pd
 import talib
-
-import pandas_ta as ta
-from pandas_ta.momentum import stoch, roc, stochrsi, trix, uo, squeeze, cmo
-from pandas_ta.overlap import ichimoku, supertrend, kama
-from pandas_ta.volatility import bbands, atr, kc, massi
-from pandas_ta.trend import adx as adx_ta, aroon, psar, dpo
-from pandas_ta.volume import cmf, obv, ad, eom, efi, pvt
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError

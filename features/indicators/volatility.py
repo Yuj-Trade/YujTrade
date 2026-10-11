@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
-import talib
-
 import pandas_ta as ta
-from pandas_ta.volatility import bbands, massi, kc, donchian
+import talib
+from pandas_ta.volatility import bbands, donchian, kc, massi
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError

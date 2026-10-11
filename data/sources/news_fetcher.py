@@ -1,10 +1,11 @@
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import redis
 
+from common.cache import CacheCategory, CacheKeyBuilder
 from config.logger import logger
-from common.cache import CacheKeyBuilder, CacheCategory
 from data.sources.alternativeme_fetcher import AlternativeMeFetcher
 from data.sources.coindesk_fetcher import CoinDeskFetcher
 from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
@@ -16,9 +17,9 @@ class NewsFetcher:
         self,
         cryptopanic_fetcher: CryptoPanicFetcher,
         alternativeme_fetcher: AlternativeMeFetcher,
-        coindesk_fetcher: Optional[CoinDeskFetcher] = None,
-        messari_fetcher: Optional[MessariFetcher] = None,
-        redis_client: Optional[redis.Redis] = None,
+        coindesk_fetcher: CoinDeskFetcher | None = None,
+        messari_fetcher: MessariFetcher | None = None,
+        redis_client: redis.Redis | None = None,
     ):
 
         self.cryptopanic = cryptopanic_fetcher
@@ -46,13 +47,13 @@ class NewsFetcher:
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def fetch_fear_greed(self, limit: int = 1) -> List[Dict]:
+    async def fetch_fear_greed(self, limit: int = 1) -> list[dict]:
         self._check_if_closed()
         return await self.alternativeme.fetch_fear_greed(limit)
 
     async def fetch_news(
-        self, currencies: List[str] = ["BTC", "ETH"], kind: Optional[str] = None
-    ) -> List[Dict]:
+        self, currencies: list[str] = ["BTC", "ETH"], kind: str | None = None
+    ) -> list[dict]:
         self._check_if_closed()
         key_parts = sorted(currencies) + ([kind] if kind else [])
         key = CacheKeyBuilder.build(CacheCategory.NEWS, self.source_name, key_parts)
@@ -91,7 +92,7 @@ class NewsFetcher:
 
         return unique_news
 
-    def score_news(self, news_items: List[Dict[str, Any]]):
+    def score_news(self, news_items: list[dict[str, Any]]):
         score = 0
         if not news_items:
             return score
@@ -133,8 +134,8 @@ class NewsFetcher:
         return score
 
     async def fetch_sentiment_analysis(
-        self, currencies: List[str] = ["BTC", "ETH"]
-    ) -> Dict[str, Any]:
+        self, currencies: list[str] = ["BTC", "ETH"]
+    ) -> dict[str, Any]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.SENTIMENT, self.source_name, sorted(currencies)
@@ -187,7 +188,7 @@ class NewsFetcher:
             logger.error(f"Error performing sentiment analysis: {e}")
             return {}
 
-    async def fetch_trending_topics(self) -> List[str]:
+    async def fetch_trending_topics(self) -> list[str]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(
             CacheCategory.TRENDING, self.source_name, ["topics"]

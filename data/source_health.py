@@ -1,6 +1,6 @@
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -16,10 +16,10 @@ class SourceStatus:
 
 class SourceHealthMonitor:
     def __init__(self, clock=time.time, cooldown_seconds: float = 300.0) -> None:
-        self._sources: Dict[str, SourceStatus] = {}
+        self._sources: dict[str, SourceStatus] = {}
         self._clock = clock
         self._cooldown_seconds = float(cooldown_seconds)
-        self._cooldowns: Dict[str, float] = {}
+        self._cooldowns: dict[str, float] = {}
 
     def register(self, name: str) -> None:
         if name not in self._sources:
@@ -84,8 +84,8 @@ class SourceHealthMonitor:
         else:
             self.record_failure(name, error)
 
-    def healthy_sources(self, ordered: List[str]) -> List[str]:
-        out: List[str] = []
+    def healthy_sources(self, ordered: list[str]) -> list[str]:
+        out: list[str] = []
         for name in ordered:
             if self.is_healthy(name):
                 out.append(name)
@@ -93,7 +93,7 @@ class SourceHealthMonitor:
             return list(ordered)
         return out
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             k: {
                 "ok": v.ok,

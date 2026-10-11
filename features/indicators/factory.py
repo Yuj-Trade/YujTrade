@@ -1,4 +1,3 @@
-from typing import Optional, List, Dict, Type
 
 from features.indicators.all_indicators import get_all_indicators
 from features.indicators.base import TechnicalIndicator
@@ -7,11 +6,11 @@ from features.indicators.trend import MovingAverageIndicator
 
 class IndicatorFactory:
     def __init__(self):
-        self._indicator_classes: Dict[str, Type[TechnicalIndicator]] = (
+        self._indicator_classes: dict[str, type[TechnicalIndicator]] = (
             get_all_indicators()
         )
 
-    def create(self, name: str) -> Optional[TechnicalIndicator]:
+    def create(self, name: str) -> TechnicalIndicator | None:
         """
         Dynamically creates an instance of a technical indicator.
         """
@@ -35,7 +34,7 @@ class IndicatorFactory:
 
         return None
 
-    def get_all_indicator_names(self) -> List[str]:
+    def get_all_indicator_names(self) -> list[str]:
         # This can be expanded to include dynamic names like 'sma_20' if needed,
         # but for now, returning the base names is sufficient.
         return list(self._indicator_classes.keys())

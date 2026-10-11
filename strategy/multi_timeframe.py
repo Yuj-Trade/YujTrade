@@ -1,24 +1,24 @@
-import pandas as pd
+
 import numpy as np
-from typing import Dict, Any, List, Tuple, Optional
+import pandas as pd
 import redis
 
-from config.settings import ConfigManager
-from config.logger import logger
-from common.core import SignalType, TrendDirection, MarketAnalysis
-from common.constants import MULTI_TF_CONFIRMATION_MAP, MULTI_TF_CONFIRMATION_WEIGHTS
-from common.exceptions import InsufficientDataError
-from data.data_provider import MarketDataProvider
 from analysis.market_analyzer import MarketConditionAnalyzer
-from common.cache import CacheKeyBuilder, CacheCategory
+from common.cache import CacheKeyBuilder
+from common.constants import MULTI_TF_CONFIRMATION_MAP, MULTI_TF_CONFIRMATION_WEIGHTS
+from common.core import MarketAnalysis, SignalType, TrendDirection
+from common.exceptions import InsufficientDataError
+from config.logger import logger
+from config.settings import ConfigManager
+from data.data_provider import MarketDataProvider
 
 
 class MultiTimeframeAnalyzer:
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
-        redis_client: Optional[redis.Redis] = None,
-        config_manager: Optional[ConfigManager] = None,
+        redis_client: redis.Redis | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         self.data_provider = market_data_provider
         self.redis = redis_client
@@ -32,7 +32,7 @@ class MultiTimeframeAnalyzer:
         base_timeframe: str,
         signal_type: SignalType,
         base_data: pd.DataFrame,
-    ) -> Tuple[float, Dict[str, MarketAnalysis], bool]:
+    ) -> tuple[float, dict[str, MarketAnalysis], bool]:
         higher_timeframes = MULTI_TF_CONFIRMATION_MAP.get(base_timeframe, [])
         if not higher_timeframes:
             return 1.0, {}, False
@@ -40,7 +40,7 @@ class MultiTimeframeAnalyzer:
         weights = MULTI_TF_CONFIRMATION_WEIGHTS.get(base_timeframe, {})
         total_score = 0.0
         total_weight = 0.0
-        analyses: Dict[str, MarketAnalysis] = {}
+        analyses: dict[str, MarketAnalysis] = {}
         direction_conflict = False
 
         for tf in higher_timeframes:
@@ -74,7 +74,7 @@ class MultiTimeframeAnalyzer:
 
     async def _get_higher_tf_data(
         self, symbol: str, timeframe: str
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         cache_key = CacheKeyBuilder.mtf_analysis_key(symbol, timeframe)
         if self.redis:
             try:
@@ -97,7 +97,7 @@ class MultiTimeframeAnalyzer:
 
     def _calculate_single_tf_score(
         self, analysis: MarketAnalysis, signal_type: SignalType
-    ) -> Tuple[float, bool]:
+    ) -> tuple[float, bool]:
         score = 0.5  # Neutral starting point
         conflict = False
 

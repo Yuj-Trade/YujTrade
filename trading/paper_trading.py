@@ -1,28 +1,37 @@
 ﻿import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
-from common.core import Order, OrderSide, OrderStatus, OrderType, Position, PositionSide, RiskDecision, SignalType, TradingSignal
+
+from common.core import (
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    PositionSide,
+    SignalType,
+    TradingSignal,
+)
+from domain.outcome import resolve_outcome
 from trading.portfolio import PortfolioManager
 from trading.risk_manager import RiskManager
-from domain.outcome import resolve_outcome
 
 
 class PaperTradingEngine:
-    def __init__(self, portfolio: Optional[PortfolioManager] = None, risk_manager: Optional[RiskManager] = None, fee_rate: float = 0.001, slippage_rate: float = 0.0005, funding_rate_per_day: float = 0.0):
+    def __init__(self, portfolio: PortfolioManager | None = None, risk_manager: RiskManager | None = None, fee_rate: float = 0.001, slippage_rate: float = 0.0005, funding_rate_per_day: float = 0.0):
         self.portfolio = portfolio or PortfolioManager()
         self.risk_manager = risk_manager or RiskManager()
         self.fee_rate = fee_rate
         self.slippage_rate = slippage_rate
         self.funding_rate_per_day = funding_rate_per_day
-        self.orders: Dict[str, Order] = {}
-        self.trade_history: List[Dict] = []
+        self.orders: dict[str, Order] = {}
+        self.trade_history: list[dict] = []
 
     def _apply_slippage(self, price: float, side: OrderSide) -> float:
         if side == OrderSide.BUY:
             return price * (1 + self.slippage_rate)
         return price * (1 - self.slippage_rate)
 
-    def submit_signal(self, signal: TradingSignal, equity: float, prices: Dict[str, float], current_vol_pct: float = 0.0) -> Optional[Order]:
+    def submit_signal(self, signal: TradingSignal, equity: float, prices: dict[str, float], current_vol_pct: float = 0.0) -> Order | None:
         exposure = self.portfolio.exposure_pct(prices)
         decision = self.risk_manager.evaluate(signal, equity, exposure, len(self.portfolio.positions), current_vol_pct)
         if not decision.allowed or decision.position_size <= 0:
@@ -30,7 +39,7 @@ class PaperTradingEngine:
         side = OrderSide.BUY if signal.signal_type == SignalType.BUY else OrderSide.SELL
         return self.create_order(signal.symbol, side, decision.position_size, signal.entry_price, signal_id=getattr(signal, "signal_id", None), timeframe=signal.timeframe)
 
-    def create_order(self, symbol: str, side: OrderSide, quantity: float, price: float, order_type: OrderType = OrderType.MARKET, signal_id: Optional[str] = None, timeframe: Optional[str] = None) -> Order:
+    def create_order(self, symbol: str, side: OrderSide, quantity: float, price: float, order_type: OrderType = OrderType.MARKET, signal_id: str | None = None, timeframe: str | None = None) -> Order:
         order = Order(
             order_id=uuid.uuid4().hex[:12],
             symbol=symbol,
@@ -47,7 +56,7 @@ class PaperTradingEngine:
         self.portfolio.orders[order.order_id] = order
         return order
 
-    def fill_order(self, order_id: str, market_price: float, stop_loss: float = 0.0, take_profit: float = 0.0) -> Optional[Position]:
+    def fill_order(self, order_id: str, market_price: float, stop_loss: float = 0.0, take_profit: float = 0.0) -> Position | None:
         order = self.orders.get(order_id)
         if order is None or order.status not in (OrderStatus.OPEN, OrderStatus.PENDING, OrderStatus.PARTIAL):
             return None
@@ -77,7 +86,7 @@ class PaperTradingEngine:
         self.trade_history.append({"order_id": order.order_id, "position_id": position.position_id, "symbol": order.symbol, "side": side.value, "price": fill_price, "quantity": order.quantity})
         return position
 
-    def apply_funding(self, prices: Dict[str, float], days: float = 1.0) -> float:
+    def apply_funding(self, prices: dict[str, float], days: float = 1.0) -> float:
         total = 0.0
         for position in self.portfolio.positions.values():
             price = prices.get(position.symbol, position.entry_price)
@@ -87,8 +96,8 @@ class PaperTradingEngine:
             self.portfolio.realized_pnl -= funding
         return total
 
-    def update_positions(self, prices: Dict[str, float]) -> List[Dict]:
-        closed: List[Dict] = []
+    def update_positions(self, prices: dict[str, float]) -> list[dict]:
+        closed: list[dict] = []
         for position_id, position in list(self.portfolio.positions.items()):
             price = prices.get(position.symbol)
             if price is None:
@@ -103,8 +112,8 @@ class PaperTradingEngine:
         return closed
 
     def resolve_position_with_candles(
-        self, position_id: str, candles: List[Dict[str, object]]
-    ) -> Optional[Dict]:
+        self, position_id: str, candles: list[dict[str, object]]
+    ) -> dict | None:
         position = self.portfolio.positions.get(position_id)
         if position is None:
             return None

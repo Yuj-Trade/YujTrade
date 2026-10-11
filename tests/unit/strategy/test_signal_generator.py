@@ -14,20 +14,16 @@ Covers:
   BacktestingEngine._flush_calibration partition("|").
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
-from strategy.signal_generator import SignalGenerator
-from common.core import TradingSignal, SignalType, MarketAnalysis
+from common.core import MarketAnalysis, SignalType, TradingSignal
 from common.exceptions import InsufficientDataError
-from common.constants import LONG_TERM_CONFIG, AnalysisComponent
 from common.utils import detect_market_regime
 from config.settings import ConfigManager
-
+from strategy.signal_generator import SignalGenerator
 
 # ─── Fixtures ───
 

@@ -1,7 +1,8 @@
-from typing import Dict, Any, Optional
+from typing import Any
+
 import pandas as pd
+
 from config.logger import logger
-import numpy as np
 
 
 class IndicatorCorrelationManager:
@@ -11,13 +12,13 @@ class IndicatorCorrelationManager:
     تولید نمی‌شود. مسیر آفلاین/تحقیقاتی می‌تواند history واقعی بدهد."""
 
     def __init__(self, correlation_threshold: float = 0.7):
-        self.correlation_matrix: Optional[pd.DataFrame] = None
+        self.correlation_matrix: pd.DataFrame | None = None
         self.correlation_threshold = correlation_threshold
 
     def compute_correlations(
         self,
-        processed_results: Dict[str, Any],
-        history: Optional[Dict[str, pd.Series]] = None,
+        processed_results: dict[str, Any],
+        history: dict[str, pd.Series] | None = None,
     ):
         """
         Computes the correlation matrix from REAL historical indicator series.
@@ -56,8 +57,8 @@ class IndicatorCorrelationManager:
         self.correlation_matrix = df.corr()
 
     def get_decorrelation_weights(
-        self, processed_results: Dict[str, Any]
-    ) -> Dict[str, float]:
+        self, processed_results: dict[str, Any]
+    ) -> dict[str, float]:
         """
         Calculates weights to reduce the influence of highly correlated indicators.
         """
