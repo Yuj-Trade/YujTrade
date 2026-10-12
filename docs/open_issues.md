@@ -23,6 +23,11 @@ A `blocked` entry never guesses missing content; it records the reason and moves
   available offline; guessing a digest is forbidden, so the current tag stays.
 - [ ] `docker-compose.yml` absent from the repo (v4.0 phase 6): nothing to add
   volumes/`env_file` to; compose-based deployment stays user-side.
+- [ ] Hash-pinned `requirements.lock` blocked (v4.0 phase 8): no local Docker,
+  and a Windows-built `pip-compile --generate-hashes` would pin wrong-platform
+  hashes for the Linux image. `Dockerfile` keeps installing the unhashed lock
+  until then. Run the `lock-refresh` workflow (workflow_dispatch, Ubuntu) to
+  build the hashed lock, then switch the Dockerfile to `--require-hashes`.
 
 ## Pre-flight audit (directive v3.0, phase A — verified locally)
 

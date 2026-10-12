@@ -3,7 +3,7 @@ import asyncio
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean, pstdev
 
@@ -99,9 +99,9 @@ def _assert_no_ml_leakage(
             else holdout_start
         )
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=UTC)
         if end >= start:
             raise ValueError(
                 f"ML artifact for {model_type} trained on data ending {data_end}, "
@@ -256,15 +256,13 @@ def run_holdout(
         },
         "equity_start": EQUITY_START,
         "git_commit": _git_commit(),
-        "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "evaluated_at_utc": datetime.now(UTC).isoformat(),
     }
     result.update(metrics)
     target = (
         Path(out)
         if out
-        else Path("runs")
-        / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        / "holdout_report.json"
+        else Path("runs") / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") / "holdout_report.json"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

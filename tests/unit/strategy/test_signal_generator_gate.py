@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pandas as pd
@@ -66,7 +66,7 @@ def test_same_config_gives_same_accept_decision_in_service_and_generator_paths()
     }
     config = build_gate_config(_get(values), "1h")
     assert isinstance(config, GateConfig)
-    stamp = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    stamp = datetime(2025, 1, 1, tzinfo=UTC)
     draft = SignalDraft(
         symbol="BTC/USDT",
         timeframe="1h",
@@ -103,7 +103,7 @@ def test_same_config_gives_same_reject_decision_in_both_paths():
         "min_volume_surge": 1.4,
     }
     config = build_gate_config(_get(values), "1h")
-    stamp = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    stamp = datetime(2025, 1, 1, tzinfo=UTC)
     draft = SignalDraft(
         symbol="BTC/USDT",
         timeframe="1h",

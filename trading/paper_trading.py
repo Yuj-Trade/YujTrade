@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from common.core import (
     Order,
@@ -103,7 +103,7 @@ class PaperTradingEngine:
         order.average_fill_price = fill_price
         order.fee_paid = fee
         order.status = OrderStatus.FILLED
-        order.updated_at = datetime.now(timezone.utc)
+        order.updated_at = datetime.now(UTC)
         side = PositionSide.LONG if order.side == OrderSide.BUY else PositionSide.SHORT
         position = Position(
             position_id=uuid.uuid4().hex[:12],
@@ -203,5 +203,5 @@ class PaperTradingEngine:
         if order is None or order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
             return False
         order.status = OrderStatus.CANCELLED
-        order.updated_at = datetime.now(timezone.utc)
+        order.updated_at = datetime.now(UTC)
         return True

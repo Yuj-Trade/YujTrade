@@ -1,7 +1,7 @@
 import json
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -98,7 +98,7 @@ class ArtifactRegistry:
         if missing:
             raise ValueError(f"Artifact metadata missing required keys: {missing}")
         model_root = self.model_dir(model_type, symbol, timeframe)
-        version_name = version or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        version_name = version or datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         version_dir = model_root / version_name
         version_dir.mkdir(parents=True, exist_ok=False)
         for source in source_files:
@@ -113,7 +113,7 @@ class ArtifactRegistry:
             raise ValueError(f"Artifact file hash mismatch for: {mismatched}")
         payload = {
             "version": version_name,
-            "trained_at_utc": datetime.now(timezone.utc).isoformat(),
+            "trained_at_utc": datetime.now(UTC).isoformat(),
             "data_start": provided["data_start"],
             "data_end": provided["data_end"],
             "data_sha256": self._hash_files(source_files),

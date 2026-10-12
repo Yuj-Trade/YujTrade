@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -72,7 +72,7 @@ class SignalGenerator:
         include_external: bool = True,
         include_ml: bool = True,
     ) -> TradingSignal | None:
-        analysis_timestamp = datetime.now(timezone.utc)
+        analysis_timestamp = datetime.now(UTC)
 
         is_valid, quality_msg = self.data_validator.validate_data_quality(data, timeframe)
         if not is_valid:

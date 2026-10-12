@@ -5,7 +5,7 @@ paper ledger must agree with that same contract for an identical candle
 sequence (FakeAdapter style: no network, no exchange).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from domain.outcome import resolve_outcome
@@ -17,7 +17,7 @@ def _ledger(tmp_path) -> PaperLedger:
 
 
 def _candles():
-    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
     opens = [99.0, 100.0, 101.0, 102.0]
     highs = [99.5, 112.0, 103.0, 104.0]
     lows = [98.5, 101.0, 100.5, 101.5]

@@ -74,7 +74,7 @@ class MarketDataProvider:
         try:
             self.session = await asyncio.wait_for(self.resource_manager.get_session(), timeout=10.0)
             logger.info("Session initialized successfully.")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Session initialization timed out.")
             raise
 
@@ -86,7 +86,7 @@ class MarketDataProvider:
                 logger.info("Redis client initialized successfully.")
             else:
                 logger.warning("Redis client not available, continuing without cache.")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Redis initialization timed out, continuing without cache.")
             self.redis = None
         except Exception as e:

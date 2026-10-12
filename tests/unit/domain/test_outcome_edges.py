@@ -1,6 +1,6 @@
 """Edge coverage for the domain outcome resolver: sell side and expiry."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from domain.outcome import resolve_outcome
 
@@ -11,7 +11,7 @@ def _candle(ts, high, low):
 
 class TestSellSide:
     def test_sell_stop_hit(self):
-        candles = [_candle(datetime(2024, 1, 1, tzinfo=timezone.utc), 106.0, 99.0)]
+        candles = [_candle(datetime(2024, 1, 1, tzinfo=UTC), 106.0, 99.0)]
         outcome = resolve_outcome(candles, "sell", 100.0, 105.0, 90.0)
         assert outcome is not None
         assert (outcome.success, outcome.exit_price, outcome.reason) == (
@@ -21,7 +21,7 @@ class TestSellSide:
         )
 
     def test_sell_target_hit(self):
-        candles = [_candle(datetime(2024, 1, 1, tzinfo=timezone.utc), 99.0, 89.0)]
+        candles = [_candle(datetime(2024, 1, 1, tzinfo=UTC), 99.0, 89.0)]
         outcome = resolve_outcome(candles, "sell", 100.0, 105.0, 90.0)
         assert outcome is not None
         assert (outcome.success, outcome.exit_price, outcome.reason) == (
@@ -31,13 +31,13 @@ class TestSellSide:
         )
 
     def test_unknown_side_returns_none(self):
-        candles = [_candle(datetime(2024, 1, 1, tzinfo=timezone.utc), 99.0, 89.0)]
+        candles = [_candle(datetime(2024, 1, 1, tzinfo=UTC), 99.0, 89.0)]
         assert resolve_outcome(candles, "hold", 100.0, 105.0, 90.0) is None
 
 
 class TestExpiry:
     def _window(self):
-        base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        base = datetime(2024, 1, 1, tzinfo=UTC)
         return base, [
             _candle(base, 101.0, 99.0),
             _candle(base + timedelta(hours=1), 112.0, 101.0),

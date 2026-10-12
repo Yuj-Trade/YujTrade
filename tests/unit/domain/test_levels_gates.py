@@ -1,6 +1,6 @@
 """Unit coverage for the domain level calculator and quality gates."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,7 +14,7 @@ def _draft(confidence: float = 80.0) -> SignalDraft:
         symbol="BTC/USDT",
         timeframe="1h",
         side="buy",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         entry=100.0,
         stop=95.0,
         target=110.0,

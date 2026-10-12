@@ -2,7 +2,7 @@
 name = "yujtrade"
 version = "6.0.0"
 description = "Long-term crypto trading signal bot with Telegram delivery"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.13,<3.14"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -89,7 +89,7 @@ lint.select = ["E", "F", "I", "B", "UP", "BLE"]
 "utils/security.py" = ["BLE001"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 strict = true
 files = ["domain"]
 

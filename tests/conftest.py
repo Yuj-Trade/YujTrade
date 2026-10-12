@@ -9,7 +9,7 @@ All secrets, API keys, and Redis connections are monkeypatched to fake values.
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -74,7 +74,7 @@ def event_loop():
 @pytest.fixture
 def valid_1h_ohlcv() -> pd.DataFrame:
     """Valid 1h OHLCV data with >= min_data_points (600)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=600, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=600, freq="1h", tz="UTC")
     np.random.seed(42)
     base = 50000
     returns = np.random.normal(0, 0.01, 600)
@@ -98,7 +98,7 @@ def valid_1h_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def valid_1d_ohlcv() -> pd.DataFrame:
     """Valid 1d OHLCV data with >= min_data_points (300)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=300, freq="1D", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=300, freq="1D", tz="UTC")
     np.random.seed(42)
     base = 50000
     returns = np.random.normal(0, 0.02, 300)
@@ -122,7 +122,7 @@ def valid_1d_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def insufficient_ohlcv() -> pd.DataFrame:
     """OHLCV with fewer rows than min_data_points."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=50, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=50, freq="1h", tz="UTC")
     np.random.seed(42)
     base = 50000
     prices = base * np.exp(np.cumsum(np.random.normal(0, 0.01, 50)))
@@ -142,14 +142,14 @@ def insufficient_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def missing_columns_ohlcv() -> pd.DataFrame:
     """OHLCV missing required columns."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     return pd.DataFrame({"open": [1] * 100, "high": [1] * 100}, index=dates)
 
 
 @pytest.fixture
 def high_less_than_low_ohlcv() -> pd.DataFrame:
     """OHLCV with high < low (invalid)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     return pd.DataFrame(
         {
             "open": [50000] * 100,
@@ -165,7 +165,7 @@ def high_less_than_low_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def zero_or_negative_price_ohlcv() -> pd.DataFrame:
     """OHLCV with zero or negative prices."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     prices = np.ones(100) * 50000
     prices[50] = 0
     prices[51] = -100
@@ -184,7 +184,7 @@ def zero_or_negative_price_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def extreme_single_candle_ohlcv() -> pd.DataFrame:
     """OHLCV with >75% single candle move (warning only)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     prices = np.ones(100) * 50000
     prices[50] = 10000  # 80% drop
     return pd.DataFrame(
@@ -202,7 +202,7 @@ def extreme_single_candle_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def low_volume_ohlcv() -> pd.DataFrame:
     """OHLCV with mean volume < 1 (warning only)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     return pd.DataFrame(
         {
             "open": [50000] * 100,
@@ -218,7 +218,7 @@ def low_volume_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def stale_ohlcv() -> pd.DataFrame:
     """OHLCV with last timestamp older than freshness threshold."""
-    old_date = datetime.now(timezone.utc) - timedelta(days=10)
+    old_date = datetime.now(UTC) - timedelta(days=10)
     dates = pd.date_range(end=old_date, periods=100, freq="1h", tz="UTC")
     return pd.DataFrame(
         {
@@ -235,7 +235,7 @@ def stale_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def duplicate_timestamps_ohlcv() -> pd.DataFrame:
     """OHLCV with duplicate timestamps."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=99, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=99, freq="1h", tz="UTC")
     dates = dates.insert(50, dates[50])  # duplicate
     return pd.DataFrame(
         {
@@ -254,9 +254,9 @@ def large_gap_ohlcv() -> pd.DataFrame:
     """OHLCV with gap_ratio > 0.1 (should raise ValueError)."""
     # Create data with a large gap (missing ~20% of candles)
     dates1 = pd.date_range(
-        end=datetime.now(timezone.utc) - timedelta(days=5), periods=400, freq="1h", tz="UTC"
+        end=datetime.now(UTC) - timedelta(days=5), periods=400, freq="1h", tz="UTC"
     )
-    dates2 = pd.date_range(end=datetime.now(timezone.utc), periods=400, freq="1h", tz="UTC")
+    dates2 = pd.date_range(end=datetime.now(UTC), periods=400, freq="1h", tz="UTC")
     dates = dates1.union(dates2)
     prices = np.ones(len(dates)) * 50000
     return pd.DataFrame(
@@ -274,7 +274,7 @@ def large_gap_ohlcv() -> pd.DataFrame:
 @pytest.fixture
 def small_gap_ohlcv() -> pd.DataFrame:
     """OHLCV with small gap (0 < gap_ratio <= 0.1, penalty only)."""
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq="1h", tz="UTC")
+    dates = pd.date_range(end=datetime.now(UTC), periods=100, freq="1h", tz="UTC")
     dates = dates.delete(50)  # remove one candle (1% gap)
     return pd.DataFrame(
         {
@@ -302,7 +302,7 @@ def buy_valid_signal() -> dict[str, Any]:
         "entry_price": 50000.0,
         "exit_price": 55000.0,
         "stop_loss": 48000.0,
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "timeframe": "1d",
         "confidence_score": 75.0,
         "reasons": ["RSI oversold", "MACD bullish crossover"],
@@ -352,7 +352,7 @@ def sell_valid_signal() -> dict[str, Any]:
         "entry_price": 3000.0,
         "exit_price": 2700.0,
         "stop_loss": 3150.0,
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "timeframe": "1d",
         "confidence_score": 78.0,
         "reasons": ["RSI overbought", "Bearish divergence"],
@@ -402,7 +402,7 @@ def signal_with_macro_data() -> dict[str, Any]:
         "entry_price": 50000.0,
         "exit_price": 55000.0,
         "stop_loss": 48000.0,
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "timeframe": "1d",
         "confidence_score": 75.0,
         "reasons": ["Technical bullish"],
@@ -453,7 +453,7 @@ def signal_without_external_data() -> dict[str, Any]:
         "entry_price": 50000.0,
         "exit_price": 55000.0,
         "stop_loss": 48000.0,
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "timeframe": "1d",
         "confidence_score": 75.0,
         "reasons": ["Technical bullish"],

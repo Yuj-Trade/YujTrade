@@ -4,7 +4,7 @@ import json
 import platform
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ def build_report(root: Path) -> dict[str, Any]:
         baseline_payload = json.loads(baseline.read_text(encoding="utf-8"))
     baseline_items = len(baseline_payload) if isinstance(baseline_payload, list) else None
     return {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "python": sys.version,
         "platform": platform.platform(),
         "python_executable": sys.executable,

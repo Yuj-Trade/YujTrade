@@ -1,7 +1,7 @@
 import asyncio
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.telegram_bot import TelegramBotHandler
 from config.logger import logger
@@ -51,20 +51,20 @@ class MainApp:
             if not first_iteration:
                 try:
                     await asyncio.wait_for(self.shutdown_event.wait(), timeout=interval)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
             first_iteration = False
             if self.shutdown_event.is_set():
                 break
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if not self.scheduler_store.is_due("scheduled_analysis", now, interval):
                 continue
-            started = datetime.now(timezone.utc)
+            started = datetime.now(UTC)
             try:
                 await self.bot_handler.run_scheduled_analysis()
             except Exception as e:
                 self.scheduler_store.record(
-                    "scheduled_analysis", now, started, datetime.now(timezone.utc), "failed", str(e)
+                    "scheduled_analysis", now, started, datetime.now(UTC), "failed", str(e)
                 )
                 logger.error(f"Scheduled analysis failed: {e}", exc_info=True)
             else:
@@ -72,7 +72,7 @@ class MainApp:
                     "scheduled_analysis",
                     now,
                     started,
-                    datetime.now(timezone.utc),
+                    datetime.now(UTC),
                     "success",
                 )
 
@@ -144,7 +144,7 @@ class MainApp:
 
             await self.shutdown_event.wait()
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             logger.error(f"A component timed out during initialization: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error during application run: {e}", exc_info=True)

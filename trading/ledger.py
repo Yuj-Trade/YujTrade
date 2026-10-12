@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,7 @@ class PaperLedger:
             cursor = self.connection.execute(
                 "INSERT INTO orders(signal_id, symbol, side, quantity, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (signal_id, symbol, side, float(quantity), datetime.now(timezone.utc).isoformat()),
+                (signal_id, symbol, side, float(quantity), datetime.now(UTC).isoformat()),
             )
             self.connection.commit()
             return int(cursor.lastrowid)
@@ -93,7 +93,7 @@ class PaperLedger:
             )
         self.connection.execute(
             "INSERT INTO equity_snapshots(equity, mark_prices, captured_at) VALUES (?, ?, ?)",
-            (equity, json.dumps(marks, sort_keys=True), datetime.now(timezone.utc).isoformat()),
+            (equity, json.dumps(marks, sort_keys=True), datetime.now(UTC).isoformat()),
         )
         self.connection.commit()
         return equity
@@ -102,14 +102,14 @@ class PaperLedger:
         if position.get("id") is not None:
             self.connection.execute(
                 "UPDATE positions SET stale = 1, updated_at = ? WHERE id = ?",
-                (datetime.now(timezone.utc).isoformat(), int(position["id"])),
+                (datetime.now(UTC).isoformat(), int(position["id"])),
             )
 
     def _mark_position_fresh(self, position: dict[str, Any]) -> None:
         if position.get("id") is not None:
             self.connection.execute(
                 "UPDATE positions SET stale = 0, updated_at = ? WHERE id = ?",
-                (datetime.now(timezone.utc).isoformat(), int(position["id"])),
+                (datetime.now(UTC).isoformat(), int(position["id"])),
             )
 
     def close(self) -> None:

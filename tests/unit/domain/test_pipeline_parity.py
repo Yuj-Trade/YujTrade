@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -6,7 +6,7 @@ from application.decide import decide
 from application.snapshot import build_snapshot
 from domain.types import Candle, GateConfig, ReasonCode, Reject, SignalDraft
 
-BASE = datetime(2025, 1, 1, tzinfo=timezone.utc)
+BASE = datetime(2025, 1, 1, tzinfo=UTC)
 
 
 def _candles(count=5):

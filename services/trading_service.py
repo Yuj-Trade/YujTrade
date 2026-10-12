@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -191,7 +191,7 @@ class TradingService(ModelDataProvider):
                             "entry": signal.entry_price,
                             "stop": signal.stop_loss,
                             "target": signal.exit_price,
-                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "created_at": datetime.now(UTC).isoformat(),
                             "candle_time": signal.timestamp.isoformat(),
                             "threshold_used": signal.threshold_used,
                             "threshold_regime": signal.threshold_regime,
@@ -371,7 +371,7 @@ class TradingService(ModelDataProvider):
                     {
                         "resolved_price": resolved_price,
                         "resolution_source": "live_reconciliation",
-                        "resolved_at": datetime.now(timezone.utc).isoformat(),
+                        "resolved_at": datetime.now(UTC).isoformat(),
                     },
                 )
                 resolved_count += 1

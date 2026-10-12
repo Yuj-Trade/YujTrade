@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from backtesting.walk_forward import HoldoutGuard, WalkForwardValidator
 from domain.outcome import resolve_outcome
@@ -32,7 +32,7 @@ def test_holdout_requires_confirmation_and_is_idempotency_guarded():
 
 
 def test_outcome_stop_first_matches_paper_resolution():
-    created = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    created = datetime(2026, 1, 1, tzinfo=UTC)
     result = resolve_outcome(
         [
             {

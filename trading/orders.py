@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from common.core import Order, OrderSide, OrderStatus, OrderType, PositionSide
 
@@ -97,7 +97,7 @@ class OrderManager:
         for o in (bracket.entry, bracket.stop, bracket.target):
             if o.status in (OrderStatus.OPEN, OrderStatus.PENDING):
                 o.status = OrderStatus.CANCELLED
-                o.updated_at = datetime.now(timezone.utc)
+                o.updated_at = datetime.now(UTC)
 
     def open_orders(self) -> list[Order]:
         return [

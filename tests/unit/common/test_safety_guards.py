@@ -8,7 +8,7 @@ None sentinel (each call gets a fresh list).
 
 import asyncio
 import inspect
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -39,7 +39,7 @@ def _signal(reasons: list) -> TradingSignal:
         entry_price=100.0,
         exit_price=110.0,
         stop_loss=95.0,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         timeframe="1h",
         confidence_score=80.0,
         reasons=reasons,

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,7 @@ class SignalTracker:
             await self._record_locked(signal_id, outcome, merged)
 
     async def get_pending_expired(self, now: datetime | None = None) -> list[dict[str, Any]]:
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         async with self._lock:
             expired: list[dict[str, Any]] = []
             for sid, data in self.history.items():
@@ -103,7 +103,7 @@ class SignalTracker:
             except ValueError:
                 return None
         if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
+            created = created.replace(tzinfo=UTC)
         return created
 
     def get_performance_summary(self) -> dict[str, float]:
@@ -143,7 +143,7 @@ class AdaptiveThresholdManager:
             {
                 "threshold": threshold,
                 "success": signal_success,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
             }
         )
         if len(self.performance_history[key]) > 100:
@@ -192,7 +192,7 @@ class MLConfidenceCalibrator:
             self.calibration_data[model_name] = []
         time_decay_factor = 1.0
         if timestamp:
-            days_old = (datetime.now(timezone.utc) - timestamp).days
+            days_old = (datetime.now(UTC) - timestamp).days
             time_decay_factor = np.exp(-days_old / 90)
         self.calibration_data[model_name].append((confidence, actual_result, time_decay_factor))
         if len(self.calibration_data[model_name]) > 500:

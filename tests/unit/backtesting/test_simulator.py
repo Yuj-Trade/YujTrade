@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -8,7 +8,7 @@ from backtesting.simulator import (
     write_trades_csv,
 )
 
-BASE = datetime(2025, 1, 1, tzinfo=timezone.utc)
+BASE = datetime(2025, 1, 1, tzinfo=UTC)
 
 
 def _candle(index, open, high, low, close=None):

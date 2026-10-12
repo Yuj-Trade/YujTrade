@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -6,7 +6,7 @@ from application.decide import decide
 from application.snapshot import build_snapshot
 from domain.types import Candle, GateConfig, ReasonCode, Reject, SignalDraft
 
-CANDLE = Candle(datetime(2025, 1, 1, tzinfo=timezone.utc), 100.0, 101.0, 99.0, 100.0, 1.0)
+CANDLE = Candle(datetime(2025, 1, 1, tzinfo=UTC), 100.0, 101.0, 99.0, 100.0, 1.0)
 CONFIG = GateConfig(min_confidence=70.0, min_trend_strength="MODERATE", min_volume_surge=1.4)
 
 

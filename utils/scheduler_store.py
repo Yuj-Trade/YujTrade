@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -56,9 +56,9 @@ class SchedulerStore:
             """,
             (
                 job_name,
-                scheduled_at.astimezone(timezone.utc).isoformat(),
-                started_at.astimezone(timezone.utc).isoformat(),
-                finished_at.astimezone(timezone.utc).isoformat(),
+                scheduled_at.astimezone(UTC).isoformat(),
+                started_at.astimezone(UTC).isoformat(),
+                finished_at.astimezone(UTC).isoformat(),
                 status,
                 error[:500],
             ),

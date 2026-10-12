@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -44,8 +44,8 @@ class Order:
     filled_quantity: float = 0.0
     average_fill_price: float = 0.0
     fee_paid: float = 0.0
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     signal_id: str | None = None
     timeframe: str | None = None
     paper: bool = True
@@ -61,7 +61,7 @@ class Position:
     entry_price: float
     stop_loss: float
     take_profit: float
-    opened_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    opened_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     signal_id: str | None = None
     timeframe: str | None = None
     leverage: float = 1.0

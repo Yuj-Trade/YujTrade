@@ -55,7 +55,7 @@ class ResourceManager:
 
                     await asyncio.wait_for(self._redis_client.ping(), timeout=10.0)
                     logger.info("Connected to Redis successfully.")
-                except asyncio.TimeoutError as e:
+                except TimeoutError as e:
                     logger.warning(f"Redis connection timed out: {e}. Caching will be disabled.")
                     if self._redis_client:
                         try:
@@ -124,7 +124,7 @@ class ResourceManager:
 
 
 @contextmanager
-def managed_tf_session() -> Generator[None, None, None]:
+def managed_tf_session() -> Generator[None]:
     try:
         yield
     finally:
@@ -133,7 +133,7 @@ def managed_tf_session() -> Generator[None, None, None]:
 
 
 @asynccontextmanager
-async def managed_resource(resource: Any) -> AsyncGenerator[Any, None]:
+async def managed_resource(resource: Any) -> AsyncGenerator[Any]:
     try:
         yield resource
     finally:

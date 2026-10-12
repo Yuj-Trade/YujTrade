@@ -14,7 +14,7 @@ Gap 37: SignalTracker._save_history writes entire file sync (json.dump, no lock,
 import asyncio
 import json
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -52,7 +52,7 @@ class TestSignalTrackerGap31:
         This test MUST FAIL initially (red) to document the gap, then pass after fix.
         """
         # Create a real signal
-        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(UTC), "BUY")
 
         # Record a signal (simulating TradingService.analyze_symbol)
         await tracker.record(
@@ -106,7 +106,7 @@ class TestSignalTrackerGap31:
     @pytest.mark.asyncio
     async def test_gap31_resolve_called_from_backtest_only(self, tracker):
         """Verify BacktestingEngine is the only path that calls resolve."""
-        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
 
         await tracker.record(signal_id, None, {"symbol": "BTC/USDT", "timeframe": "1h"})
 
@@ -131,7 +131,7 @@ class TestSignalTrackerGap31:
         5. Call threshold_manager.record_performance()
         """
         # Create an "old" signal (simulate time passing by manipulating created_at)
-        old_time = datetime.now(timezone.utc) - timedelta(hours=25)  # > 1h expiry
+        old_time = datetime.now(UTC) - timedelta(hours=25)  # > 1h expiry
         signal_id = make_signal_id("BTC/USDT", "1h", old_time, "BUY")
 
         await tracker.record(
@@ -185,7 +185,7 @@ class TestSignalTrackerGap37:
         num_signals = 20
 
         async def record_signal(i):
-            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY")
+            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(UTC), "BUY")
             await tracker.record(
                 signal_id,
                 None,
@@ -224,7 +224,7 @@ class TestSignalTrackerGap37:
         num_signals = 50
 
         async def record_signal(i):
-            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(timezone.utc), "BUY")
+            signal_id = make_signal_id(f"SYM{i}/USDT", "1h", datetime.now(UTC), "BUY")
             await tracker.record(signal_id, None, {"index": i})
 
         start = time.perf_counter()
@@ -243,7 +243,7 @@ class TestSignalTrackerGap37:
         """
         Gap 37: Test that asyncio.Lock prevents race between record and resolve.
         """
-        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
 
         # Start a record and a resolve concurrently
         async def do_record():
@@ -278,10 +278,10 @@ class TestAdaptiveThresholdManager:
     def test_get_optimal_threshold_bin_total_less_than_10_ignored(self, threshold_manager):
         """Bins with total < 10 are ignored."""
         threshold_manager.performance_history[("low", "persistent")] = [
-            {"threshold": 70.0, "success": True, "timestamp": datetime.now(timezone.utc)}
+            {"threshold": 70.0, "success": True, "timestamp": datetime.now(UTC)}
             for _ in range(5)  # Only 5 samples
         ] + [
-            {"threshold": 72.0, "success": False, "timestamp": datetime.now(timezone.utc)}
+            {"threshold": 72.0, "success": False, "timestamp": datetime.now(UTC)}
             for _ in range(4)  # Only 4 samples
         ]
 
@@ -293,11 +293,9 @@ class TestAdaptiveThresholdManager:
         """Threshold selected only if accuracy - CI > 0.55."""
         # Create history where 70% threshold has 90% accuracy with enough samples
         threshold_manager.performance_history[("high", "mean_reverting")] = [
-            {"threshold": 70.0, "success": True, "timestamp": datetime.now(timezone.utc)}
-            for _ in range(90)
+            {"threshold": 70.0, "success": True, "timestamp": datetime.now(UTC)} for _ in range(90)
         ] + [
-            {"threshold": 70.0, "success": False, "timestamp": datetime.now(timezone.utc)}
-            for _ in range(10)
+            {"threshold": 70.0, "success": False, "timestamp": datetime.now(UTC)} for _ in range(10)
         ]
 
         result = threshold_manager.get_optimal_threshold("high", "mean_reverting", 72.0)
@@ -366,7 +364,7 @@ class TestMLConfidenceCalibrator:
 
     def test_time_decay_factor_exponential(self, calibrator):
         """Time decay uses exponential with 90-day half-life."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old = now - timedelta(days=90)  # 1 half-life
 
         calibrator.add_prediction("test_model", 50.0, True, timestamp=now)
@@ -395,7 +393,7 @@ class TestSignalTrackerGap40:
 
     @pytest.mark.asyncio
     async def test_gap40_rerecord_preserves_resolved_outcome(self, tracker):
-        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(UTC), "BUY")
         await tracker.record(signal_id, None, {"entry": 50000})
         await tracker.resolve(signal_id, True, {"resolved_price": 51000})
 
@@ -409,7 +407,7 @@ class TestSignalTrackerGap40:
 
     @pytest.mark.asyncio
     async def test_gap40_rerecord_merges_details_keeps_outcome(self, tracker):
-        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1d", datetime.now(UTC), "BUY")
         await tracker.record(signal_id, None, {"entry": 50000})
         await tracker.resolve(signal_id, False, {"resolved_price": 49000})
         await tracker.record(signal_id, None, {"extra": "info"})
@@ -427,7 +425,7 @@ class TestMakeSignalId:
 
     def test_format_exact(self):
         """Format must be exactly: symbol|timeframe|isoformat|signal_type"""
-        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
         signal_id = make_signal_id("BTC/USDT", "1d", ts, "BUY")
 
         expected = "BTC/USDT|1d|2024-01-15T10:30:00+00:00|BUY"
@@ -444,7 +442,7 @@ class TestMakeSignalId:
         (in backtesting/engine.py) for the same inputs.
         """
         # This is a contract test - both sides must produce identical IDs
-        ts = datetime.now(timezone.utc)
+        ts = datetime.now(UTC)
         generator_id = make_signal_id("BTC/USDT", "1d", ts, "BUY")
 
         # BacktraderStrategy._capture_signal does:
@@ -472,7 +470,7 @@ class TestSignalTrackerPerformanceSummary:
     @pytest.mark.asyncio
     async def test_pending_not_counted_in_win_rate(self, tracker):
         """Pending signals (outcome=None) not counted in win_rate."""
-        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
         await tracker.record(signal_id, None, {})  # pending
 
         summary = tracker.get_performance_summary()
@@ -483,7 +481,7 @@ class TestSignalTrackerPerformanceSummary:
     @pytest.mark.asyncio
     async def test_resolve_merges_details_not_overwrite(self, tracker):
         """resolve() merges details, doesn't overwrite."""
-        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(timezone.utc), "BUY")
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
         await tracker.record(signal_id, None, {"original": "data", "entry": 50000})
         await tracker.resolve(signal_id, True, {"exit": 51000})
 

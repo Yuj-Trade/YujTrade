@@ -6,7 +6,7 @@ returning identical results after they delegate to `domain`.
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -29,7 +29,7 @@ def _signal(**overrides) -> TradingSignal:
         "entry_price": 100.0,
         "exit_price": 110.0,
         "stop_loss": 95.0,
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "timeframe": "1h",
         "confidence_score": 90.0,
         "reasons": ["trend up"],
@@ -67,7 +67,7 @@ class TestPassesQualityGates:
 
 
 def _frame(rows):
-    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
     return pd.DataFrame(
         [
             {
@@ -96,7 +96,7 @@ def _details(**overrides):
 class TestDecideExpiredOutcome:
     def _run(self, provider, **kwargs):
         service = _service(provider)
-        created = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        created = datetime(2024, 1, 1, tzinfo=UTC)
         params = {
             "symbol": "BTC/USDT",
             "timeframe": "1h",
