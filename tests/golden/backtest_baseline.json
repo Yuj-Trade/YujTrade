@@ -1,10 +1,10 @@
 {
   "equity_start": 1000000.0,
-  "final_capital": 995408.4565828909,
+  "final_capital": 994423.752914759,
   "per_timeframe": {
     "1d": {
-      "signals_evaluated": 15,
-      "trades_count": 7
+      "signals_evaluated": 36,
+      "trades_count": 6
     },
     "1h": {
       "signals_evaluated": 15,
@@ -14,14 +14,14 @@
   "rejected": {
     "no_outcome": 0,
     "no_window": 0,
-    "size_zero": 14
+    "size_zero": 36
   },
-  "signals_evaluated": 30,
+  "signals_evaluated": 51,
   "simulator_config": {
     "commission_rate": 0.001,
     "exit_on_opposite_signal": false,
     "risk_per_trade_pct": 1.0,
     "slippage_rate": 0.0005
   },
-  "trades_count": 16
+  "trades_count": 15
 }

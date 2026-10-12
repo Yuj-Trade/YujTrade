@@ -569,12 +569,12 @@ def sideways_weak_analysis() -> dict[str, Any]:
 
 @pytest.fixture
 def market_analysis_hurst_low() -> dict[str, Any]:
-    """MarketAnalysis with hurst_exponent < 0.45 (mean-reverting)."""
+    """MarketAnalysis with hurst_exponent < 0.45 (mean-reverting, strong trend)."""
     from common.core import MarketCondition, TrendDirection, TrendStrength
 
     return {
         "trend": TrendDirection.SIDEWAYS,
-        "trend_strength": TrendStrength.WEAK,
+        "trend_strength": TrendStrength.STRONG,
         "volatility": 1.5,
         "volume_trend": "stable",
         "support_levels": [49000],

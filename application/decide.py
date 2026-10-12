@@ -1,4 +1,5 @@
 from domain.gates import quality_gate_reason
+from domain.levels import validate_levels
 from domain.types import GateConfig, ReasonCode, Reject, SignalDraft
 
 from .snapshot import MarketSnapshot
@@ -13,6 +14,9 @@ def decide(
         return Reject(ReasonCode.SCORE_TOO_LOW, {"score": snapshot.score})
     if snapshot.side.lower() not in {"buy", "sell"}:
         return Reject(ReasonCode.DIRECTION_CONFLICT, {"side": snapshot.side})
+    levels_reason = validate_levels(snapshot.side, snapshot.entry, snapshot.stop, snapshot.target)
+    if levels_reason is not None:
+        return Reject(levels_reason, {})
     reason = quality_gate_reason(
         SignalDraft(
             symbol=snapshot.symbol,

@@ -12,28 +12,42 @@ FIXED_END = pd.Timestamp("2025-01-01T00:00:00Z")
 SEED = 20250101
 CANDLES = 1500
 REGIME_LENGTH = 150
-REGIMES = (
+REGIMES_1H = (
     ("up", 0.0025, 0.008),
     ("down", -0.0025, 0.008),
     ("range", 0.0, 0.012),
 )
+REGIMES_1D = (
+    ("up", 0.009, 0.022),
+    ("down", -0.009, 0.022),
+    ("range", 0.0, 0.030),
+)
 FIXTURE_DIR = Path("tests/fixtures")
 
 
-def _regime_returns(rng: np.random.Generator, periods: int) -> np.ndarray:
+def _regime_returns(
+    rng: np.random.Generator, periods: int, regimes: tuple = REGIMES_1H
+) -> np.ndarray:
     chunks = []
     cycle = 0
     while sum(len(c) for c in chunks) < periods:
-        name, drift, vol = REGIMES[cycle % len(REGIMES)]
+        name, drift, vol = regimes[cycle % len(regimes)]
         chunks.append(rng.normal(drift, vol, REGIME_LENGTH))
         cycle += 1
     return np.concatenate(chunks)[:periods]
 
 
-def create_ohlcv_data(periods: int, freq: str, base_price: float, end: pd.Timestamp, seed: int):
+def create_ohlcv_data(
+    periods: int,
+    freq: str,
+    base_price: float,
+    end: pd.Timestamp,
+    seed: int,
+    regimes: tuple = REGIMES_1H,
+):
     rng = np.random.default_rng(seed)
     dates = pd.date_range(end=end, periods=periods, freq=freq, tz="UTC")
-    prices = base_price * np.exp(np.cumsum(_regime_returns(rng, periods)))
+    prices = base_price * np.exp(np.cumsum(_regime_returns(rng, periods, regimes)))
     opens = prices * (1 + rng.uniform(-0.002, 0.002, periods))
     highs = prices * (1 + rng.uniform(0, 0.005, periods))
     lows = prices * (1 - rng.uniform(0, 0.005, periods))
@@ -48,8 +62,8 @@ def create_ohlcv_data(periods: int, freq: str, base_price: float, end: pd.Timest
 
 
 def build_fixtures() -> tuple[pd.DataFrame, pd.DataFrame]:
-    df_1h = create_ohlcv_data(CANDLES, "1h", 50000.0, FIXED_END, SEED)
-    df_1d = create_ohlcv_data(CANDLES, "1D", 50000.0, FIXED_END.floor("1D"), SEED + 1)
+    df_1h = create_ohlcv_data(CANDLES, "1h", 50000.0, FIXED_END, SEED, REGIMES_1H)
+    df_1d = create_ohlcv_data(CANDLES, "1D", 50000.0, FIXED_END.floor("1D"), SEED + 1, REGIMES_1D)
     return df_1h, df_1d
 
 

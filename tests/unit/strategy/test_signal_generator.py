@@ -76,11 +76,19 @@ def sideways_analysis(sideways_weak_analysis):
 
 
 @pytest.fixture
-def rigged_generator(config_manager, mock_data_provider, mock_model_manager, sideways_analysis):
-    """SignalGenerator با scorer کنترل‌شده — final_score از بیرون تعیین می‌شود."""
+def trending_analysis(sideways_weak_analysis):
+    from common.core import TrendStrength
+
+    return MarketAnalysis(
+        **{**sideways_weak_analysis, "trend_strength": TrendStrength.STRONG, "volume_ratio": 2.0}
+    )
+
+
+@pytest.fixture
+def rigged_generator(config_manager, mock_data_provider, mock_model_manager, trending_analysis):
     gen = SignalGenerator(mock_data_provider, mock_model_manager, config_manager)
-    gen.market_analyzer.analyze_market_condition = MagicMock(return_value=sideways_analysis)
-    gen.scorer.calculate_combined_score = MagicMock(return_value=(75.0, ["rigged reason"]))
+    gen.market_analyzer.analyze_market_condition = MagicMock(return_value=trending_analysis)
+    gen.scorer.calculate_combined_score = MagicMock(return_value=(90.0, ["rigged reason"]))
     return gen
 
 
@@ -196,7 +204,7 @@ class TestGenerateSignalErrorContract:
 
     @pytest.mark.asyncio
     async def test_rr_ratio_below_minimum_returns_none(self, rigged_generator, valid_1h_ohlcv):
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
@@ -210,7 +218,7 @@ class TestGenerateSignalErrorContract:
 
     @pytest.mark.asyncio
     async def test_sell_path_returns_complete_signal(self, rigged_generator, valid_1h_ohlcv):
-        rigged_generator.scorer.calculate_combined_score.return_value = (-75.0, ["sell reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (-90.0, ["sell reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
@@ -232,7 +240,7 @@ class TestGenerateSignalErrorContract:
         self, rigged_generator, valid_1h_ohlcv
     ):
         """موفقیت → TradingSignal کامل با threshold_used/threshold_regime."""
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
@@ -249,7 +257,7 @@ class TestGenerateSignalErrorContract:
         assert signal.exit_price == 115.0
         assert signal.stop_loss == 95.0
         assert signal.timeframe == "1h"
-        assert signal.confidence_score == 75.0  # abs(final_score)
+        assert signal.confidence_score == 90.0  # abs(final_score)
         assert signal.risk_reward_ratio == pytest.approx(2.8835, abs=1e-3)
         assert signal.reasons == ["buy reason"]
         assert signal.threshold_used == 50.0  # config default signal_threshold
@@ -262,7 +270,7 @@ class TestGenerateSignalErrorContract:
     @pytest.mark.asyncio
     async def test_include_external_false_no_provider_calls(self, rigged_generator, valid_1h_ohlcv):
         """include_external=False → external_data همه None + provider صدا زده نشود."""
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
@@ -296,14 +304,14 @@ class TestGenerateSignalErrorContract:
 
     @pytest.mark.asyncio
     async def test_include_external_true_gathers_live_data(
-        self, generator, valid_1h_ohlcv, sideways_analysis
+        self, generator, valid_1h_ohlcv, trending_analysis
     ):
         """include_external=True (پیش‌فرض) → _gather_external_data صدا زده شود و
         نتایج در سیگنال قرار بگیرند."""
         generator.market_analyzer.analyze_market_condition = MagicMock(
-            return_value=sideways_analysis
+            return_value=trending_analysis
         )
-        generator.scorer.calculate_combined_score = MagicMock(return_value=(75.0, ["buy reason"]))
+        generator.scorer.calculate_combined_score = MagicMock(return_value=(90.0, ["buy reason"]))
         sentinel = {"derivatives": "deriv-data", "fundamental": "fund-data"}
 
         # configure the mocks
@@ -336,7 +344,7 @@ class TestGenerateSignalErrorContract:
 
     @pytest.mark.asyncio
     async def test_include_ml_false_no_model_calls(self, rigged_generator, valid_1h_ohlcv):
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=NORMAL_DETECT),
@@ -350,13 +358,13 @@ class TestGenerateSignalErrorContract:
 
     @pytest.mark.asyncio
     async def test_include_ml_true_with_predictions(
-        self, generator, valid_1h_ohlcv, sideways_analysis, model_prediction_full
+        self, generator, valid_1h_ohlcv, trending_analysis, model_prediction_full
     ):
         """include_ml=True → predict_with_confidence برای هر دو مدل صدا زده شود."""
         generator.market_analyzer.analyze_market_condition = MagicMock(
-            return_value=sideways_analysis
+            return_value=trending_analysis
         )
-        generator.scorer.calculate_combined_score = MagicMock(return_value=(75.0, ["buy reason"]))
+        generator.scorer.calculate_combined_score = MagicMock(return_value=(90.0, ["buy reason"]))
         generator.model_manager.predict_with_confidence = AsyncMock(
             return_value=model_prediction_full
         )
@@ -465,7 +473,7 @@ class TestCombinedWeights:
         self, rigged_generator, valid_1h_ohlcv, sideways_analysis
     ):
         """وزن نهایی محصول وزن رژیمی و وزن ضدهمبستگی است."""
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["reason"])
 
         # decorrelation weights کنترل‌شده
         rigged_generator.feature_engineer.get_decorrelation_weights = MagicMock(
@@ -509,7 +517,7 @@ class TestThresholdRegimeContract:
 
     @pytest.mark.asyncio
     async def test_threshold_regime_format_pipe_separated(self, rigged_generator, valid_1h_ohlcv):
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         # volatility_regime = "high" از detect_market_regime
         # hurst_exponent = 0.5 (از sideways fixture) → "mid"
@@ -535,7 +543,7 @@ class TestThresholdRegimeContract:
     async def test_threshold_used_equals_optimal_threshold(self, rigged_generator, valid_1h_ohlcv):
         """threshold_used باید دقیقا مقدار برگردانده شده از
         threshold_manager.get_optimal_threshold باشد."""
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT),
@@ -553,9 +561,9 @@ class TestThresholdRegimeContract:
         self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_low
     ):
         rigged_generator.market_analyzer.analyze_market_condition = MagicMock(
-            return_value=MarketAnalysis(**market_analysis_hurst_low)
+            return_value=MarketAnalysis(**{**market_analysis_hurst_low, "volume_ratio": 2.0})
         )
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         # volatility_regime = "low", hurst = 0.3 → "low"
         with (
@@ -575,9 +583,9 @@ class TestThresholdRegimeContract:
         self, rigged_generator, valid_1h_ohlcv, market_analysis_hurst_high
     ):
         rigged_generator.market_analyzer.analyze_market_condition = MagicMock(
-            return_value=MarketAnalysis(**market_analysis_hurst_high)
+            return_value=MarketAnalysis(**{**market_analysis_hurst_high, "volume_ratio": 2.0})
         )
-        rigged_generator.scorer.calculate_combined_score.return_value = (75.0, ["buy reason"])
+        rigged_generator.scorer.calculate_combined_score.return_value = (90.0, ["buy reason"])
 
         with (
             patch("strategy.signal_generator.detect_market_regime", return_value=TREND_DETECT),

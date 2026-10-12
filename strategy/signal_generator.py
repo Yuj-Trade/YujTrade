@@ -7,6 +7,7 @@ import pandas as pd
 from analysis.market_analyzer import MarketConditionAnalyzer
 from analysis.scoring import AnalysisScorer
 from application.decide import decide
+from application.gate_config import build_gate_config
 from application.snapshot import build_snapshot
 from common.constants import LONG_TERM_CONFIG, AnalysisComponent
 from common.core import SignalType, TradingSignal
@@ -21,7 +22,8 @@ from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from data.data_validator import DataQualityChecker
 from data.warehouse import IndicatorHistoryWarehouse
-from domain.types import Candle, GateConfig, Reject
+from domain.gates import normalize_confidence
+from domain.types import Candle, Reject
 from features.feature_engineering import FeatureEngineer
 from modeling.model_manager import ModelManager
 from strategy.signal_tracker import AdaptiveThresholdManager
@@ -222,18 +224,14 @@ class SignalGenerator:
             )
             for timestamp, row in data.tail(500).iterrows()
         ]
-        gate_config = GateConfig(
-            min_confidence=0.0,
-            min_trend_strength="WEAK",
-            min_volume_surge=0.0,
-        )
+        gate_config = build_gate_config(self.config_manager.get, timeframe)
         decision = decide(
             build_snapshot(
                 symbol,
                 timeframe,
                 candles,
-                score=float(final_score),
-                confidence=float(abs(final_score)),
+                score=float(abs(final_score)),
+                confidence=normalize_confidence(abs(final_score)),
                 side=signal_type.value,
                 entry=signal.entry_price,
                 stop=signal.stop_loss,
@@ -245,13 +243,11 @@ class SignalGenerator:
                 details={"ml_predictions": ml_predictions},
             ),
             gate_config,
-            min_score=float("-inf"),
+            min_score=float(threshold),
         )
         if isinstance(decision, Reject):
-            logger.warning(
-                f"Application decision rejected malformed {symbol}-{timeframe}: "
-                f"{decision.reason.value}"
-            )
+            logger.info(f"Gate rejected {symbol}-{timeframe}: {decision.reason.value}")
+            return None
 
         return signal
 
