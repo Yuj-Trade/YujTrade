@@ -1,6 +1,20 @@
+import math
+
 from .types import GateConfig, ReasonCode, SignalDraft
 
 _STRENGTH = {"WEAK": 0, "MODERATE": 1, "STRONG": 2}
+
+
+def normalize_confidence(value: object) -> float:
+    try:
+        conf = float(value or 0.0)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(conf):
+        return 0.0
+    if 0.0 < conf <= 1.0:
+        conf *= 100.0
+    return max(0.0, min(100.0, conf))
 
 
 def passes_quality_gates(

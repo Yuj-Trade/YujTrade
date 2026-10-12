@@ -1,4 +1,20 @@
-from .types import LevelSet
+import math
+
+from .types import LevelSet, ReasonCode
+
+
+def validate_levels(side: str, entry: float, stop: float, target: float) -> ReasonCode | None:
+    values = (entry, stop, target)
+    if any(not math.isfinite(value) or value <= 0 for value in values):
+        return ReasonCode.NON_FINITE_PRICE
+    normalized = side.lower()
+    if normalized == "buy":
+        ordered = stop < entry < target
+    elif normalized == "sell":
+        ordered = target < entry < stop
+    else:
+        return ReasonCode.INVALID_LEVELS
+    return None if ordered else ReasonCode.INVALID_LEVELS
 
 
 def calculate_levels(

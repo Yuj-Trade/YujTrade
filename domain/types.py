@@ -12,6 +12,8 @@ class ReasonCode(str, Enum):
     VOLUME_TOO_LOW = "volume_too_low"
     SIZE_ZERO = "size_zero"
     MTF_DATA_MISSING = "mtf_data_missing"
+    INVALID_LEVELS = "invalid_levels"
+    NON_FINITE_PRICE = "non_finite_price"
 
 
 @dataclass(frozen=True)

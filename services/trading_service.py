@@ -4,15 +4,16 @@ from typing import Any
 
 import pandas as pd
 
+from application.gate_config import build_gate_config
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME
 from common.core import TradingSignal
 from common.exceptions import InvalidSymbolError
 from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
-from domain.gates import quality_gate_reason
+from domain.gates import normalize_confidence, quality_gate_reason
 from domain.outcome import resolve_outcome
-from domain.types import GateConfig, SignalDraft
+from domain.types import SignalDraft
 from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.signal_generator import SignalGenerator
@@ -61,8 +62,6 @@ class TradingService(ModelDataProvider):
     4. SignalRanking + محدودیت‌ها: ابتدا سقف هر تایم‌فریم
        (max_signals_per_timeframe، قاعده ۲۲) سپس سقف کل
        (max_signals_per_run)."""
-
-    _TREND_STRENGTH_RANK = {"WEAK": 0, "MODERATE": 1, "STRONG": 2}
 
     def __init__(
         self,
@@ -258,13 +257,7 @@ class TradingService(ModelDataProvider):
         """گیت‌های مرحله ۳ Pipeline (قاعده ۲۱) — تصمیم به domain تفویض شده؛
         فقط نگاشت پیکربندی و گیت ml_confidence محلی است."""
         # 3a. حداقل اطمینان هر تایم‌فریم
-        thresholds = LONG_TERM_CONFIG.get("min_confidence_threshold", {})
-        threshold = thresholds.get(signal.timeframe)
-
-        # 3b. حداقل قدرت روند
-        required = str(LONG_TERM_CONFIG.get("min_trend_strength", "MODERATE")).upper()
-        if required not in self._TREND_STRENGTH_RANK:
-            required = "MODERATE"
+        gate_config = build_gate_config(LONG_TERM_CONFIG.get, signal.timeframe)
         strength = signal.market_context.get("trend_strength")
         strength_name = getattr(strength, "value", strength)
         strength_name = str(strength_name).upper() if strength_name else "WEAK"
@@ -288,11 +281,6 @@ class TradingService(ModelDataProvider):
             stop=signal.stop_loss,
             target=signal.exit_price,
             confidence=signal.confidence_score,
-        )
-        gate_config = GateConfig(
-            min_confidence=threshold if threshold is not None else float("-inf"),
-            min_trend_strength=required,
-            min_volume_surge=float(min_surge) if min_surge is not None else 0.0,
         )
         reason = quality_gate_reason(draft, gate_config, strength_name, surge)
         if reason is not None:
@@ -556,13 +544,7 @@ class TradingService(ModelDataProvider):
         است و مستقیم مصرف می‌شود؛ اگر مقداری در بازه ۰ تا ۱ رسید (مثلاً
         ml_confidence که ۰ تا ۱ است)، به ۰ تا ۱۰۰ نگاشت می‌شود تا همه نمونه‌ها
         در bin صفر نیفتند."""
-        try:
-            conf = float(confidence or 0.0)
-        except (TypeError, ValueError):
-            return 0.0
-        if 0.0 < conf <= 1.0:
-            conf *= 100.0
-        return max(0.0, min(100.0, conf))
+        return normalize_confidence(confidence)
 
     async def _record_live_calibration(
         self, symbol: str, timeframe: str, details: dict[str, Any], success: bool
