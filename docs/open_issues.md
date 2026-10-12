@@ -13,6 +13,16 @@ A `blocked` entry never guesses missing content; it records the reason and moves
   after the migration. Agent never runs network training.
 - [ ] `LONG_TERM_CONFIG` thresholds and indicator formulas: frozen by directive
   (only causality fixes allowed in phase 4). No change recorded.
+- [ ] Docker image build not verified locally (v4.0 phase 6): no Docker daemon
+  on this machine. `Dockerfile` now creates and chowns `runs artifacts logs
+  reports` for `appuser`, but `docker build` + healthcheck proof is deferred
+  to the CI `docker` job (phase 8).
+- [ ] TA-Lib install on `python:3.13-slim-bookworm` unverified (v4.0 phase 6):
+  no local Docker; CI `docker` job is the proof point.
+- [ ] Base-image digest pinning skipped (v4.0 phase 6): no verified digest
+  available offline; guessing a digest is forbidden, so the current tag stays.
+- [ ] `docker-compose.yml` absent from the repo (v4.0 phase 6): nothing to add
+  volumes/`env_file` to; compose-based deployment stays user-side.
 
 ## Pre-flight audit (directive v3.0, phase A — verified locally)
 

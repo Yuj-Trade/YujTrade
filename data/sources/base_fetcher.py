@@ -79,7 +79,8 @@ class BaseFetcher:
                 if response.status >= 400:
                     try:
                         error_text = await response.text()
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Error body unreadable: {e}", exc_info=True)
                         error_text = "Could not read response body."
 
                     if "Invalid symbol" in error_text:

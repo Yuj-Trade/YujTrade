@@ -196,7 +196,8 @@ class TelegramBotHandler:
             signals = await self.trading_service.run_quick_analysis(
                 [timeframe] if timeframe else ["1h"]
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Quick analysis unavailable: {e}", exc_info=True)
             signals = []
         if not signals:
             await update.message.reply_text(
@@ -213,7 +214,8 @@ class TelegramBotHandler:
         timeframe = (context.args or ["1h"])[0]
         try:
             signals = await self.trading_service.run_quick_analysis([timeframe])
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Quick analysis unavailable: {e}", exc_info=True)
             signals = []
         if not signals:
             await update.message.reply_text(
@@ -234,7 +236,8 @@ class TelegramBotHandler:
             return
         try:
             summary = self.trading_service.signal_tracker.get_performance_summary()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Performance summary unavailable: {e}", exc_info=True)
             summary = {}
         text = (
             f"Total: {summary.get('total', 0)} | "
@@ -253,7 +256,8 @@ class TelegramBotHandler:
                 f"Max exposure: {cfg.max_portfolio_exposure_pct}% | "
                 f"Max positions: {cfg.max_concurrent_positions}"
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Risk config unavailable: {e}", exc_info=True)
             text = "Risk config unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -270,7 +274,8 @@ class TelegramBotHandler:
                 f"Unrealized: {snap.get('unrealized_pnl', 0):.2f} | "
                 f"Realized: {snap.get('realized_pnl', 0):.2f}"
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Portfolio snapshot unavailable: {e}", exc_info=True)
             text = "Portfolio unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -282,7 +287,8 @@ class TelegramBotHandler:
             sources = self.trading_service.market_data_provider.source_health.snapshot()
             n_ok = sum(1 for v in sources.values() if v.get("ok"))
             src_text = f"Sources: {n_ok}/{len(sources)} healthy"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Source health unavailable: {e}", exc_info=True)
             src_text = "Sources: n/a"
         try:
             snap = await self.trading_service.portfolio_snapshot()
@@ -291,7 +297,8 @@ class TelegramBotHandler:
                 f"Exposure: {snap.get('exposure_pct', 0):.1f}% | "
                 f"Open: {snap.get('open_positions', 0)}"
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Portfolio snapshot unavailable: {e}", exc_info=True)
             pf_text = "Portfolio: n/a"
         text = f"Health OK. Last errors: {errors} | {src_text} | {pf_text}"
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
@@ -600,7 +607,8 @@ class TelegramBotHandler:
                     reasons_list.append(f"{emoji} {escaped_reason}")
                 else:
                     reasons_list.append(f"• {escape_markdown_v2(r)}")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Reason formatting skipped: {e}", exc_info=True)
                 reasons_list.append(f"• {escape_markdown_v2(r)}")
 
         reasons_text = "\n*🧠 KEY ANALYSIS FACTORS*\n" + "\n".join(reasons_list)

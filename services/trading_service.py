@@ -121,7 +121,8 @@ class TradingService(ModelDataProvider):
             return
         try:
             redis_client = await self.resource_manager.get_redis_client()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Redis unavailable, continuing without cache: {e}", exc_info=True)
             redis_client = None
         self._redis_client = redis_client
         self.model_manager.redis_client = redis_client

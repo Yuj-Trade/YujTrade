@@ -560,7 +560,8 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
             timeperiod=14,
         )
         current_adx = adx[-1] if len(adx) > 0 and not pd.isna(adx[-1]) else 20
-    except Exception:
+    except Exception as e:
+        logger.debug(f"ADX fallback used: {e}", exc_info=True)
         current_adx = 20
 
     if current_adx > 25:
@@ -601,7 +602,8 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
                 trend_persistence = "random_walk"
         else:
             trend_persistence = "unknown"
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Hurst fallback used: {e}", exc_info=True)
         trend_persistence = "unknown"
         hurst = None
 

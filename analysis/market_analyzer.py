@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from common.core import MarketAnalysis, MarketCondition, TrendDirection, TrendStrength
+from config.logger import logger
 
 
 class MarketConditionAnalyzer:
@@ -74,8 +75,8 @@ class MarketConditionAnalyzer:
                 candle_patterns = list(candle_patterns) + [
                     d for d in divergences if d not in candle_patterns
                 ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Divergence detection skipped: {e}", exc_info=True)
 
         return MarketAnalysis(
             trend=trend,
@@ -336,7 +337,8 @@ class PatternAnalyzer:
 
                     pattern_scores[pattern_name] = context_score
 
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Pattern scoring skipped for {pattern_name}: {e}", exc_info=True)
                 continue
 
         sorted_patterns = sorted(pattern_scores.items(), key=lambda x: x[1], reverse=True)

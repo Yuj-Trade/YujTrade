@@ -566,7 +566,8 @@ class XGBoostModel(BaseModel):
                     np.std(importances) / np.mean(importances) if np.mean(importances) > 0 else 0.5
                 )
                 uncertainty = min(max(uncertainty * 0.1, 0.05), 0.5)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Uncertainty fallback used: {e}", exc_info=True)
                 uncertainty = 0.15  # Fallback uncertainty
 
             return prediction, float(uncertainty)

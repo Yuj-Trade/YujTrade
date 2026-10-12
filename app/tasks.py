@@ -87,8 +87,8 @@ async def deliver_task_signals(
     finally:
         try:
             await bot.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Bot shutdown skipped: {e}", exc_info=True)
 
 
 async def run_full_analysis_task(chat_id: int, message_id: int):
