@@ -44,7 +44,7 @@ class BaseModel:
         self.last_training_date = None
         self._is_closed = False
         self.logger = logger
-        # Add calibrator instance
+
         self.calibrator = MLConfidenceCalibrator()
 
     def _check_if_closed(self):
@@ -166,9 +166,7 @@ class LSTMModel(BaseModel):
     def fit(self, data: pd.DataFrame, epochs=15, batch_size=None, validation_split=0.2) -> bool:
         self._check_if_closed()
         try:
-            if (
-                data is None or data.empty or len(data) < self.sequence_length + 20
-            ):  # Increased minimum data
+            if data is None or data.empty or len(data) < self.sequence_length + 20:
                 self.logger.warning(
                     f"Insufficient data for {self.symbol}-{self.timeframe}, "
                     f"skipping training. Required: {self.sequence_length + 20}, "
@@ -197,7 +195,7 @@ class LSTMModel(BaseModel):
 
             X, y = self.feature_engineer.create_sequences(
                 scaled_features, scaled_features[:, 0], self.sequence_length
-            )  # Target is the first column ('close')
+            )
             if X.shape[0] == 0 or y.shape[0] == 0:
                 self.logger.warning(
                     f"Not enough data to create sequences "
@@ -205,7 +203,6 @@ class LSTMModel(BaseModel):
                 )
                 return False
 
-            # Ensure validation set is not empty
             if int(X.shape[0] * validation_split) < 1:
                 self.logger.warning(
                     f"Not enough data for validation split "
@@ -320,7 +317,6 @@ class LSTMModel(BaseModel):
             )
 
             with managed_tf_session():
-                # Make multiple predictions with dropout enabled for uncertainty estimation
                 predictions_sample = [
                     self.model(reshaped_sequence, training=True) for _ in range(10)
                 ]
@@ -334,7 +330,6 @@ class LSTMModel(BaseModel):
 
             prediction = self.feature_engineer.inverse_scale_prediction(scaled_prediction)
 
-            # Normalize uncertainty
             uncertainty = min(prediction_std * 0.5, 0.9)
 
             return prediction, float(uncertainty)
@@ -557,18 +552,17 @@ class XGBoostModel(BaseModel):
 
             prediction = self.model.predict(scaled_features)
 
-            # Simulate uncertainty using feature importance
             uncertainty = 0.05
             try:
                 importances = self.model.feature_importances_
-                # Higher variance in importances might mean more uncertainty
+
                 uncertainty = (
                     np.std(importances) / np.mean(importances) if np.mean(importances) > 0 else 0.5
                 )
                 uncertainty = min(max(uncertainty * 0.1, 0.05), 0.5)
             except Exception as e:
                 logger.debug(f"Uncertainty fallback used: {e}", exc_info=True)
-                uncertainty = 0.15  # Fallback uncertainty
+                uncertainty = 0.15
 
             return prediction, float(uncertainty)
         except Exception as e:
@@ -585,7 +579,7 @@ class XGBoostModel(BaseModel):
             model_file.parent.mkdir(parents=True, exist_ok=True)
 
             self.model.save_model(str(model_file))
-            self.save_scaler("xgboost")  # Save the scaler
+            self.save_scaler("xgboost")
             self.logger.info(
                 f"XGBoost model for {self.symbol}-{self.timeframe} saved to {model_file}"
             )
@@ -600,7 +594,7 @@ class XGBoostModel(BaseModel):
             if not model_file.exists():
                 raise ModelError(f"Model file not found at {model_file}")
 
-            if not self.load_scaler("xgboost"):  # Load the scaler
+            if not self.load_scaler("xgboost"):
                 raise ModelError(
                     f"Scaler not found for XGBoost model {self.symbol}-{self.timeframe}. "
                     "It will need retraining."

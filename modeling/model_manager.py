@@ -72,9 +72,7 @@ class ModelManager:
         self.model_path = Path(model_path)
         self.model_path.mkdir(parents=True, exist_ok=True)
         self.redis_client = redis_client
-        # قاعده ۱۱: مالکیت صریح Training. True = رفتار فعلی (آموزش ضمنی
-        # هنگام Prediction)؛ False = Prediction فقط از lifecycle موجود
-        # تبعیت می‌کند و مالک آموزش مسیر صریح است.
+
         self.auto_train_on_predict = auto_train_on_predict
         self._cache: dict[str, BaseModel] = {}
         self._lock = asyncio.Lock()
@@ -193,7 +191,6 @@ class ModelManager:
                 if key not in self._cache:
                     self._cache[key] = model
                 else:
-                    # Another task created the model in the meantime, use it and clean the new one.
                     model.cleanup()
                     return self._cache[key]
             return model
@@ -253,12 +250,7 @@ class ModelManager:
                 )
                 async with self._lock:
                     key = f"{model_type}-{symbol}-{timeframe}"
-                    # Ensure the newly trained model is in the cache.
-                    # Regression (P1): وقتی get_model همان نمونه کش‌شده را
-                    # برگرداند، cleanup نمونه‌ی کش یعنی بستن مدلی که همین
-                    # الان fit شد و گذاشتن نسخه بسته در cache (وزن‌های
-                    # آموزش‌دیده دور ریخته می‌شد). فقط نمونه متفاوت
-                    # جایگزین/بسته می‌شود.
+
                     existing = self._cache.get(key)
                     if existing is not None and existing is not model:
                         existing.cleanup()
@@ -310,7 +302,6 @@ class ModelManager:
                 symbol, timeframe = parts_str.rsplit("_", 1)
                 symbol_formatted = symbol.upper()
                 if "/" not in symbol_formatted and len(symbol_formatted) > 4:
-                    # Attempt to reformat symbol like 'BTCUSDT' to 'BTC/USDT'
                     if "USDT" in symbol_formatted:
                         symbol_formatted = symbol_formatted.replace("USDT", "/USDT", 1)
                     elif "BUSD" in symbol_formatted:
@@ -342,9 +333,6 @@ class ModelManager:
     async def predict_with_confidence(
         self, model_type: str, symbol: str, timeframe: str
     ) -> dict[str, float] | None:
-        """قرارداد قاعده ۳۰: None یعنی «مدل در دسترس نیست» (آموزش‌ندیده/بی‌داده/
-        پیش‌بینی نامعتبر) و مؤلفه ML در Scorer به صفر degrade می‌شود — نه شکست
-        تحلیل. خطاهای غیرمنتظره منتشر می‌شوند (به‌جز لغو task)."""
         self._check_if_closed()
 
         model = await self.get_model(model_type, symbol, timeframe)
@@ -371,7 +359,7 @@ class ModelManager:
                     "Skipping prediction."
                 )
                 return None
-            # Re-get the model to ensure we have the trained instance
+
             model = await self.get_model(model_type, symbol, timeframe)
             if not model or not model.is_trained:
                 self.logger.error(
@@ -417,7 +405,7 @@ class ModelManager:
                 expected_pct_change = model.feature_engineer.get_typical_volatility(timeframe) * 100
                 if expected_pct_change > 0:
                     price_change_pct = abs(prediction[0] - current_price) / current_price * 100
-                    # A more sensible confidence based on expected volatility
+
                     raw_confidence = np.clip(
                         100
                         - (abs(price_change_pct - expected_pct_change) / expected_pct_change) * 100,
@@ -425,9 +413,8 @@ class ModelManager:
                         95,
                     )
                 else:
-                    raw_confidence = 50.0  # Default confidence if no volatility expected
+                    raw_confidence = 50.0
 
-            # Use the calibrator
             model_name = f"{model_type}_{symbol}_{timeframe}"
             calibrated_confidence = model.calibrator.get_calibrated_confidence(
                 model_name, raw_confidence
@@ -475,8 +462,6 @@ class ModelManager:
             )
 
     async def shutdown(self):
-        """مالک مدل‌ها و executorها (قاعده ۲۵). کش مدل‌ها و ThreadPoolها اینجا
-        آزاد می‌شوند (idempotent)؛ منابع بیرونی (Redis/session) نه."""
         if self._is_closed:
             return
 
@@ -498,7 +483,6 @@ class ModelManager:
                 executor = getattr(self, executor_attr)
                 if executor:
                     try:
-                        # Use cancel_futures=True for a faster shutdown on exit
                         executor.shutdown(wait=False, cancel_futures=True)
                     except Exception as e:
                         self.logger.error(f"Error shutting down executor: {e}")

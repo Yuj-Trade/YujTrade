@@ -13,10 +13,6 @@ from config.settings import ConfigManager
 
 
 class AnalysisScorer:
-    """
-    A class dedicated to scoring different aspects of the market analysis.
-    """
-
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
 
@@ -26,11 +22,6 @@ class AnalysisScorer:
         market_context: MarketAnalysis,
         weights: dict[str, float] | None = None,
     ) -> float:
-        """
-        Calculates a score based on technical indicators.
-        weights (نام → وزن، مثلاً ترکیب regime×decorrelation از SignalGenerator)
-        اختیاری است؛ بدون آن میانگین ساده قبلی حفظ می‌شود.
-        """
         total_score = 0.0
         total_weight = 0.0
         for name, item in processed_results.items():
@@ -95,34 +86,22 @@ class AnalysisScorer:
 
         base_score = direction * strength
 
-        # Contextual adjustment
         if (
             market_context.trend == TrendDirection.BULLISH
             and "strong" in market_context.trend_strength.value
         ):
             if direction < 0 and "oversold" not in interpretation:
-                base_score *= 0.5  # Penalize bearish signals in a strong uptrend
+                base_score *= 0.5
         elif (
             market_context.trend == TrendDirection.BEARISH
             and "strong" in market_context.trend_strength.value
         ):
             if direction > 0 and "overbought" not in interpretation:
-                base_score *= 0.5  # Penalize bullish signals in a strong downtrend
+                base_score *= 0.5
 
         return base_score
 
     def score_market_context(self, context: MarketAnalysis) -> tuple[float, list[str]]:
-        """
-        Scores the overall market context.
-        قرارداد MarketAnalysis (قاعده ۸): trend/trend_strength/market_condition/
-        volume_trend_score هسته امتیاز هستند (فرمول قبلی بدون تغییر)؛ بقیه
-        خروجی‌های MarketConditionAnalyzer به‌عنوان تعدیل‌های محدود (±) اثر
-        می‌گذارند. support/resistance در scoring مصرف نمی‌شوند چون ورودی
-        calculate_dynamic_levels هستند (مصرف‌شان در ساخت Signal است، نه امتیاز).
-        detect_divergence به analyze_market_condition وصل است (قاعده ۳۵) و
-        برچسب‌هایش در candle_patterns می‌آیند؛ چون با الگوی "(bullish)" هم‌پوشانی
-        ندارند، روی امتیاز اثری ندارند.
-        """
         score = 0.0
         reasons = []
 
@@ -151,10 +130,8 @@ class AnalysisScorer:
         score += volume_score
         reasons.append(f"Volume Score: {volume_score:.2f}")
 
-        # Normalize the base score exactly as before
         base_score = np.clip(score / 2.0, -1.0, 1.0)
 
-        # تعدیل‌های محدود از سایر خروجی‌های قرارداد (هر کدام مستقل و امن)
         extras = 0.0
 
         try:
@@ -239,9 +216,6 @@ class AnalysisScorer:
 
     @staticmethod
     def _unwrap(value: Any) -> Any:
-        """قرارداد واحد: مقادیر external_data خام هستند (آبجکت دامنه یا dict).
-        این متد فقط قالب قدیمی {"data": obj} را هم می‌پذیرد تا سازگاری
-        گذشته حفظ شود؛ ساختار موازی جدیدی تعریف نمی‌کند."""
         if isinstance(value, dict) and "data" in value and len(value) == 1:
             return value["data"]
         return value
@@ -249,20 +223,10 @@ class AnalysisScorer:
     def score_external_data(
         self, data: dict[str, Any], market_context: MarketAnalysis, symbol: str
     ) -> tuple[float, list[str]]:
-        """
-        زنجیره واحد (قاعده ۳):
-            MarketDataProvider (DerivativesAnalysis و...) → SignalGenerator
-            (ذخیره خام در external_data) → این متد (خوانش خام).
-        هیچ Adapter موازی برای یک داده وجود ندارد.
-        همه منابع جمع‌شده (قاعده ۴ و ۵: Fundamental، On-chain، OrderBook،
-        Macro، Trending، MarketIndices) در امتیاز/دلایل اثر می‌گذارند.
-        """
         score = 0.0
         reasons = []
         base_asset = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
 
-        # 1) News / Sentiment (CryptoPanic + Alternative.me + CoinDesk + Messari
-        #    که داخل NewsFetcher تجمیع شده‌اند)
         try:
             news_raw = self._unwrap(data.get("news"))
             if isinstance(news_raw, dict):
@@ -287,7 +251,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"News scoring skipped: {e}")
 
-        # 2) Derivatives (Binance)
         try:
             deriv = self._unwrap(data.get("derivatives"))
             if deriv is not None and not isinstance(deriv, dict):
@@ -307,7 +270,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"Derivatives scoring skipped: {e}")
 
-        # 3) Fundamental (CoinGecko)
         try:
             fund = self._unwrap(data.get("fundamental"))
             if fund is not None and not isinstance(fund, dict):
@@ -319,7 +281,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"Fundamental scoring skipped: {e}")
 
-        # 4) On-chain (Messari: MVRV/SOPR)
         try:
             onchain = self._unwrap(data.get("onchain"))
             if onchain is not None and not isinstance(onchain, dict):
@@ -344,7 +305,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"On-chain scoring skipped: {e}")
 
-        # 5) Order book imbalance (Binance)
         try:
             ob = self._unwrap(data.get("order_book"))
             if ob is not None and not isinstance(ob, dict):
@@ -361,7 +321,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"OrderBook scoring skipped: {e}")
 
-        # 6) Macro (AlphaVantage)
         try:
             macro = self._unwrap(data.get("macro"))
             if macro is not None and not isinstance(macro, dict):
@@ -380,7 +339,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"Macro scoring skipped: {e}")
 
-        # 7) Trending (CoinGecko)
         try:
             trending = self._unwrap(data.get("trending"))
             coins: list[str] = []
@@ -395,8 +353,6 @@ class AnalysisScorer:
         except Exception as e:
             logger.debug(f"Trending scoring skipped: {e}")
 
-        # 8) Market indices (CoinGecko + DeFiLlama + YFinance + AlphaVantage
-        #    که داخل MarketIndicesFetcher تجمیع شده‌اند)
         try:
             indices = self._unwrap(data.get("market_indices"))
             if isinstance(indices, dict) and indices:
@@ -428,20 +384,15 @@ class AnalysisScorer:
     def normalize_funding_rate(
         self, funding_rate: float, symbol: str, market_context: MarketAnalysis
     ) -> float:
-        """
-        Normalizes funding rate into a score from -0.3 to 0.3.
-        Negative funding is generally bullish, positive is bearish.
-        """
         asset = symbol.split("/")[0]
-        # These are just example averages, could be dynamically calculated
+
         market_avg_funding = {"BTC": 0.01, "ETH": 0.008, "default": 0.02}.get(asset, 0.02)
 
-        # High funding rate is bearish, so score is negative
         if funding_rate > market_avg_funding * 2:
             return -0.3
         if funding_rate > market_avg_funding:
             return -0.15
-        # Negative funding rate is bullish, so score is positive
+
         if funding_rate < -market_avg_funding:
             return 0.3
         if funding_rate < 0:
@@ -452,9 +403,6 @@ class AnalysisScorer:
     def score_ml_predictions(
         self, predictions: dict[str, dict[str, float]], current_price: float
     ) -> tuple[float, list[str], float]:
-        """
-        Scores predictions from machine learning models.
-        """
         if not predictions:
             return 0.0, [], 0.0
 
@@ -466,13 +414,7 @@ class AnalysisScorer:
 
         for model_name, pred_data in predictions.items():
             pred_price = pred_data.get("prediction", 0)
-            # قرارداد مقادیر ModelManager (قاعده ۳۳): "confidence" همان
-            # final_confidence است = calibrated_confidence × (1 - uncertainty²)
-            # یعنی هم کالیبراسیون هم تعدیل عدم‌قطعیت را در بر دارد. خواندن
-            # "calibrated_confidence" به‌جای آن، تعدیل uncertainty را از
-            # امتیاز حذف می‌کرد؛ پس "confidence" اولویت دارد و
-            # "calibrated_confidence" فقط برای callerهایی که فقط آن را
-            # می‌فرستند fallback می‌شود.
+
             confidence = pred_data.get("confidence", pred_data.get("calibrated_confidence", 0))
 
             if pred_price == 0:
@@ -480,7 +422,6 @@ class AnalysisScorer:
 
             direction = 1 if pred_price > current_price else -1
 
-            # Weight the score by the model's confidence and its predefined weight
             model_weight = model_weights.get(model_name, 0.5)
             weighted_score += direction * (confidence / 100.0) * model_weight
             total_confidence += confidence * model_weight
@@ -491,7 +432,6 @@ class AnalysisScorer:
                 f"(Conf: {confidence:.1f}%)"
             )
 
-        # Normalize the score by the total confidence to get a value between -1 and 1
         num_models = len(predictions)
         if num_models == 0:
             return 0.0, [], 0.0
@@ -511,9 +451,6 @@ class AnalysisScorer:
         reasons: list[str],
         timeframe: str,
     ) -> tuple[float, list[str]]:
-        """
-        Combines scores from all analysis parts into a single final score.
-        """
         weights = self.config_manager.get_component_weights(timeframe)
 
         final_score = 0.0
@@ -527,6 +464,5 @@ class AnalysisScorer:
         if total_weight == 0:
             return 0.0, reasons
 
-        # Normalize and scale to -100 to 100 range
         normalized_score = (final_score / total_weight) * 100
         return normalized_score, reasons

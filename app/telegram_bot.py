@@ -22,8 +22,6 @@ from trading.risk_manager import build_risk_config
 from utils.background_manager import BackgroundTaskManager
 
 
-# تعریف واحد Full Analysis (قاعده ۱۶): همان focus_timeframes سرویس.
-# برچسب‌ها از همین‌جا ساخته می‌شوند تا UI و Service drift نکنند.
 def _focus_label() -> str:
     focus = LONG_TERM_CONFIG.get("focus_timeframes", [])
     return ", ".join(focus) if focus else "all timeframes"
@@ -132,7 +130,6 @@ class TelegramBotHandler:
             chat_id = self.admin_chat_id
 
         async def analysis_task():
-            # تعریف واحد Quick Analysis (قاعده ۱۷) — همان implementation سرویس.
             signals = await self.trading_service.run_quick_analysis(QUICK_TIMEFRAMES)
 
             await self.send_signals_to_telegram(
@@ -170,8 +167,6 @@ class TelegramBotHandler:
         self.background_tasks.create_task(analysis_task(), name=f"FullAnalyze-{chat_id}")
 
     def _no_signals_text(self, base_text: str) -> str:
-        """تفکیک معنایی قاعده ۳۰: اگر آخرین اجرا خطا داشته، «بدون سیگنال»
-        با «تحلیل ناقص» قاطی نمی‌شود."""
         if getattr(self.trading_service, "last_errors", 0):
             return (
                 f"{base_text} ⚠️ "
@@ -408,8 +403,6 @@ class TelegramBotHandler:
             f"💰 *Predicted Profit:* `{predicted_profit_str}`"
         )
 
-        # قاعده ۳۴: ml_confidence در پیام نمایش داده می‌شود (مقیاس ۰ تا ۱
-        # به درصد). None یعنی ML اجرا نشده و خطی اضافه نمی‌شود.
         try:
             ml_conf = getattr(signal, "ml_confidence", None)
             if ml_conf is not None:
@@ -564,9 +557,7 @@ class TelegramBotHandler:
 
         if signal.dynamic_levels:
             levels = signal.dynamic_levels
-            # قاعده ۳۸: هر مقدار قبل از رندر در متغیر محلی جداگانه استخراج
-            # می‌شود؛ f-string تودرتو با همان کوتیشن فقط از Python 3.12+
-            # (PEP 701) مجاز است و زیر آن کل ماژول import نمی‌شود.
+
             prim_entry = escape_markdown_v2(f"{levels.get('primary_entry', 0):.8f}")
             sec_entry = escape_markdown_v2(f"{levels.get('secondary_entry', 0):.8f}")
             prim_exit = escape_markdown_v2(f"{levels.get('primary_exit', 0):.8f}")

@@ -8,8 +8,6 @@ from common.exceptions import APIRateLimitError, NetworkError, TradingBotExcepti
 
 
 class CircuitBreakerError(TradingBotException):
-    """Exception raised when the circuit breaker is open."""
-
     pass
 
 

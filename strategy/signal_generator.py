@@ -49,8 +49,7 @@ class SignalGenerator:
         self.market_analyzer = MarketConditionAnalyzer()
         self.scorer = AnalysisScorer(self.config_manager)
         self.data_validator = DataQualityChecker()
-        # مالک آستانه تطبیقی در Pipeline اصلی (گروه C): بدون شواهد کافی،
-        # رفتار دقیقاً برابر آستانه ثابت کانفیگ است (خنثی تا یادگیری).
+
         self.threshold_manager = AdaptiveThresholdManager()
 
     @staticmethod
@@ -73,19 +72,10 @@ class SignalGenerator:
         include_external: bool = True,
         include_ml: bool = True,
     ) -> TradingSignal | None:
-        """قرارداد خطای واحد (قاعده ۳۰):
-        - بازگرداندن None یعنی «سیگنالی نیست» (HOLD، رد RR، رد multi-TF ندارد
-          — آن در TradingService است): تصمیم سالم تحلیل، نه خطا.
-        - raise یعنی «تحلیل شکست خورد» (داده بی‌کیفیت، خطای دیتا/محاسبه) و
-          باید به جمع‌کننده برسد، نه اینکه به None تبدیل شود.
-        include_external/include_ml: برای بک‌تست تاریخی False می‌شوند تا
-        داده لحظه‌ای (live) وارد تحلیل گذشته نشود (قاعده ۱۴). تولید زنده
-        همیشه True است و رفتار آن بدون تغییر می‌ماند."""
         analysis_timestamp = datetime.now(timezone.utc)
 
         is_valid, quality_msg = self.data_validator.validate_data_quality(data, timeframe)
         if not is_valid:
-            # نقش Signal (قاعده ۲۳): داده آماده تحلیل نیست → شکست تحلیل، نه «بدون سیگنال».
             raise InsufficientDataError(
                 f"Data quality check failed for {symbol}-{timeframe}: {quality_msg}"
             )
@@ -95,7 +85,6 @@ class SignalGenerator:
 
         last_indicator_results = self.feature_engineer.get_last_indicator_results(data, timeframe)
 
-        # قاعده ۶: Market Data → Market Regime → Existing Weight Adjustment → Scoring
         base_weights = self.config_manager.get_indicator_weights(timeframe) or {}
         regime_weights = self.adjust_weights_by_regime(dict(base_weights), market_regime)
         decorr_weights = self.feature_engineer.get_decorrelation_weights(last_indicator_results)
@@ -147,8 +136,6 @@ class SignalGenerator:
             scores, all_reasons, timeframe
         )
 
-        # آستانه تطبیقی (گروه C): کلید رژیم از داده واقعی؛ بدون سابقه کافی
-        # همان آستانه ثابت کانفیگ برمی‌گردد، پس رفتار زنده بدون تغییر است.
         vol_regime = str(market_regime.get("volatility_regime", "normal"))
         hurst_range = self._hurst_range(market_context.hurst_exponent)
         base_threshold = self.config_manager.get("signal_threshold", 50)
@@ -259,8 +246,6 @@ class SignalGenerator:
             "order_book": self.data_provider.get_order_book(symbol),
             "macro": self.data_provider.get_macro_data(),
             "trending": self.data_provider.get_trending_data(),
-            # get_all_indices = crypto (CoinGecko+DeFiLlama) + traditional
-            # (YFinance: DXY/SPX/VIX/...) + macro تا همه Sourceها در زنجیره باشند.
             "market_indices": self.data_provider.get_all_indices(),
         }
 
@@ -277,8 +262,7 @@ class SignalGenerator:
         try:
             base_currency = symbol.split("/")[0]
             news_sentiment = await self.data_provider.get_news_sentiment([base_currency])
-            # قرارداد واحد: همه مقادیر external_data خام ذخیره می‌شوند
-            # (بدون wrapper موازی {"data": ...})؛ Scorer هم همان را می‌خواند.
+
             external_data["news"] = news_sentiment
         except Exception as e:
             logger.warning(f"Failed to fetch news sentiment for {symbol}: {e}")

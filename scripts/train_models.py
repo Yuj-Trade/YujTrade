@@ -14,11 +14,6 @@ warnings.filterwarnings("ignore")
 
 
 class TrainingDataProvider(ModelDataProvider):
-    """A dedicated data provider for the training script.
-
-    قرارداد واحد با TradingService.get_data_for_model (قاعده ۱۰):
-    محدودیت‌ها فقط از Config خوانده می‌شوند؛ تفاوت صرفاً parameter است."""
-
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
@@ -65,8 +60,6 @@ class ModelTrainer:
                 logger.warning(f"Insufficient data for {symbol}-{timeframe}. Skipping.")
                 return
 
-            # The model manager now uses the data provider passed to it,
-            # so we just need to call its train_model method.
             is_trained = await self.model_manager.train_model(model_type, symbol, timeframe, data)
 
             if is_trained:

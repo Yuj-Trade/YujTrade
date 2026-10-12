@@ -25,19 +25,16 @@ class RateLimiter:
             now = time.time()
             reqs = self.requests.setdefault(endpoint, [])
 
-            # Remove old timestamps
             reqs = [t for t in reqs if now - t < self.time_window]
             self.requests[endpoint] = reqs
 
             if len(reqs) >= self.max_requests:
-                # Find the time to wait until the oldest request expires
                 oldest_request_time = reqs[0]
                 sleep_time = self.time_window - (now - oldest_request_time)
                 if sleep_time > 0:
                     logger.debug(f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s")
                     await asyncio.sleep(sleep_time)
 
-                # After sleeping, update the list again
                 now = time.time()
                 self.requests[endpoint] = [t for t in reqs if now - t < self.time_window]
 
@@ -151,12 +148,9 @@ class IndicatorNormalizer:
         expected_min, expected_max = self.expected_ranges.get(indicator_name.lower(), (-1, 1))
 
         if expected_max == float("inf") and expected_min == -float("inf"):
-            # Cannot normalize unbounded values, return as is
             return indicator_result
         elif expected_max == float("inf"):
-            # Normalize one-sided unbounded (positive)
             if indicator_result.value > expected_min:
-                # Simple scaling, can be improved with more context
                 normalized_value = min(
                     (
                         (indicator_result.value - expected_min) / (expected_min + 1e-6)
@@ -166,9 +160,8 @@ class IndicatorNormalizer:
                     1.0,
                 )
             else:
-                normalized_value = -1.0  # Below expected minimum
+                normalized_value = -1.0
         elif expected_min == -float("inf"):
-            # Normalize one-sided unbounded (negative)
             if indicator_result.value < expected_max:
                 normalized_value = max(
                     (
@@ -179,9 +172,8 @@ class IndicatorNormalizer:
                     -1.0,
                 )
             else:
-                normalized_value = 1.0  # Above expected maximum
+                normalized_value = 1.0
         else:
-            # Normalize bounded values to [-1, 1]
             if expected_max > expected_min:
                 normalized_value = (
                     2 * (indicator_result.value - expected_min) / (expected_max - expected_min) - 1
@@ -435,7 +427,7 @@ def calculate_dynamic_levels(
         ]
         take_profit = min(valid_resistances) if valid_resistances else base_take_profit
 
-    else:  # SELL
+    else:
         valid_resistances = [
             r
             for r in market_context.resistance_levels
@@ -450,22 +442,21 @@ def calculate_dynamic_levels(
         ]
         take_profit = max(valid_supports) if valid_supports else base_take_profit
 
-    # Adjust based on order book liquidity
     if order_book and hasattr(order_book, "bids") and signal_type == SignalType.BUY:
         major_bid = max([p for p, _ in order_book.bids[:5]]) if order_book.bids else None
         if major_bid and abs(major_bid - stop_loss) / stop_loss < 0.005:
-            stop_loss = major_bid * 0.995  # Place SL just below major liquidity
+            stop_loss = major_bid * 0.995
 
     trailing_stop_distance = atr * 0.8
     breakeven_distance = abs(entry - stop_loss) * 0.5
 
     return {
         "primary_entry": entry,
-        "secondary_entry": entry,  # Can be improved
+        "secondary_entry": entry,
         "primary_exit": take_profit,
-        "secondary_exit": take_profit,  # Can be improved
+        "secondary_exit": take_profit,
         "tight_stop": stop_loss,
-        "wide_stop": stop_loss,  # Can be improved
+        "wide_stop": stop_loss,
         "breakeven_point": (
             entry + breakeven_distance
             if signal_type == SignalType.BUY
@@ -523,7 +514,7 @@ def validate_signal_timing(
         if candles_since_low < min_candles_from_extreme:
             return False, f"Too soon after recent low ({candles_since_low} candles)"
 
-    else:  # SELL
+    else:
         distance_from_low = (current_price - lowest_low) / price_range
         if distance_from_low < 0.1:
             return False, "Too close to recent low for SELL signal"
@@ -572,7 +563,7 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
         market_type = "transitional"
 
     returns = recent_data["close"].pct_change()
-    volatility = returns.std() * np.sqrt(252)  # Annualized volatility
+    volatility = returns.std() * np.sqrt(252)
 
     if volatility > returns.std() * 1.5:
         volatility_regime = "high"
@@ -581,11 +572,6 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
     else:
         volatility_regime = "normal"
 
-    # Regression (P1/فاز ۱۲): import نسبی «..» از ماژول top-level همیشه
-    # ImportError می‌داد → except خام آن را می‌خورد → hurst هرگز تعریف
-    # نمی‌شد → UnboundLocalError در سطر return، یعنی crash مسیر زنده
-    # SignalGenerator.generate_signal. import مطلق + مقداردهی اولیه
-    # hurst=None؛ fallback رفتاری بدون تغییر می‌ماند.
     hurst = None
     try:
         from analysis.market_analyzer import MarketConditionAnalyzer
@@ -631,7 +617,7 @@ def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.02) -> 
     if len(returns) < 2:
         return 0.0
 
-    excess_returns = returns.mean() - (risk_free_rate / 252)  # Daily risk-free rate
+    excess_returns = returns.mean() - (risk_free_rate / 252)
     std_dev = returns.std()
 
     if std_dev == 0:

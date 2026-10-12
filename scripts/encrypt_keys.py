@@ -21,8 +21,6 @@ def run():
     encryptor = KeyEncryptor(password)
     config = Config(RepositoryEnv(str(env_file)))
 
-    # فهرست یکسان با SecretsManager (قاعده ۲۶): همه کلیدهای get_secret باید
-    # اینجا هم قابل‌رمزنگاری باشند. نام محیطی REDIS_TOKEN معادل REDIS_PASSWORD است.
     keys_to_encrypt = [
         "TELEGRAM_BOT_TOKEN",
         "ADMIN_CHAT_ID",

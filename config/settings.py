@@ -56,10 +56,6 @@ class SecretsManager:
     TF_CPP_MIN_LOG_LEVEL = decouple_config("TF_CPP_MIN_LOG_LEVEL", default="3")
     TF_ENABLE_ONEDNN_OPTS = decouple_config("TF_ENABLE_ONEDNN_OPTS", default="0")
 
-    # قاعده ۳۹: هیچ هاست/پورت پیش‌فرض embedded وجود ندارد (مشابه قاعده ۲۷
-    # برای secret). در نبود REDIS_HOST/REDIS_PORT/REDIS_TOKEN، کش غیرفعال
-    # است (ResourceManager.get_redis_client → None). مقداردهی این فیلدها
-    # فقط از محیط/فایل .env انجام می‌شود.
     REDIS_HOST = decouple_config("REDIS_HOST", default="")
     REDIS_PORT = decouple_config("REDIS_PORT", default=6379, cast=int)
     REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="")
@@ -80,8 +76,6 @@ class ConfigManager:
         "schedule_hour": "*/1",
         "app_version": "6.0.0",
         "timeframe_based_weights": True,
-        # قرارداد واحد داده مدل (قاعده ۱۰): هم Training و هم Prediction
-        # محدودیت‌ها را فقط از همین‌جا می‌خوانند.
         "model_data_limits": {
             "1h": 2000,
             "4h": 1500,

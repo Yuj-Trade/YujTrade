@@ -40,17 +40,6 @@ from utils.resource_manager import ResourceManager
 
 
 class MarketDataProvider:
-    """قرارداد مالکیت Cache (قاعده ۲۴) — بدون double caching هم‌کلید:
-    - Provider فقط کلید یکپارچه OHLCV (ohlcv_key با source="unified") را کش می‌کند.
-    - هر Fetcher فقط کش دامنه خودش (derivatives/macro/indices/news/
-      fundamental/trending/...) را با کلید نام‌منبع خودش مدیریت می‌کند.
-    - متدهای get_*_data خروجی Fetcherها را دوباره کش نمی‌کنند؛ نتیجه
-      تجمیعی MarketIndicesFetcher هم کش نمی‌شود (اجزا قبلاً کش شده‌اند).
-    قرارداد خطا (قاعده ۳۰):
-    - fetch_ohlcv_data در شکست یکپارچگی raise می‌کند (InsufficientDataError).
-    - متدهای get_* enrichment اختیاری‌اند: None یعنی «در دسترس نیست»
-      (تحلیل با degradation ادامه می‌یابد)، نه «شکست»."""
-
     def __init__(
         self,
         resource_manager: ResourceManager,
@@ -133,11 +122,6 @@ class MarketDataProvider:
                 api_key=SecretsManager.MESSARI_API_KEY, **common_args
             )
 
-        # Source of Truth: DeFiLlama (on-chain TVL / DeFi) و YFinance
-        # (شاخص‌های سنتی) همیشه ساخته می‌شوند چون کلید API لازم ندارند
-        # و توسط MarketIndicesFetcher مصرف می‌شوند. ساخت صریح آن‌ها در
-        # اینجا از نمونه‌سازی پنهان/تکراری داخل MarketIndicesFetcher
-        # جلوگیری می‌کند و چرخه عمرشان زیر نظر MarketDataProvider است.
         self.defillama_fetcher = DeFiLlamaFetcher(**common_args)
         self.yfinance_fetcher = YFinanceFetcher(**common_args)
 
@@ -182,9 +166,6 @@ class MarketDataProvider:
         logger.info("MarketDataProvider initialization completed.")
 
     async def close(self):
-        """مالک Fetcherها (قاعده ۲۵): همه Fetcherهای self.fetchers را می‌بندد
-        (idempotent). session و Redis متعلق به ResourceManager‌اند و اینجا
-        بسته نمی‌شوند."""
         if self._is_closed:
             return
         self._is_closed = True
@@ -202,10 +183,6 @@ class MarketDataProvider:
 
         score = 100.0
 
-        # قرارداد detect_data_gaps (عنصر اول) «has_gaps» است — همان
-        # ‌گونه که calculate_overall_quality_score آن را مصرف می‌کند. قبلاً
-        # برعکس خوانده می‌شد: داده بدون گپ -۳۰ می‌گرفت و داده گپ‌دار
-        # جریمه نمی‌شد (Regression P1 — تست‌های فاز ۸ آن را آشکار کردند).
         try:
             has_gaps, _ = self.data_quality_checker.detect_data_gaps(df)
             if has_gaps:
@@ -228,12 +205,6 @@ class MarketDataProvider:
         limit: int = 1000,
         bypass_cache: bool = False,
     ) -> pd.DataFrame | None:
-        """نقش Provider در کیفیت داده (قاعده ۲۳): یکپارچگی Source/Data —
-        فقط بهترین Source با امتیاز مثبت برگردانده می‌شود، وگرنه
-        InsufficientDataError. آمادگی تحلیل (Signal) و نیازهای مدل (Model)
-        در لایه‌های خودشان بررسی می‌شوند، نه اینجا.
-        bypass_cache=True (قاعده ۴۴): خواندن/نوشتن کش Redis دور زده می‌شود؛
-        برای قیمت مرجع reconciliation که باید تازه باشد، نه کهنه از TTL."""
         if self._is_closed:
             raise ObjectClosedError("MarketDataProvider is closed")
 
@@ -387,7 +358,6 @@ class MarketDataProvider:
         return None
 
     async def get_onchain_data(self, symbol: str) -> OnChainAnalysis | None:
-        """داده آن‌چین (MVRV/SOPR/active_addresses) از Messari موجود."""
         if self.messari_fetcher:
             try:
                 return await self.messari_fetcher.get_on_chain_data(symbol)
@@ -442,7 +412,6 @@ class MarketDataProvider:
         return None
 
     async def get_market_indices(self) -> dict[str, Any] | None:
-        """شاخص‌های کریپتو (TOTAL/BTC.D/DEFI_TVL/...) از مسیر موجود MarketIndicesFetcher."""
         if self.market_indices_fetcher:
             try:
                 return await self.market_indices_fetcher.get_crypto_indices()
@@ -451,7 +420,6 @@ class MarketDataProvider:
         return None
 
     async def get_all_indices(self) -> dict[str, Any] | None:
-        """ترکیب شاخص‌های کریپتو + سنتی + ماکرو از همان Aggregator موجود."""
         if self.market_indices_fetcher:
             try:
                 return await self.market_indices_fetcher.get_all_indices()

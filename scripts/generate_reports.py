@@ -1,5 +1,3 @@
-"""Generate reproducible local environment and baseline reports."""
-
 import argparse
 import hashlib
 import json

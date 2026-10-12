@@ -8,12 +8,6 @@ from config.logger import logger
 
 
 class DataQualityChecker:
-    """مرجع واحد قواعد کیفی (قاعده ۲۳) با سه نقش جدا:
-    - Provider: یکپارچگی Source/Data (انتخاب بهترین Source با امتیاز مثبت).
-    - Signal: آمادگی تحلیل (validate_data_quality روی OHLCV).
-    - Model: نیازهای خاص مدل (حداقل طول داده در fit/predict).
-    آستانه حداقل نقاط از LONG_TERM_CONFIG خوانده می‌شود (تک‌منبع)."""
-
     def __init__(self):
         self.min_data_points_map = LONG_TERM_CONFIG.get("min_data_points", {})
 
@@ -124,11 +118,6 @@ class DataQualityChecker:
     def calculate_overall_quality_score(
         self, data: pd.DataFrame, timeframe: str, volatility: float = None
     ) -> float:
-        """امتیاز کیفی ترکیبی در مقیاس ۰ تا ۱ (خلاف _get_data_quality_score
-        در Provider که ۰ تا ۱۰۰ است — مقیاس‌ها عمداً متفاوت و مستندند).
-        قاعده ۳۶: فراخوانی detect_data_gaps داخل try/except است؛ گپ بزرگ
-        (ValueError) به‌جای انتشار، حداکثر جریمه گپ را اعمال می‌کند — همان
-        رفتار _get_data_quality_score که 0.0 برمی‌گرداند."""
         score = 1.0
 
         is_valid, msg = self.validate_data_quality(data, timeframe)
@@ -141,7 +130,6 @@ class DataQualityChecker:
         try:
             has_gaps, gap_penalty = self.detect_data_gaps(data)
         except ValueError:
-            # گپ بزرگ‌تر از آستانه: حداکثر جریمه، بدون انتشار خطا.
             has_gaps, gap_penalty = True, 0.5
         if has_gaps:
             score *= 1 - gap_penalty * 0.5
@@ -220,11 +208,11 @@ class DataQualityChecker:
     def _get_volatility_adjusted_max_changes(self, min_bars: int, volatility: float) -> int:
         base_divisor = 8
         if volatility is not None:
-            if volatility > 0.05:  # High volatility
+            if volatility > 0.05:
                 base_divisor = 5
-            elif volatility > 0.03:  # Medium volatility
+            elif volatility > 0.03:
                 base_divisor = 7
-            else:  # Low volatility
+            else:
                 base_divisor = 9
 
         return max(4, min_bars // base_divisor)

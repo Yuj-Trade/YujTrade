@@ -68,10 +68,10 @@ class CoinGeckoFetcher(BaseFetcher):
             effective_url = effective_url.replace(self.base_url, self.pro_base_url)
             if "pro-api" in effective_url:
                 request_headers["x-cg-pro-api-key"] = self.api_key
-            else:  # Demo API key for non-pro endpoints
+            else:
                 request_params["x_cg_demo_api_key"] = self.api_key
         else:
-            if "pro-api" in url:  # Should not happen if no key, but as a safeguard
+            if "pro-api" in url:
                 effective_url = url.replace(self.pro_base_url, self.base_url)
 
         async def _do_fetch():
@@ -111,7 +111,7 @@ class CoinGeckoFetcher(BaseFetcher):
         df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df.set_index("timestamp", inplace=True)
-        df["volume"] = 0.0  # CoinGecko OHLC does not provide volume
+        df["volume"] = 0.0
         return df
 
     async def get_fundamental_data(self, coin_id_or_symbol: str) -> FundamentalAnalysis | None:

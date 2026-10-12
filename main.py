@@ -27,8 +27,6 @@ class MainApp:
 
     @staticmethod
     def _parse_schedule_hour(value) -> float:
-        """schedule_hour با قالب "*/N" یعنی هر N ساعت؛ عدد ساده هم ساعت است.
-        خروجی ثانیه؛ نامعتبر → پیش‌فرض ۱ ساعت."""
         try:
             text = str(value).strip()
             if text.startswith("*/"):
@@ -84,7 +82,7 @@ class MainApp:
 
         try:
             logger.info("Initializing application components...")
-            # همان Composition Root اصلی (قاعده ۱۸) — بدون graph موازی.
+
             from services.trading_service import create_trading_stack
 
             (
@@ -135,8 +133,6 @@ class MainApp:
 
                 logger.info("Telegram bot started successfully.")
 
-                # اجرای دوره‌ای تحلیل با مکانیزم موجود (قاعده ۱۹):
-                # BackgroundTaskManager + run_scheduled_analysis، بدون Scheduler جدید.
                 if config_manager.get("enable_scheduled_analysis", False):
                     self.background_tasks_manager.create_task(
                         self._scheduled_analysis_loop(config_manager),

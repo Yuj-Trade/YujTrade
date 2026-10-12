@@ -30,11 +30,6 @@ async def create_trading_stack(
     config_manager: ConfigManager | None = None,
     resource_manager: ResourceManager | None = None,
 ) -> tuple[ConfigManager, ResourceManager, MarketDataProvider, "TradingService"]:
-    """تنها Composition Root سیستم (قاعده ۱۸). MainApp، TaskServiceContainer و
-    ابزارهای بهینه‌سازی همگی از همین مسیر stack را می‌سازند تا dependency
-    graph دوباره‌کاری و drift نشود. خروجی: (config, resources, provider, service).
-    تمیزکاری همچنان با خود فراخواننده است (provider.close /
-    service.cleanup / resources.cleanup)."""
     config_manager = config_manager or ConfigManager()
     resource_manager = resource_manager or ResourceManager()
 
@@ -54,15 +49,6 @@ async def create_trading_stack(
 
 
 class TradingService(ModelDataProvider):
-    """ترتیب واحد Quality Pipeline (قاعده ۲۱/۲۹) — بدون Rule جدید:
-    1. SignalGenerator: signal_threshold + min_risk_reward_ratio
-    2. MultiTimeframeAnalyzer: score ‎>= 0.3 و بدون direction_conflict
-    3. _passes_quality_gates: min_confidence_threshold (per-tf) →
-       min_trend_strength → min_volume_surge
-    4. SignalRanking + محدودیت‌ها: ابتدا سقف هر تایم‌فریم
-       (max_signals_per_timeframe، قاعده ۲۲) سپس سقف کل
-       (max_signals_per_run)."""
-
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
@@ -74,14 +60,9 @@ class TradingService(ModelDataProvider):
         self.resource_manager = resource_manager
         self.invalid_symbols: set[str] = set()
         self._initialized = False
-        # شمارنده خطاهای آخرین اجرا (قاعده ۳۰): caller با آن «سیگنالی نیست»
-        # را از «تحلیل شکست خورد» تشخیص می‌دهد.
+
         self.last_errors: int = 0
 
-        # NOTE: ResourceManager.get_redis_client() is async؛ فراخوانی آن در
-        # __init__ هم‌زمان (sync) یک coroutine برمی‌گرداند نه کلاینت.
-        # برای جلوگیری از عبور coroutine به‌جای Redis، اتصال در
-        # initialize() برقرار می‌شود. تا قبل از آن redis=None است.
         self._redis_client = getattr(resource_manager, "_redis_client", None)
 
         self.model_manager = ModelManager(
@@ -116,7 +97,6 @@ class TradingService(ModelDataProvider):
         self.signal_tracker = SignalTracker()
 
     async def initialize(self) -> None:
-        """اتصال Redis را برقرار و به زیرکامپوننت‌ها تزریق می‌کند. Idempotent."""
         if self._initialized:
             return
         try:
@@ -132,7 +112,6 @@ class TradingService(ModelDataProvider):
     async def get_data_for_model(
         self, symbol: str, timeframe: str, for_prediction: bool = False
     ) -> pd.DataFrame | None:
-        # همان قرارداد TrainingDataProvider: محدودیت‌ها فقط از Config.
         limit_map = self.config_manager.get(
             "model_data_limits",
             {"1h": 2000, "4h": 1500, "1d": 1000, "1w": 500, "1M": 300},
@@ -153,18 +132,12 @@ class TradingService(ModelDataProvider):
             return None
 
     async def analyze_symbol(self, symbol: str, timeframe: str) -> TradingSignal | None:
-        """قرارداد خطای واحد (قاعده ۳۰):
-        - None یعنی «سیگنالی نیست» (HOLD/رد RR/رد multi-TF/رد گیت‌ها) یا
-          سمبل دائماً نامعتبر (ignore-list).
-        - Exception یعنی «تحلیل شکست خورد» و منتشر می‌شود تا جمع‌کننده
-          (run_*‎) آن را بشمارد و گزارش دهد، نه اینکه به None تبدیل شود."""
         if symbol in self.invalid_symbols:
             logger.debug(f"Skipping analysis for invalid symbol: {symbol}")
             return None
 
         logger.info(f"Analyzing {symbol} on {timeframe} timeframe...")
         try:
-            # همان منبع DataQualityChecker (قاعده ۲۳): LONG_TERM_CONFIG.
             min_data_points = LONG_TERM_CONFIG.get("min_data_points", {})
             limit = min_data_points.get(timeframe, 600)
             ohlcv_data = await self.market_data_provider.fetch_ohlcv_data(
@@ -200,16 +173,7 @@ class TradingService(ModelDataProvider):
                     f"{signal.signal_type.value} "
                     f"with confidence {signal.confidence_score:.2f}"
                 )
-                # شروع lifecycle رهگیری: generated → pending (قاعده ۱۳).
-                # record الان async است — بدون await هیچ سیگنالی ذخیره
-                # نمی‌شود (coroutine بدون await دور ریخته می‌شود).
-                # قاعده ۴۱: created_at زمان تولید (UTC) است، نه زمان کندل؛
-                # زمان کندل جدا در candle_time می‌ماند (id همچنان کندل‌محور
-                # است تا پیوند Generator↔Backtest حفظ شود). stop/target هم
-                # ذخیره می‌شوند تا resolve روی کندل‌ها قضاوت کند (قاعده ۴۲).
-                # created_at/threshold_used/threshold_regime برای
-                # reconciliation دوره‌ای و تغذیه کالیبراسیون ذخیره می‌شوند
-                # (قاعده ۳۱).
+
                 try:
                     await self.signal_tracker.record(
                         make_signal_id(
@@ -244,9 +208,6 @@ class TradingService(ModelDataProvider):
             return None
 
     def _partition_results(self, results) -> list[TradingSignal]:
-        """تفکیک معنایی نتایج gather (قاعده ۳۰): سیگنال‌ها برمی‌گردند؛
-        خطاها شمرده و لاگ می‌شوند و در last_errors می‌مانند تا caller
-        «سیگنالی نیست» را از «تحلیل شکست خورد» تشخیص دهد."""
         signals = [res for res in results if isinstance(res, TradingSignal)]
         errors = [res for res in results if isinstance(res, Exception)]
         self.last_errors = len(errors)
@@ -255,15 +216,11 @@ class TradingService(ModelDataProvider):
         return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:
-        """گیت‌های مرحله ۳ Pipeline (قاعده ۲۱) — تصمیم به domain تفویض شده؛
-        فقط نگاشت پیکربندی و گیت ml_confidence محلی است."""
-        # 3a. حداقل اطمینان هر تایم‌فریم
         gate_config = build_gate_config(LONG_TERM_CONFIG.get, signal.timeframe)
         strength = signal.market_context.get("trend_strength")
         strength_name = getattr(strength, "value", strength)
         strength_name = str(strength_name).upper() if strength_name else "WEAK"
 
-        # 3c. حداقل جهش حجم (از ratio حملی سیگنال، نه محاسبه مجدد)
         min_surge = LONG_TERM_CONFIG.get("min_volume_surge")
         ratio = (signal.volume_analysis or {}).get("volume_ratio")
         surge: float | None = None
@@ -288,11 +245,6 @@ class TradingService(ModelDataProvider):
             logger.debug(f"Gate {reason.value}: {signal.symbol}-{signal.timeframe} rejected.")
             return False
 
-        # 3d. اطمینان مدل (قاعده ۳۴): ml_confidence در گیت خوانده می‌شود.
-        # مقیاس صفر تا یک است و فقط وقتی ML واقعاً اجرا شده (مقدار > 0) اعمال
-        # می‌شود تا مسیر بک‌تست (include_ml=False → ml_confidence=0.0) رد نشود.
-        # کف پیش‌فرض 0.0 یعنی بدون پیکربندی، هیچ سیگنالی از این گیت رد نمی‌شود
-        # (رفتار موجود حفظ می‌شود؛ با تنظیم min_ml_confidence فعال می‌شود).
         min_ml_conf = LONG_TERM_CONFIG.get("min_ml_confidence", 0.0)
         ml_conf = getattr(signal, "ml_confidence", None)
         if ml_conf is not None and min_ml_conf:
@@ -312,9 +264,6 @@ class TradingService(ModelDataProvider):
         return True
 
     async def run_analysis_for_all_symbols(self) -> list[TradingSignal]:
-        # Reconciliation دوره‌ای pendingهای منقضی (قاعده ۳۱): مشابه
-        # BacktestingEngine._flush_calibration اما برای مسیر Production.
-        # خطای آن هرگز اجرای تحلیل را نمی‌شکند (قرارداد قاعده ۳۰).
         try:
             await self.reconcile_pending_signals()
         except Exception as e:
@@ -345,8 +294,6 @@ class TradingService(ModelDataProvider):
 
         ranked_signals = SignalRanking.rank_signals(signals)
 
-        # مرحله ۴ Pipeline (قاعده ۲۲): هر دو سقف موجود فعال‌اند —
-        # اول سقف هر تایم‌فریم، بعد سقف کل خروجی (ترتیب رتبه حفظ می‌شود).
         per_tf_cap = self.config_manager.get("max_signals_per_timeframe", 1)
         try:
             per_tf_cap = max(1, int(per_tf_cap))
@@ -380,12 +327,6 @@ class TradingService(ModelDataProvider):
         return final_signals
 
     async def run_quick_analysis(self, timeframes: list[str] | None = None) -> list[TradingSignal]:
-        """تعریف واحد Quick Analysis (قاعده ۱۷): اسکن فقط تایم‌فریم‌های داده‌شده
-        (پیش‌فرض ["1h"]) بدون رتبه‌بندی/محدودسازی نهایی. هم Telegram و هم
-        TaskService از همین implementation استفاده می‌کنند.
-        قاعده ۴۳: reconcile مستقل از مسیر Full است — اگر فقط اسکن دستی/سریع
-        اجرا شود، pendingها باز هم resolve می‌شوند."""
-        # Reconciliation دوره‌ای (قاعده ۴۳) — خطای آن اسکن را نمی‌شکند.
         try:
             await self.reconcile_pending_signals()
         except Exception as e:
@@ -400,15 +341,6 @@ class TradingService(ModelDataProvider):
         return self._partition_results(results)
 
     async def reconcile_pending_signals(self) -> int:
-        """Reconciliation دوره‌ای سیگنال‌های زنده (قاعده ۳۱): pendingهای
-        منقضی‌شده (طبق SIGNAL_EXPIRY_BY_TIMEFRAME) با قیمت واقعی مقایسه و
-        resolve می‌شوند و حلقه کالیبراسیون (calibrator مدل‌ها +
-        threshold_manager) از همین مسیر تغذیه می‌شود — مشابه
-        BacktestingEngine._flush_calibration اما برای مسیر Production.
-        قاعده ۴۲: قضاوت روی کندل‌های بین created_at و انقضا با لحاظ stop و
-        target انجام می‌شود، نه فقط قیمت لحظه اجرا (قیمت لحظه‌ای فقط
-        fallback است). تعداد resolveشده‌ها برمی‌گردد؛ خطای هر مورد طبق
-        قاعده ۳۰ لاگ و رد می‌شود و تحلیل را نمی‌شکند."""
         expired = await self.signal_tracker.get_pending_expired()
         if not expired:
             return 0
@@ -459,12 +391,6 @@ class TradingService(ModelDataProvider):
         created_at: datetime | None,
         expiry_hours: float | None,
     ) -> tuple[bool, float] | None:
-        """قضاوت نتیجه سیگنال منقضی (قاعده ۴۲): اول کندل‌های پنجره
-        [created_at, created_at+expiry] بررسی می‌شوند —
-        برخورد به stop یعنی شکست، برخورد به target یعنی موفقیت (اگر هر دو
-        در یک کندل باشند، stop محافظه‌کارانه مقدم است). اگر stop/target ثبت
-        نشده یا کندلی در دسترس نیست، fallback همان مقایسه قیمت لحظه با entry
-        است. None یعنی قیمت در دسترس نیست (skip، نه Exception)."""
         try:
             entry = float(details.get("entry"))
         except (TypeError, ValueError):
@@ -523,10 +449,6 @@ class TradingService(ModelDataProvider):
         return success, price
 
     async def _get_reference_price(self, symbol: str, timeframe: str) -> float | None:
-        """قیمت مرجع برای reconciliation (قاعده ۳۱): آخرین close از Provider
-        در لحظه اجرا. قاعده ۴۴: با bypass_cache=True تا قیمت کهنه از کش Redis
-        (TTL تایم‌فریم) برنگردد. None یعنی قیمت در دسترس نیست (skip، نه
-        Exception)."""
         try:
             df = await self.market_data_provider.fetch_ohlcv_data(
                 symbol, timeframe, limit=2, bypass_cache=True
@@ -540,22 +462,11 @@ class TradingService(ModelDataProvider):
 
     @staticmethod
     def _normalize_confidence_0_100(confidence: Any) -> float:
-        """قرارداد مقیاس confidence (قاعده ۴۵): calibrator بازه ۰ تا ۱۰۰
-        می‌خواهد (bin = int(conf*10/100)). confidence_score سیگنال ۰ تا ۱۰۰
-        است و مستقیم مصرف می‌شود؛ اگر مقداری در بازه ۰ تا ۱ رسید (مثلاً
-        ml_confidence که ۰ تا ۱ است)، به ۰ تا ۱۰۰ نگاشت می‌شود تا همه نمونه‌ها
-        در bin صفر نیفتند."""
         return normalize_confidence(confidence)
 
     async def _record_live_calibration(
         self, symbol: str, timeframe: str, details: dict[str, Any], success: bool
     ) -> None:
-        """تغذیه حلقه کالیبراسیون از نتیجه سیگنال زنده (قاعده ۳۱) — همان
-        قرارداد BacktestingEngine._flush_calibration: confidence ترکیبی
-        سیگنال به‌عنوان proxy مشترک lstm/xgboost (تفکیک per-model در
-        قرارداد فعلی plumbing نشده — قاعده ۴۷، محدودیت مستند)، و آستانه
-        تطبیقی فقط با هر سه جزء (رژیم کامل + آستانه > 0). قاعده ۴۵: ورودی
-        calibrator با _normalize_confidence_0_100 نرمال می‌شود."""
         try:
             confidence = self._normalize_confidence_0_100(details.get("confidence", 0.0))
             if confidence > 0:
@@ -566,7 +477,7 @@ class TradingService(ModelDataProvider):
                         )
                     except Exception as e:
                         logger.debug(f"Calibration flush skipped: {e}")
-            # مسیر نوشتن آستانه تطبیقی — همان partition("|") بک‌تست.
+
             regime = str(details.get("threshold_regime") or "")
             vol_regime, _, hurst_range = regime.partition("|")
             threshold = float(details.get("threshold_used", 0.0) or 0.0)
@@ -578,8 +489,6 @@ class TradingService(ModelDataProvider):
             logger.debug(f"Live calibration feedback skipped: {e}")
 
     async def cleanup(self):
-        """مالک ModelManager در سطح سرویس (قاعده ۲۵). Provider و ResourceManager
-        متعلق به Application/Container‌اند و اینجا cleanup نمی‌شوند."""
         logger.info("Cleaning up TradingService resources.")
         if self.model_manager:
             await self.model_manager.shutdown()

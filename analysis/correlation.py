@@ -6,11 +6,6 @@ from config.logger import logger
 
 
 class IndicatorCorrelationManager:
-    """تصمیم معماری (قاعده ۷): این ابزار بخشی از Pipeline زنده است، اما فقط
-    با سری‌های تاریخی واقعی اندیکاتورها کار می‌کند. بدون history، ماتریس
-    ساخته نمی‌شود و وزن‌ها خنثی (1.0) برمی‌گردند — هیچ داده مصنوعی/random
-    تولید نمی‌شود. مسیر آفلاین/تحقیقاتی می‌تواند history واقعی بدهد."""
-
     def __init__(self, correlation_threshold: float = 0.7):
         self.correlation_matrix: pd.DataFrame | None = None
         self.correlation_threshold = correlation_threshold
@@ -20,12 +15,6 @@ class IndicatorCorrelationManager:
         processed_results: dict[str, Any],
         history: dict[str, pd.Series] | None = None,
     ):
-        """
-        Computes the correlation matrix from REAL historical indicator series.
-        :param processed_results: {name: {"result": IndicatorResult}} فعلی.
-        :param history: {name: سری تاریخی} اختیاری؛ بدون آن ماتریس None
-            می‌ماند و وزن‌ها خنثی هستند.
-        """
         self.correlation_matrix = None
 
         if not history:
@@ -57,9 +46,6 @@ class IndicatorCorrelationManager:
         self.correlation_matrix = df.corr()
 
     def get_decorrelation_weights(self, processed_results: dict[str, Any]) -> dict[str, float]:
-        """
-        Calculates weights to reduce the influence of highly correlated indicators.
-        """
         if self.correlation_matrix is None or self.correlation_matrix.empty:
             return {name: 1.0 for name in processed_results.keys()}
 
@@ -67,7 +53,6 @@ class IndicatorCorrelationManager:
         correlated_groups = []
         indicators = list(self.correlation_matrix.columns)
 
-        # Group correlated indicators
         for i, indicator1 in enumerate(indicators):
             is_grouped = any(indicator1 in group for group in correlated_groups)
             if is_grouped:
@@ -82,13 +67,11 @@ class IndicatorCorrelationManager:
             if len(new_group) > 1:
                 correlated_groups.append(new_group)
 
-        # Assign weights: indicators in a group share a total weight of 1
         for group in correlated_groups:
             group_size = len(group)
             for indicator in group:
                 weights[indicator] = 1.0 / group_size
 
-        # Assign full weight to non-correlated indicators
         for indicator in processed_results.keys():
             if indicator not in weights:
                 weights[indicator] = 1.0

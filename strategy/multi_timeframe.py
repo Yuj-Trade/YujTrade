@@ -23,7 +23,7 @@ class MultiTimeframeAnalyzer:
         self.redis = redis_client
         self.config = config_manager or ConfigManager()
         self.analyzer = MarketConditionAnalyzer()
-        self.cache_ttl = 3600  # 1 hour
+        self.cache_ttl = 3600
 
     async def get_confirmation_score(
         self,
@@ -89,13 +89,12 @@ class MultiTimeframeAnalyzer:
     def _calculate_single_tf_score(
         self, analysis: MarketAnalysis, signal_type: SignalType
     ) -> tuple[float, bool]:
-        score = 0.5  # Neutral starting point
+        score = 0.5
         conflict = False
 
         is_bullish_signal = signal_type == SignalType.BUY
         is_bearish_signal = signal_type == SignalType.SELL
 
-        # Trend alignment
         if is_bullish_signal and analysis.trend == TrendDirection.BULLISH:
             score += 0.3
         elif is_bearish_signal and analysis.trend == TrendDirection.BEARISH:
@@ -106,13 +105,11 @@ class MultiTimeframeAnalyzer:
             score -= 0.4
             conflict = True
 
-        # Trend strength
         if analysis.trend_strength.value == "strong":
             score += 0.15
         elif analysis.trend_strength.value == "weak":
             score -= 0.1
 
-        # Volume confirmation
         if analysis.volume_confirmation:
             score += 0.1
 

@@ -11,7 +11,6 @@ from config.settings import ConfigManager
 from data.data_validator import DataQualityChecker
 from strategy.signal_generator import SignalGenerator
 
-# Monkey-patch the freshness check to always pass for golden tests
 original_check_freshness = DataQualityChecker._check_data_freshness
 
 

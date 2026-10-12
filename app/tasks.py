@@ -32,7 +32,6 @@ class TaskServiceContainer:
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN is not configured.")
 
-        # همان Composition Root اصلی (قاعده ۱۸) — بدون graph موازی.
         from services.trading_service import create_trading_stack
 
         (
@@ -69,9 +68,6 @@ class TaskServiceContainer:
 async def deliver_task_signals(
     bot_token: str, chat_id: int, signals: list[Any], summary_text: str
 ) -> int:
-    """قاعده ۳۲ (وصل شد): تحویل نتایج task به تلگرام — همان chat_id که قبلاً
-    فقط لاگ می‌شد. متن ساده (بدون ParseMode) تا escape لازم نباشد.
-    تعداد پیام‌های ارسال‌شده برمی‌گردد؛ خطا منتشر می‌شود تا caller لاگ کند."""
     bot = Bot(token=bot_token)
     try:
         lines = [summary_text, f"Generated {len(signals)} signal(s)."]
@@ -101,7 +97,7 @@ async def run_full_analysis_task(chat_id: int, message_id: int):
             f"Generated {len(signals)} signals "
             f"({container.trading_service.last_errors} task error(s))."
         )
-        # قاعده ۳۲: اتصال به مسیر تحویل — chat_id مصرف می‌شود.
+
         await deliver_task_signals(
             container.bot_token,
             chat_id,
@@ -119,14 +115,13 @@ async def run_quick_scan_task(chat_id: int, message_id: int):
         logger.info(f"Task 'run_quick_scan_task' started for chat_id: {chat_id}")
         container = await TaskServiceContainer.instance()
 
-        # تعریف واحد Quick Analysis (قاعده ۱۷) — همان implementation سرویس.
         signals = await container.trading_service.run_quick_analysis()
         logger.info(
             f"Task 'run_quick_scan_task' finished for chat_id: {chat_id}. "
             f"Generated {len(signals)} signals "
             f"({container.trading_service.last_errors} task error(s))."
         )
-        # قاعده ۳۲: اتصال به مسیر تحویل — chat_id مصرف می‌شود.
+
         await deliver_task_signals(
             container.bot_token,
             chat_id,

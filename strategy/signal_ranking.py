@@ -5,10 +5,6 @@ from common.core import SignalType, TradingSignal
 class SignalRanking:
     @staticmethod
     def _ml_multiplier(signal: TradingSignal) -> float:
-        """قاعده ۳۴: ml_confidence در رتبه‌بندی مصرف می‌شود — ضریب ملایم
-        ‎±۵٪ حول خنثی. None (بدون ML) یعنی 1.0. مقیاس ml_confidence صفر تا
-        یک است (میانگین confidence مدل‌ها)؛ اگر مقداری بالای ۱ رسید (۰ تا
-        ۱۰۰)، تقسیم بر ۱۰۰ می‌شود."""
         ml_conf = getattr(signal, "ml_confidence", None)
         if ml_conf is None:
             return 1.0

@@ -55,11 +55,6 @@ class MarketConditionAnalyzer:
 
         candle_patterns = self.pattern_analyzer.detect_patterns(data)
 
-        # قاعده ۳۵: detect_divergence به analyze_market_condition وصل است —
-        # واگرایی RSI روی همان داده محاسبه و به candle_patterns اضافه می‌شود.
-        # برچسب‌ها ("bullish_divergence_A" و...) عمداً با الگوی "(bullish)" در
-        # scorer هم‌پوشانی ندارند، پس امتیاز موجود تغییر نمی‌کند؛ فقط در خروجی
-        # قابل مشاهده‌اند.
         try:
             import talib as _talib
 
@@ -68,8 +63,6 @@ class MarketConditionAnalyzer:
                 index=data.index,
             ).dropna()
             if not rsi_series.empty:
-                # هم‌ترازی موقعیتی: detect_divergence روی آرایه‌های numpy با
-                # ایندکس موقعیتی کار می‌کند، پس داده هم به طول RSI برش می‌خورد.
                 aligned = data.tail(len(rsi_series))
                 divergences = self.pattern_analyzer.detect_divergence(aligned, rsi_series)
                 candle_patterns = list(candle_patterns) + [

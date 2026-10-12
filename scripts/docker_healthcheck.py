@@ -1,14 +1,6 @@
-"""Docker HEALTHCHECK probe: verify the image can boot its config layer.
-
-Light by design: imports only (no network, no trades, no scheduler).
-Exit 0 = healthy, exit 1 = unhealthy.
-"""
-
 import sys
 from pathlib import Path
 
-# Allow `python scripts/docker_healthcheck.py` from the repo root / WORKDIR:
-# script-dir lands on sys.path, so add the project root explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 

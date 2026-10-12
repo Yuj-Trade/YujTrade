@@ -111,10 +111,6 @@ from .volume import (
 
 
 def get_all_indicators() -> dict[str, type[TechnicalIndicator]]:
-    """
-    Returns a dictionary mapping indicator names to their corresponding class types.
-    This avoids instantiating all indicators at once.
-    """
     return {
         "sma": MovingAverageIndicator,
         "ema": MovingAverageIndicator,

@@ -13,11 +13,4 @@ class IndicatorInterface(Protocol):
 class TechnicalIndicator(ABC):
     @abstractmethod
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
-        """
-        Calculates the indicator value.
-
-        Raises:
-            InsufficientDataError: If the provided data is not enough for calculation.
-            IndicatorError: For other calculation-related errors.
-        """
         pass

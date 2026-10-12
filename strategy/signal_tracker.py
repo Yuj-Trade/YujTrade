@@ -42,15 +42,6 @@ class SignalTracker:
             await self._record_locked(signal_id, outcome, details)
 
     async def _record_locked(self, signal_id: str, outcome: bool | None, details: dict[str, Any]):
-        """Write the outcome and persist it. The caller must already hold
-        self._lock — asyncio.Lock is not reentrant, so resolve must route
-        through this helper instead of calling record under the lock."""
-        # قاعده ۳۷: نوشتن فایل با lock سری می‌شود تا record/resolve هم‌زمان
-        # رقابت نکنند؛ I/O در executor اجرا می‌شود تا event loop بلاک نشود.
-        # قاعده ۴۰: تحلیل مجدد همان کندل همان id را می‌سازد (id کندل‌محور است)؛
-        # اگر این id قبلاً resolve شده (outcome is not None)، record مجدد با
-        # outcome=None نباید آن را به pending برگرداند (شمارش دوباره در
-        # کالیبراسیون). details ادغام می‌شود ولی outcome حفظ می‌شود.
         existing = self.history.get(signal_id)
         if existing is not None and existing.get("outcome") is not None and outcome is None:
             merged_details = dict(existing.get("details", {}))
@@ -72,12 +63,6 @@ class SignalTracker:
             await self._record_locked(signal_id, outcome, merged)
 
     async def get_pending_expired(self, now: datetime | None = None) -> list[dict[str, Any]]:
-        """Snapshot of pending signals whose per-timeframe expiry window has
-        passed (SIGNAL_EXPIRY_BY_TIMEFRAME). The lock is taken so the snapshot
-        cannot race with concurrent record/resolve calls; callers use it for
-        live reconciliation (gap 31)."""
-        # قاعده ۳۱: pendingهای منقضی‌شده برای reconciliation دوره‌ای در مسیر
-        # Production. ساعت انقضا از SIGNAL_EXPIRY_BY_TIMEFRAME (منبع واحد).
         now = now or datetime.now(timezone.utc)
         async with self._lock:
             expired: list[dict[str, Any]] = []
@@ -100,9 +85,6 @@ class SignalTracker:
 
     @staticmethod
     def _extract_created_at(signal_id: str, details: dict[str, Any]) -> datetime | None:
-        """Creation time from details, falling back to the timestamp embedded
-        in the signal id (third '|'-separated segment). Naive datetimes are
-        treated as UTC."""
         raw = details.get("created_at")
         created: datetime | None = None
         if isinstance(raw, datetime):
@@ -143,10 +125,6 @@ class SignalTracker:
 
 
 class AdaptiveThresholdManager:
-    # قاعده ۴۶: کلید داخلی tuple است (volatility_regime, hurst_range) تا با
-    # رژیم‌های دارای "_" (مثلاً "high_vol") تداخل نکند. فرمت نمایشی رژیم در
-    # threshold_regime همچنان "vol|hurst" می‌ماند (قرارداد بک‌تست)؛ تبدیل
-    # در نقطه مصرف (partition("|")) انجام می‌شود، نه روی کلید داخلی.
     def __init__(self):
         self.performance_history: dict[tuple, list[dict]] = {}
         self.min_samples = 50

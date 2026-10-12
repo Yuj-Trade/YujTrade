@@ -19,8 +19,6 @@ class CacheCategory(Enum):
 
 
 class CacheKeyBuilder:
-    """A centralized builder for creating consistent cache keys."""
-
     PREFIX = "cache"
 
     @staticmethod
@@ -30,13 +28,6 @@ class CacheKeyBuilder:
         parts: list[str],
         symbol: str | None = None,
     ) -> str:
-        """
-        Constructs a standardized cache key.
-
-        Example:
-        >>> CacheKeyBuilder.build(CacheCategory.OHLCV, "binance", ["1h", "1000"], "BTC/USDT")
-        'cache:ohlcv:binance:btc_usdt:1h:1000'
-        """
         safe_symbol = symbol.lower().replace("/", "_").replace("\\", "") if symbol else "global"
         key_parts = [
             CacheKeyBuilder.PREFIX,
@@ -62,15 +53,12 @@ class CacheKeyBuilder:
 
     @staticmethod
     def derivatives_key(source: str, metric: str, symbol: str) -> str:
-        """Creates a cache key for derivatives data."""
         return CacheKeyBuilder.build(CacheCategory.DERIVATIVES, source, [metric], symbol)
 
     @staticmethod
     def macro_key(source: str, identifier: str) -> str:
-        """Creates a cache key for macro-economic data."""
         return CacheKeyBuilder.build(CacheCategory.MACRO, source, [identifier])
 
     @staticmethod
     def indices_key(source: str, identifier: str) -> str:
-        """Creates a cache key for market indices."""
         return CacheKeyBuilder.build(CacheCategory.INDICES, source, [identifier])

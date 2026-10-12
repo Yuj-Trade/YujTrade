@@ -14,10 +14,6 @@ from utils.circuit_breaker import CircuitBreaker
 
 
 class BaseFetcher:
-    """قرارداد مالکیت Cache (قاعده ۲۴): هر Fetcher فقط کش دامنه خودش را با
-    کلید source_name خودش مدیریت می‌کند. کش یکپارچه OHLCV متعلق به
-    MarketDataProvider است و هیچ Fetcher آن را دوباره کش نمی‌کند."""
-
     def __init__(
         self,
         redis_client: redis.Redis | None = None,
@@ -38,7 +34,6 @@ class BaseFetcher:
     async def _get_session(self) -> aiohttp.ClientSession:
         self._check_if_closed()
         if self.session is None or self.session.closed:
-            # This should ideally not be hit if ResourceManager is used correctly
             raise RuntimeError(
                 f"Session for {self.class_name} is not available. "
                 "It should be provided by ResourceManager."
@@ -46,8 +41,6 @@ class BaseFetcher:
         return self.session
 
     async def close(self):
-        # This method is now a no-op as the session is managed externally
-        # by ResourceManager. This prevents accidental closing of the shared session.
         if self._is_closed:
             return
         self._is_closed = True

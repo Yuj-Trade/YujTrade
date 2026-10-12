@@ -12,11 +12,6 @@ from config.settings import SecretsManager
 
 
 class ResourceManager:
-    """مالک انحصاری منابع خارجی (قاعده ۲۵): aiohttp session و Redis client.
-    هیچ لایه دیگری آنها را نمی‌بندد (BaseFetcher.close عمداً session مشترک
-    را دست نمی‌زند). سلسله‌مراتب cleanup:
-    Application → Services/TradingService → Providers/Models → این‌جا."""
-
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
         self._redis_client: redis.Redis | None = None

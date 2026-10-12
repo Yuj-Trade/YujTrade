@@ -34,7 +34,6 @@ class HyperparameterOptimizer:
         self.validation_runner = validation_runner
         self.loop = asyncio.get_running_loop()
 
-        # Check if optuna is available
         try:
             import optuna
 
@@ -158,12 +157,10 @@ class HyperparameterOptimizer:
             direction="maximize", pruner=self.optuna.pruners.MedianPruner()
         )
 
-        # Use run_in_executor to run the sync objective function in the event loop
         def sync_objective_wrapper(trial):
             future = asyncio.run_coroutine_threadsafe(self._objective(trial), self.loop)
             return future.result()
 
-        # Run optimize in a separate thread to avoid blocking the event loop
         await self.loop.run_in_executor(
             None,
             lambda: study.optimize(sync_objective_wrapper, n_trials=self.n_trials, n_jobs=1),

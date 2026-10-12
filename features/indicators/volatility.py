@@ -282,9 +282,7 @@ class ChaikinVolatilityIndicator(TechnicalIndicator):
             raise InsufficientDataError(
                 "ChaikinVolatilityIndicator requires at least 20 data points."
             )
-        chakin_vol = ta.vhf(
-            high=data["high"], low=data["low"], close=data["close"]
-        )  # Using VHF as a proxy
+        chakin_vol = ta.vhf(high=data["high"], low=data["low"], close=data["close"])
         if chakin_vol is None or chakin_vol.empty or pd.isna(chakin_vol.iloc[-1]):
             raise InsufficientDataError("Chaikin Volatility calculation resulted in NaN.")
 

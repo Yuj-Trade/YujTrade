@@ -8,23 +8,18 @@ class IndicatorFactory:
         self._indicator_classes: dict[str, type[TechnicalIndicator]] = get_all_indicators()
 
     def create(self, name: str) -> TechnicalIndicator | None:
-        """
-        Dynamically creates an instance of a technical indicator.
-        """
         name_lower = name.lower()
 
-        # Handle special cases like 'sma_20', 'ema_12'
         if name_lower.startswith(("sma_", "ema_")):
             try:
                 ma_type, period_str = name_lower.split("_")
                 period = int(period_str)
                 return MovingAverageIndicator(period=period, ma_type=ma_type)
             except (ValueError, IndexError):
-                return None  # Invalid format
+                return None
 
         indicator_class = self._indicator_classes.get(name_lower)
         if indicator_class:
-            # Handle special cases: sma and ema need a period parameter
             if name_lower in ("sma", "ema"):
                 return indicator_class(period=20, ma_type=name_lower)
             return indicator_class()
@@ -32,6 +27,4 @@ class IndicatorFactory:
         return None
 
     def get_all_indicator_names(self) -> list[str]:
-        # This can be expanded to include dynamic names like 'sma_20' if needed,
-        # but for now, returning the base names is sufficient.
         return list(self._indicator_classes.keys())

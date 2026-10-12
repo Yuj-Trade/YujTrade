@@ -47,8 +47,7 @@ class MarketIndicesFetcher(BaseFetcher):
         if self._is_closed:
             return
         self._is_closed = True
-        # Child fetchers are managed by MarketDataProvider, so no need to close them here.
-        # Session is also managed externally.
+
         logger.debug("MarketIndicesFetcher instance closed.")
 
     async def get_crypto_indices(self) -> dict[str, float | None]:
@@ -64,7 +63,6 @@ class MarketIndicesFetcher(BaseFetcher):
             except Exception as e:
                 logger.warning(f"Redis get failed for {cache_key}: {e}")
 
-        # This method in coingecko_fetcher needs to be added or adapted
         async def get_global_market_data():
             try:
                 url = f"{self.coingecko.base_url}/global"

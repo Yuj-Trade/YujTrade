@@ -67,7 +67,7 @@ class BinanceFetcher(BaseFetcher):
                                 f"{params.get('symbol') if params else 'N/A'}"
                             )
                     except (aiohttp.ContentTypeError, json.JSONDecodeError):
-                        pass  # Raise the original error below
+                        pass
 
                     response.raise_for_status()
 
@@ -385,7 +385,6 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception:
-            # Fallback to premiumIndex if fundingRate fails
             try:
                 params = {"symbol": binance_symbol}
                 data = await self._fetch(self.fapi_url, "premiumIndex", params)
