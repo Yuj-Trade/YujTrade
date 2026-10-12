@@ -144,6 +144,7 @@ class MainApp:
                     )
             else:
                 logger.warning("Telegram bot not started due to missing token or admin chat ID.")
+                raise SystemExit(2)
 
             await self.shutdown_event.wait()
 
@@ -200,5 +201,5 @@ if __name__ == "__main__":
     app = MainApp()
     try:
         asyncio.run(app.run())
-    except (KeyboardInterrupt, SystemExit):
+    except KeyboardInterrupt:
         logger.info("Application interrupted by user. Shutting down.")
