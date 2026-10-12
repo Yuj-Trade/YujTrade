@@ -32,6 +32,9 @@ git status --porcelain   # must be empty
   event and the ML score component degrades to zero — the analysis continues.
 - Model data windows come only from `ConfigManager` (`model_data_limits`,
   `model_prediction_limit`).
+- Scalers persist as validated `scaler.json` (no pickle). Artifacts written
+  before this change (legacy `scaler_*.pkl`) never load: retrain every model
+  with `python scripts/train_models.py` before expecting predictions.
 
 ## 4. Golden baselines
 

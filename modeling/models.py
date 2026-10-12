@@ -1,5 +1,4 @@
 import os
-import pickle
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,8 @@ from tensorflow.keras.optimizers import Adam  # type: ignore
 from common.exceptions import ModelError, ObjectClosedError
 from config.logger import logger
 from features.feature_engineering import FeatureEngineer
+from modeling.scaler_io import dump_scaler
+from modeling.scaler_io import load_scaler as read_scaler_payload
 from strategy.signal_tracker import MLConfidenceCalibrator
 from utils.resource_manager import managed_tf_session
 
@@ -56,16 +57,14 @@ class BaseModel:
         safe_symbol = self.symbol.lower().replace("/", "").replace("\\", "")
         model_suffix = f"{safe_symbol}_{self.timeframe}"
         model_file = self.model_path / f"{model_name}_{model_suffix}.{extension}"
-        scaler_file = self.model_path / f"scaler_{model_name}_{model_suffix}.pkl"
+        scaler_file = self.model_path / f"scaler_{model_name}_{model_suffix}.json"
         return model_file, scaler_file
 
     def save_scaler(self, model_name: str):
         self._check_if_closed()
         _, scaler_file = self._get_model_paths(model_name, "")
-        scaler_file.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with open(scaler_file, "wb") as f:
-                pickle.dump(self.feature_engineer.scaler, f)
+            dump_scaler(scaler_file, self.feature_engineer.scaler)
             self.logger.debug(f"Scaler saved to {scaler_file}")
         except Exception as e:
             self.logger.error(f"Error saving scaler: {e}")
@@ -76,13 +75,17 @@ class BaseModel:
         _, scaler_file = self._get_model_paths(model_name, "")
         if scaler_file.exists():
             try:
-                with open(scaler_file, "rb") as f:
-                    self.feature_engineer.scaler = pickle.load(f)
+                self.feature_engineer.scaler = read_scaler_payload(scaler_file)
                 self.logger.debug(f"Scaler loaded from {scaler_file}")
                 return True
             except Exception as e:
                 self.logger.error(f"Error loading scaler: {e}")
                 return False
+        legacy = scaler_file.with_suffix(".pkl")
+        if legacy.exists():
+            self.logger.warning(
+                f"Legacy pickle scaler at {legacy} is never loaded; retrain required."
+            )
         return False
 
     def fit(self, *args, **kwargs):

@@ -84,6 +84,10 @@ class ModelTrainer:
 
     async def train_all_models(self):
         logger.info("Starting model training for all symbols and timeframes.")
+        logger.info(
+            "Legacy pickle scalers never load; every model trained here "
+            "rewrites its scaler as validated JSON."
+        )
         symbols: list[str] = self.config.get("symbols", SYMBOLS)
         timeframes: list[str] = self.config.get("timeframes", TIME_FRAMES)
         model_types = ["lstm", "xgboost"]
