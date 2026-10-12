@@ -1,34 +1,52 @@
 name: CI
 
-on:
+"on":
   push:
   pull_request:
 
 jobs:
-  tests:
+  lint:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
       - name: Install dependencies
         run: python -m pip install -e ".[dev]"
-      - name: Ruff
+      - name: Ruff check
         run: ruff check .
-      - name: Mypy
-        run: mypy domain
-      - name: Tests
-        run: python -m pytest -m "not slow and not ml"
-      - name: Format check
+      - name: Ruff format check
         run: ruff format --check .
 
-  domain-coverage:
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Mypy domain
+        run: mypy domain
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Pytest
+        run: python -m pytest -m "not slow and not ml" -q
+
+  coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +59,49 @@ jobs:
       - name: Domain coverage gate (>=90%)
         run: python -m pytest -m "not slow and not ml" --cov=domain --cov-fail-under=90 --cov-report=term-missing
 
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Golden stability
+        run: |
+          sha256sum tests/golden/*.json > /tmp/golden_before.txt
+          python -m pytest tests/golden -q
+          sha256sum tests/golden/*.json > /tmp/golden_after.txt
+          diff /tmp/golden_before.txt /tmp/golden_after.txt
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dependency audit
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.lock
+
+  secrets-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Denylist guard
+        run: |
+          test -z "$(git ls-files | grep -E '(^|/)\.env$|secret\.salt|\.keras$|\.pkl$|\.db$|calibration\.json|signal_history\.json')"
+
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build image (no push)
-        run: docker build .
+        run: docker build -t yujtrade:ci .
+      - name: Healthcheck probe
+        run: docker run --rm yujtrade:ci python scripts/docker_healthcheck.py
