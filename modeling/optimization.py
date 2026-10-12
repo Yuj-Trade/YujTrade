@@ -8,7 +8,7 @@ import pandas as pd
 
 from backtesting.walk_forward import WalkForwardValidator
 from config.logger import logger
-from modeling.artifacts import ArtifactRegistry
+from modeling.artifacts import ArtifactRegistry, build_metadata
 from modeling.models import LSTMModel, XGBoostModel
 
 
@@ -101,17 +101,22 @@ class HyperparameterOptimizer:
                 score = float(score) if math.isfinite(float(score)) else -1.0
                 sharpes.append(score)
                 source_files = list(fold_dir.glob("*"))
+                fold_features = model.feature_engineer.create_features(fold.train)
+                metadata = build_metadata(
+                    fold.train,
+                    list(fold_features.columns),
+                    params,
+                    {"sharpe": score},
+                    source_files=source_files,
+                )
+                metadata["run_id"] = run_id
+                metadata["fold"] = fold.index
                 registry.create_version(
                     self.model_type,
                     self.symbol,
                     self.timeframe,
                     source_files,
-                    metadata={
-                        "run_id": run_id,
-                        "fold": fold.index,
-                        "params": params,
-                        "oos_metrics": {"sharpe": score},
-                    },
+                    metadata=metadata,
                     version=f"{run_id}-fold-{fold.index}",
                     update_current=False,
                 )

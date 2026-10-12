@@ -25,6 +25,7 @@ METADATA_FIELDS = {
     "oos_metrics",
     "git_commit",
     "library_versions",
+    "files_sha256",
 }
 
 
@@ -32,24 +33,29 @@ def _registry(tmp_path) -> ArtifactRegistry:
     return ArtifactRegistry(tmp_path / "artifacts")
 
 
+def _full_metadata(source):
+    from modeling.artifacts import build_metadata
+
+    frame = pd.DataFrame(
+        {"close": [1.0, 2.0, 3.0]},
+        index=pd.date_range("2024-01-01", periods=3, tz="UTC"),
+    )
+    return build_metadata(frame, ["close", "volume"], {"max_depth": 5}, {}, source_files=[source])
+
+
 def test_metadata_round_trip_covers_all_fields(tmp_path):
     registry = _registry(tmp_path)
     source = tmp_path / "model.json"
     source.write_text('{"tree": 1}', encoding="utf-8")
-    overrides = {
-        "data_start": "2024-01-01T00:00:00+00:00",
-        "data_end": "2024-02-01T00:00:00+00:00",
-        "feature_list": ["close", "volume"],
-        "params": {"max_depth": 5},
-        "oos_metrics": {"sharpe": 1.2},
-        "git_commit": "abc123",
-        "library_versions": {"xgboost": "3.4.1"},
-    }
+    overrides = _full_metadata(source)
     version_dir = registry.create_version("xgboost", "BTC/USDT", "1h", [source], metadata=overrides)
     payload = json.loads((version_dir / "metadata.json").read_text(encoding="utf-8"))
     assert METADATA_FIELDS <= set(payload)
     for key, value in overrides.items():
+        if key == "files_sha256":
+            continue
         assert payload[key] == value
+    assert payload["files_sha256"] == overrides["files_sha256"]
     assert payload["data_sha256"]
     assert (version_dir / "model.json").exists()
 
@@ -63,7 +69,11 @@ def test_missing_current_pointer_means_no_artifact(tmp_path):
 def test_calibration_keys_are_independent_per_model(tmp_path):
     registry = _registry(tmp_path)
     for model_type in ("lstm", "xgboost"):
-        registry.create_version(model_type, "BTC/USDT", "1h", [])
+        source = tmp_path / f"{model_type}.json"
+        source.write_text("{}", encoding="utf-8")
+        registry.create_version(
+            model_type, "BTC/USDT", "1h", [source], metadata=_full_metadata(source)
+        )
     registry.save_calibration("lstm", "BTC/USDT", "1h", [(0.8, True, 1.0)])
     registry.save_calibration("xgboost", "BTC/USDT", "1h", [(0.6, False, 2.0), (0.9, True, 1.0)])
     assert registry.load_calibration("lstm", "BTC/USDT", "1h") == [(0.8, True, 1.0)]

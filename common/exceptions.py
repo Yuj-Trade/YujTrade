@@ -65,3 +65,9 @@ class ObjectClosedError(TradingBotException):
     """Raised when an operation is attempted on a closed object."""
 
     pass
+
+
+class ArtifactIntegrityError(ModelError):
+    """Raised when a versioned model artifact fails hash verification."""
+
+    pass

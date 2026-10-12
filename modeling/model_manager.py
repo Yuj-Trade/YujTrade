@@ -8,10 +8,51 @@ import numpy as np
 import pandas as pd
 import redis
 
-from common.exceptions import ObjectClosedError
+from common.exceptions import ArtifactIntegrityError, ObjectClosedError
 from config.logger import logger
-from modeling.artifacts import ArtifactRegistry
+from modeling.artifacts import ArtifactRegistry, build_metadata
 from modeling.models import BaseModel, LSTMModel, XGBoostModel
+
+LABEL_HORIZON = 1
+OOS_FRACTION = 0.2
+
+
+def compute_oos_metrics(model: BaseModel, data: Any) -> dict[str, float]:
+    closes = data["close"].to_numpy(dtype=float)
+    split = max(1, int(len(data) * (1 - OOS_FRACTION)))
+    preds: list[float] = []
+    actuals: list[float] = []
+    previous_closes: list[float] = []
+    for end in range(split + LABEL_HORIZON, len(data) - 1):
+        result = model.predict(data.iloc[: end + 1])
+        if not result:
+            continue
+        prediction = result[0]
+        preds.append(float(prediction.ravel()[0]))
+        actuals.append(float(closes[end + 1]))
+        previous_closes.append(float(closes[end]))
+    if not preds:
+        return {"rmse": float("nan"), "directional_accuracy": float("nan")}
+    errors = [p - a for p, a in zip(preds, actuals, strict=False)]
+    rmse = float((sum(e * e for e in errors) / len(errors)) ** 0.5)
+    hits = sum(
+        1
+        for pred, actual, previous in zip(preds, actuals, previous_closes, strict=False)
+        if (pred > previous) == (actual > previous)
+    )
+    return {"rmse": rmse, "directional_accuracy": hits / len(preds)}
+
+
+def _model_params(model_type: str, model: BaseModel) -> dict[str, Any]:
+    if model_type == "lstm":
+        return {
+            "units": getattr(model, "units", None),
+            "lr": getattr(model, "lr", None),
+            "sequence_length": getattr(model, "sequence_length", None),
+            "batch_size": getattr(model, "batch_size", None),
+        }
+    params = getattr(model, "params", None)
+    return dict(params) if isinstance(params, dict) else {}
 
 
 class ModelDataProvider(Protocol):
@@ -118,6 +159,7 @@ class ModelManager:
 
                     if model_file.exists() and scaler_file.exists():
                         try:
+                            self.artifacts.verify_current(model_type, symbol, timeframe)
                             await self._run_in_executor(model.load, executor_type="prediction")
                             samples = self.artifacts.load_calibration(model_type, symbol, timeframe)
                             if samples:
@@ -127,6 +169,12 @@ class ModelManager:
                             self.logger.info(
                                 f"Loaded existing {model_type.upper()} model for {key}"
                             )
+                        except ArtifactIntegrityError as e:
+                            self.logger.warning(
+                                f"model_unavailable: integrity check failed for "
+                                f"{model_type.upper()} model for {key}: {e}"
+                            )
+                            model.is_trained = False
                         except Exception as e:
                             self.logger.warning(
                                 f"Failed to load {model_type.upper()} model for {key}: {e}"
@@ -178,11 +226,27 @@ class ModelManager:
                 model_file, scaler_file = model._get_model_paths(
                     model_type, "keras" if model_type == "lstm" else "json"
                 )
+                feature_frame = await self._run_in_executor(
+                    model.feature_engineer.create_features,
+                    data,
+                    executor_type="training",
+                )
+                oos_metrics = await self._run_in_executor(
+                    compute_oos_metrics, model, data, executor_type="training"
+                )
+                metadata = build_metadata(
+                    data,
+                    list(feature_frame.columns),
+                    _model_params(model_type, model),
+                    oos_metrics,
+                    source_files=[model_file, scaler_file],
+                )
                 self.artifacts.create_version(
                     model_type,
                     symbol,
                     timeframe,
                     [model_file, scaler_file],
+                    metadata=metadata,
                 )
                 self.logger.info(
                     f"Successfully trained {model_type.upper()} model for {symbol}-{timeframe}"

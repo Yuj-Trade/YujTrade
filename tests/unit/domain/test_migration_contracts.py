@@ -52,10 +52,19 @@ def test_outcome_stop_first_matches_paper_resolution():
 
 
 def test_artifact_registry_persists_current_pointer_and_calibration(tmp_path):
+    import pandas as pd
+
+    from modeling.artifacts import build_metadata
+
     source = tmp_path / "model.json"
     source.write_text("{}", encoding="utf-8")
+    frame = pd.DataFrame(
+        {"close": [1.0, 2.0]},
+        index=pd.date_range("2024-01-01", periods=2, tz="UTC"),
+    )
+    metadata = build_metadata(frame, ["close"], {"p": 1}, {}, source_files=[source])
     registry = ArtifactRegistry(tmp_path / "artifacts")
-    version = registry.create_version("xgboost", "BTC/USDT", "1h", [source])
+    version = registry.create_version("xgboost", "BTC/USDT", "1h", [source], metadata=metadata)
 
     assert registry.current_dir("xgboost", "BTC/USDT", "1h") == version
     registry.save_calibration("xgboost", "BTC/USDT", "1h", [(80.0, True, 1.0)])
