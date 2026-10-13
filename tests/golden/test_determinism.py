@@ -21,9 +21,15 @@ def _sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _reset_indicator_history():
+    for candidate in (ROOT / "runs").glob("indicator_history.db*"):
+        candidate.unlink()
+
+
 def test_baselines_reproduce_byte_identical():
     import json
 
+    _reset_indicator_history()
     signals_path = ROOT / "tests/golden/signals_baseline.json"
     backtest_path = ROOT / "tests/golden/backtest_baseline.json"
     assert signals_path.exists()

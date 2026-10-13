@@ -19,7 +19,7 @@ Layer map:
 | `data/` | `MarketDataProvider`, `DataValidator`; `data/sources/` fetchers (binance, coingecko, yfinance, alphavantage, cryptopanic, coindesk, defillama, messari, news, marketindices, alternativeme) on `base_fetcher.py`. |
 | `features/` | `feature_engineering.py`; `features/indicators/` (trend, momentum, volatility, volume, cycle, custom). |
 | `modeling/` | `ModelManager`, model definitions (`models.py`), artifact registry (`artifacts.py`), optuna optimization (`optimization.py`). |
-| `backtesting/` | Deterministic event-loop simulator (`simulator.py`, entry at next open, stop-first, gap-aware exits), `WalkForwardValidator` + `HoldoutGuard` (`walk_forward.py`), Monte Carlo (`montecarlo.py`), legacy engine (`engine.py`). |
+| `backtesting/` | Deterministic event-loop simulator (`simulator.py`, entry at next open, stop-first, gap-aware exits), `WalkForwardValidator` + `HoldoutGuard` (`walk_forward.py`), Monte Carlo (`montecarlo.py`), causal `historical_signals.py`. |
 | `trading/` | Paper execution (`paper_trading.py`, `execution.py`, `orders.py`), risk (`risk_manager.py`, `margin.py`), append-only paper ledger (`ledger.py`, unique `signal_id`). |
 | `strategy/` | `signal_generator`, `multi_timeframe`, `signal_ranking`, `signal_tracker` (ML calibration lives here). |
 | `analysis/` | `market_analyzer`, `correlation`, `scoring`. |
@@ -94,14 +94,14 @@ Indicator weights live in `indicator_weights.json` (tracked).
 
 | Command | Flags | Notes |
 |---|---|---|
-| `python main.py` | none | Run the bot + scheduled loop |
-| `python scripts/train_models.py` | none | Train all models, all symbols x timeframes (network) |
+| `python main.py` | none | Run the bot + scheduled loop; missing bot credentials exit with code 2 after cleanup |
+| `python scripts/train_models.py` | none | Train all models, all symbols x timeframes (network); retrains legacy pickle-scalers to validated JSON |
 | `python scripts/encrypt_keys.py` | none | Encrypt `.env` secrets to `ENCRYPTED_*` |
-| `python scripts/run_holdout.py <csv>` | `--state PATH` (default `runs/holdout_used.json`), `--confirm`, `--force-rerun` | Protected holdout on a local CSV; never fetches |
+| `python scripts/run_holdout.py <csv>` | `--symbol`, `--timeframe`, `--state PATH` (default `runs/holdout_used.json`), `--out PATH`, `--confirm`, `--force-rerun`, `--with-ml` | Strategy-level protected holdout on a local CSV; writes a full metrics report; never fetches |
 | `python scripts/generate_reports.py` | `--output PATH` (default `runs/environment-baseline.json`) | Environment report |
 | `python scripts/record_backtest.py` | none | Re-record backtest golden baseline |
 | `python tests/golden/record_signals.py` | none | Re-record signals golden baseline |
-| `python -m pytest -m "not slow and not ml" -q` | — | Default gate (197 tests) |
+| `python -m pytest -m "not slow and not ml" -q` | — | Default gate (298 tests) |
 | `python -m pytest -m slow -q` | — | Determinism proof (byte-identical goldens) |
 | `ruff check .` / `ruff format --check .` | — | Lint + format gates (must be zero) |
 | `mypy domain` | — | Strict types on the pure core |
@@ -116,6 +116,20 @@ Risk model: fixed fractional + volatility cap + Kelly ceiling, portfolio
 exposure limits, daily/weekly/drawdown halts (`LONG_TERM_CONFIG` in
 `common/constants.py`: per-timeframe `min_confidence_threshold`, `min_risk_reward_ratio`
 2.8, `max_signals_per_run` 3).
+
+## Quality gates
+
+`build_gate_config` (`application/gate_config.py`) builds the single gate
+used by both the generator and the service. Rejected signals return `None`;
+invalid stop/target geometry is rejected before the quality checks.
+
+| Key | Source | Meaning |
+|---|---|---|
+| `min_confidence_threshold` | `LONG_TERM_CONFIG` per timeframe (1h: 82, 4h: 78, 1d: 72, 1w: 68, 1M: 65) | Minimum 0-100 confidence |
+| `min_trend_strength` | `LONG_TERM_CONFIG` (`MODERATE`) | Minimum trend strength rank |
+| `min_volume_surge` | `LONG_TERM_CONFIG` (1.4) | Minimum volume ratio |
+
+Threshold values are frozen: shape data to pass them, never lower them.
 
 ## Backtest
 

@@ -51,8 +51,9 @@ Both files must be byte-identical across consecutive runs. Proof:
 python -m pytest -m slow -q
 ```
 
-Current fixtures are synthetic (seed 42) and `signals_baseline.json` is `[]`;
-re-recording with real warehouse data is tracked in `docs/open_issues.md`.
+Current fixtures are deterministic (fixed end date, seeded `default_rng`,
+regime-shaped trends) and the golden baselines are non-trivial (51 signals,
+15 trades). Re-recording with real warehouse data stays user-side.
 
 ## 5. Protected holdout protocol
 
@@ -61,15 +62,27 @@ optimization, and it is not exercised by routine tests.
 
 ```bash
 python scripts/run_holdout.py tests/fixtures/ohlcv_1h.csv --confirm
+python scripts/run_holdout.py data.csv --symbol BTC/USDT --timeframe 1h --confirm --out runs/manual/holdout_report.json
 ```
 
 - Without `--confirm`: rejected (`PermissionError`).
 - A second run with the same data hash is rejected unless `--force-rerun` is
   passed. State lives in `runs/holdout_used.json` (`--state` overrides it).
+- The report (`--out`, default `runs/<run_id>/holdout_report.json`) holds
+  rows, data/config hashes, trades count, win rate, profit factor, max
+  drawdown, Sharpe, final equity, buy-and-hold return, rejection counts, a
+  bootstrap confidence interval, git commit and evaluation time.
+- `--with-ml` is refused unless every current ML artifact's `data_end`
+  predates the holdout window (no-leak rule).
 - Refresh the environment report after a holdout:
   `python scripts/generate_reports.py`.
 
-## 6. Metrics and logs
+## 6. Startup contract
+
+Missing `TELEGRAM_BOT_TOKEN` or `ADMIN_CHAT_ID` ends the run with exit code
+2 after cleanup. The bot never idles silently with credentials absent.
+
+## 7. Metrics and logs
 
 - Metrics: set `metrics_enabled=true` to serve Prometheus on `127.0.0.1:9108`
   (`METRICS_PORT` overrides the port).
@@ -77,7 +90,7 @@ python scripts/run_holdout.py tests/fixtures/ohlcv_1h.csv --confirm
 - Structured logs: `LOG_FORMAT=json`. Loguru writes stdout (INFO) and
   `logs/app.log` (DEBUG, 10 MB rotation, 7-day retention).
 
-## 7. Scheduler recovery
+## 8. Scheduler recovery
 
 `SchedulerStore` (`runs/scheduler.db`, configurable via `scheduler_db_path`)
 records `finished_at` per job. On restart, `is_due()` compares the stored
@@ -86,14 +99,14 @@ never skipped silently. If the DB is deleted, every job is treated as never
 run and the next cycle executes on schedule. No manual recovery step exists —
 verify via `/health` that the loop resumed.
 
-## 8. Runbook
+## 9. Runbook
 
 - Run the bot: `python main.py`. Paper execution is the default.
 - Use `/signals` for reporting and `/paper` for an explicit paper order
   (admin only).
 - Keep `execution_dry_run=true` until a separately reviewed live deployment.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Action |
 |---|---|

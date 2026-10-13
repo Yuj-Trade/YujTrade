@@ -24,7 +24,7 @@ openspec validate <change-id> --strict
 openspec archive <change-id> --yes
 ```
 
-There is a 197-test suite. Verify changes with the gates below, never by
+There is a 298-test default suite. Verify changes with the gates below, never by
 eyeballing entrypoints alone:
 
 ```bash
@@ -50,11 +50,11 @@ Layer map:
 | Path | Role |
 |---|---|
 | `domain/` | Pure decision logic, stdlib only (`outcome`, `sizing`, `levels`, `gates`, `types`, `signal_id`). Import contract enforced by `tests/unit/test_architecture.py`. |
-| `application/` | Orchestration over `domain` only (`decide.py`, `snapshot.py`) |
+| `application/` | Orchestration over `domain` only (`decide.py`, `snapshot.py`, `gate_config.py`) |
 | `data/` | `MarketDataProvider`, `DataValidator`; `data/sources/` fetchers (binance, coingecko, yfinance, alphavantage, cryptopanic, coindesk, defillama, messari, news, marketindices, alternativeme) on `base_fetcher.py` |
 | `features/` | `feature_engineering.py`; `features/indicators/` — factory, base, trend, momentum, volatility, volume, cycle, custom, all_indicators |
-| `modeling/` | `ModelManager`, model definitions, `ArtifactRegistry` (`artifacts/`), optuna optimization |
-| `backtesting/` | `EventDrivenSimulator` (resolves via `domain.outcome`), `WalkForwardValidator` + `HoldoutGuard`, Monte Carlo, legacy engine |
+| `modeling/` | `ModelManager`, model definitions, `ArtifactRegistry` (`artifacts/`) with mandatory verified metadata, JSON scalers (`scaler_io.py`, never pickle), optuna optimization |
+| `backtesting/` | `EventDrivenSimulator` (resolves via `domain.outcome`), `WalkForwardValidator` + `HoldoutGuard`, Monte Carlo, causal `historical_signals.py` |
 | `trading/` | Paper execution, risk, append-only `PaperLedger` (unique `signal_id`) |
 | `strategy/` | `signal_generator`, `multi_timeframe`, `signal_ranking`, `signal_tracker` |
 | `analysis/` | `market_analyzer`, `correlation`, `scoring` |
@@ -66,14 +66,13 @@ Layer map:
 
 ## Coding Conventions
 
-- **Python 3.10+**: modern union syntax (`X | None`), type hints on public functions, dataclasses for domain models (in `common/core.py`).
-- **Language**: identifiers, docstrings, and log messages in English. Inline explanatory comments are frequently in Persian (Farsi) — match the surrounding file's mix; don't translate existing comments.
+- **Python 3.13**: `requires-python = ">=3.13,<3.14"`; modern union syntax (`X | None`), type hints on public functions, dataclasses for domain models (in `common/core.py`).
+- **Language**: identifiers and log messages in English. Production code carries zero comments and zero docstrings (enforced by `tests/unit/test_no_comments.py`); rationale lives in `docs/`. Tool pragmas (`noqa`, `type:`, `pragma`) are the only allowed exceptions.
 - **Logging**: always `from config.logger import logger` (loguru). Never `print()` or stdlib `logging`. Loguru writes to stdout (INFO) and `logs/app.log` (DEBUG, 10 MB rotation, 7-day retention).
 - **Async**: all I/O paths are async. Never call an async function from sync code — e.g. `ResourceManager.get_redis_client()` is async; Redis is connected in `initialize()` (idempotent), not in `__init__`.
 - **Windows**: every new entrypoint must set `asyncio.WindowsSelectorEventLoopPolicy()` on `win32` (see bottom of `main.py`). `pywin32` is platform-gated in requirements.txt.
-- **Comments referencing gaps**: forbidden for new code. Persian "شکاف N"
-  comments are legacy markers from earlier refactor passes — do not add new
-  ones; record decisions in `docs/` (ADRs, `open_issues.md`) instead.
+- **Comments**: forbidden in production code, including gap markers;
+  record decisions in `docs/` (ADRs, `open_issues.md`, `docs/architecture.md`) instead.
 
 ## Rules
 
@@ -83,8 +82,19 @@ Layer map:
 - **Config layering**: defaults live in `ConfigManager.DEFAULT_CONFIG`; runtime overrides in `config.json` (gitignored, generated at runtime). Indicator weights and cache TTLs in `indicator_weights.json` (tracked).
 - **Artifact policy**: trained models live in the `ArtifactRegistry`
   (`artifacts/<symbol>/<timeframe>/<model_type>/`, pointer `current.json`).
-  `models/` on disk is untracked legacy output — never re-track it, never
-  depend on it in new code. Prediction never trains (`model_auto_train_on_predict=false`).
+  Every version carries mandatory verified metadata (`data_start`,
+  `data_end`, `feature_list`, `params`, `git_commit`, `library_versions`,
+  `files_sha256`); loads verify hashes and a mismatch is
+  `model_unavailable`, never a crash. Scalers persist as validated JSON;
+  legacy `scaler_*.pkl` files never load. `models/` on disk is untracked
+  legacy output — never re-track it, never depend on it in new code.
+  Prediction never trains (`model_auto_train_on_predict=false`).
+- **Startup contract**: missing `TELEGRAM_BOT_TOKEN` or `ADMIN_CHAT_ID` ends
+  the run with exit code 2 after cleanup. Never idle with the bot off.
+- **Gate contract**: `build_gate_config` (`application/gate_config.py`) is
+  the single gate constructor for generator and service; rejected signals
+  return `None` (never a `TradingSignal`). Threshold values in
+  `LONG_TERM_CONFIG` are frozen — shape data, not thresholds.
 - **`Main/` is a vendored Python environment (venv)**, not project code. Never read, edit, or search it; exclude it from greps/globs. (`.vscode/settings.json` references a stale `./venv/` path — the real venv is `Main/`, activated via `Main/Scripts/Activate.ps1`.)
 - **OpenSpec workflow**: open `openspec/AGENTS.md` whenever a request mentions planning, proposals, new capabilities, breaking changes, or architecture. Scaffold proposals under `openspec/changes/<verb-led-kebab-id>/` (`add-`, `update-`, `remove-`, `refactor-`), validate with `openspec validate <id> --strict`, and do not implement until the proposal is approved. Skip proposals for bug fixes, typos, config changes, and non-breaking dependency updates.
 
