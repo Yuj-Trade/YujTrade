@@ -117,3 +117,114 @@ Layer map:
   golden re-record with real data).
 - `copyfile/full-trade.txt` is gitignored; regenerate locally with
   `python copyfile/copy.py` when a full review bundle is needed.
+
+## Repository map
+
+The repository is organized by responsibility rather than by framework:
+
+| Area | Important files and responsibilities |
+|---|---|
+| Entry and composition | `main.py` starts the async application, installs signal handlers, starts Telegram/scheduling, and performs shutdown; `services/trading_service.py:create_trading_stack()` is the only dependency composition root |
+| Pure decision core | `domain/types.py`, `gates.py`, `levels.py`, `outcome.py`, `sizing.py`, and `signal_id.py`; standard library only and no I/O |
+| Application orchestration | `application/decide.py`, `snapshot.py`, and `gate_config.py`; coordinates domain decisions without owning infrastructure |
+| Market data | `data/data_provider.py`, `data/data_validator.py`, `data/source_health.py`, `data/warehouse.py`, and `data/sources/*_fetcher.py`; all provider/network paths are async |
+| Features | `features/feature_engineering.py` and `features/indicators/`; indicator construction is centralized in `factory.py` |
+| Analysis and strategy | `analysis/market_analyzer.py`, `scoring.py`, `correlation.py`; `strategy/signal_generator.py`, `multi_timeframe.py`, `signal_ranking.py`, and `signal_tracker.py` |
+| Modeling | `modeling/model_manager.py`, `models.py`, `artifacts.py`, `scaler_io.py`, and `optimization.py`; artifact metadata and hashes are part of the load contract |
+| Backtesting | `backtesting/simulator.py`, `walk_forward.py`, `montecarlo.py`, and `historical_signals.py`; historical paths must remain causal and deterministic |
+| Trading | `trading/execution.py`, `paper_trading.py`, `orders.py`, `risk_manager.py`, `margin.py`, `portfolio.py`, and append-only `ledger.py` |
+| Runtime support | `config/settings.py`, `config/logger.py`, `common/*`, and `utils/*` for configuration, logging, caching, resources, scheduling, resilience, and encryption |
+| Telegram application | `app/telegram_bot.py` and `app/tasks.py`; administrator-only commands include report-only `/signals` and explicit `/paper` execution |
+| Operations and checks | `scripts/*`, `Dockerfile`, `.github/workflows/ci.yml`, `tests/`, `docs/`, and `openspec/` |
+
+Do not infer package ownership from a convenient import. Keep the dependency
+direction `domain` <- `application` <- infrastructure/application packages;
+`tests/unit/test_architecture.py` is the executable enforcement point.
+
+## Runtime flow and ownership
+
+1. `main.py` awaits `create_trading_stack()` and owns the returned resources.
+2. `MarketDataProvider` gathers source data, validates it, and feeds market
+   regime detection and feature generation.
+3. The scoring path applies regime-based weight adjustments before producing a
+   candidate signal.
+4. `SignalGenerator` creates candidates, `MultiTimeframeAnalyzer` requires
+   sufficient confirmation without direction conflict, and `TradingService`
+   applies per-timeframe gates.
+5. `SignalRanking` applies the per-timeframe cap before the global
+   `max_signals_per_run` cap. `SignalTracker` owns lifecycle/decay tracking.
+6. `/signals` reports results. `/paper` is the explicit paper execution path;
+   execution remains dry-run by default and risk checks must remain in force.
+7. Shutdown must stop Telegram polling, cancel background tasks, close the
+   scheduler store, clean the trading service, close the market provider, and
+   clean resources.
+
+Healthy rejection is represented by `None` and is distinct from an analysis
+failure. Invalid data, unavailable required inputs, and computation failures
+must retain their exception/logging semantics instead of becoming a silent
+no-signal result.
+
+## Configuration and data contracts
+
+- `ConfigManager.DEFAULT_CONFIG` in `config/settings.py` is the default source.
+  `config.json` is an untracked runtime override; `indicator_weights.json` is
+  tracked configuration. Do not duplicate defaults in services or scripts.
+- `symbols.txt` defines the deduplicated `BTC/USDT`-style universe. Supported
+  timeframes are `1h`, `4h`, `1d`, `1w`, and `1M`.
+- Training and prediction must both use `model_data_limits` and
+  `model_prediction_limit` from `ConfigManager`. Prediction never trains
+  implicitly.
+- Artifacts are addressed under
+  `artifacts/<symbol>/<timeframe>/<model_type>/` through `ArtifactRegistry`.
+  Each version requires verified data bounds, feature list, parameters, git
+  commit, library versions, and file SHA-256 metadata. Hash mismatch produces
+  `model_unavailable`, not a crash. Scalers are validated JSON; legacy pickle
+  scalers never load.
+- `PaperLedger` is append-only and uses unique `signal_id` values. Signal
+  outcome resolution must be shared by live/paper and backtest paths.
+- Redis is optional. A missing `REDIS_TOKEN` disables caching gracefully; it
+  must not become a reason to add synchronous I/O to an async path.
+
+## Test and fixture layout
+
+Use the parallel `tests/` tree for all tests:
+
+- `tests/unit/` covers architecture, startup, domain, services, strategy,
+  trading, configuration, and utility contracts.
+- `tests/integration/` covers cross-package behavior and external boundaries.
+- `tests/golden/` contains deterministic JSON baselines and their recorders;
+  do not re-record them for convenience.
+- `tests/fixtures/`, `tests/mocks/`, and `tests/helpers/` contain shared test
+  inputs and doubles. Keep tests isolated and use the existing async fixtures.
+
+The normal validation sequence is the default pytest gate, Ruff check and
+format check, and strict mypy for `domain`. Add coverage and golden/slow
+checks for changes touching the pure core, deterministic simulation, signals,
+or model/backtest contracts. CI additionally runs dependency audit, secrets
+guard, and a Docker healthcheck/build.
+
+## Files an agent must treat as generated or sensitive
+
+Never read secrets into a response or commit them. `.env`, `secret.salt`,
+`*.db`, `*.pkl`, `*.keras`, `calibration.json`, `signal_history.json`,
+`config.json`, `runs/`, `artifacts/`, `models/`, `logs/`, `Main/`, and
+`__pycache__/` are not source-of-truth application files. `copyfile/` and
+`skills/` are excluded from packaging and are not to be modified for ordinary
+feature work. `copyfile/full-trade.txt` is a local review export and is
+gitignored.
+
+## Documentation and change discipline
+
+- Put architectural rationale in `docs/architecture.md` or an ADR under
+  `docs/adr/`; put known limitations in `docs/open_issues.md` and operational
+  procedures in `docs/runbook.md`.
+- Requests for new capabilities, breaking changes, architecture work, or
+  proposals must follow `openspec/AGENTS.md` before implementation. Bug fixes,
+  typo fixes, configuration changes, and non-breaking dependency updates do
+  not require a proposal.
+- Keep production code free of explanatory comments/docstrings according to
+  the repository tests; document rationale here or in `docs/` instead.
+- Prefer one concern per commit with `docs:`, `fix:`, `test:`, `style:`,
+  `build:`, or `ci:` prefixes. Runtime behavior changes require the
+  `[behavior-change]` tag and corresponding tests. Do not amend or rewrite
+  existing commits unless explicitly requested.
