@@ -13,14 +13,16 @@ A `blocked` entry never guesses missing content; it records the reason and moves
   after the migration. Agent never runs network training.
 - [ ] `LONG_TERM_CONFIG` thresholds and indicator formulas: frozen by directive
   (only causality fixes allowed in phase 4). No change recorded.
-- [ ] Docker image build not verified locally (v4.0 phase 6): no Docker daemon
-  on this machine. `Dockerfile` now creates and chowns `runs artifacts logs
-  reports` for `appuser`, but `docker build` + healthcheck proof is deferred
-  to the CI `docker` job (phase 8).
-- [ ] TA-Lib install on `python:3.13-slim-bookworm` unverified (v4.0 phase 6):
-  no local Docker; CI `docker` job is the proof point.
-- [ ] Base-image digest pinning skipped (v4.0 phase 6): no verified digest
-  available offline; guessing a digest is forbidden, so the current tag stays.
+- [x] Container image build verified locally with Podman (v4.0 phase 6/8):
+  `podman build --format docker -t yujtrade:podman .` succeeds; the probe
+  `python scripts/docker_healthcheck.py` exits 0; the container runs as
+  `appuser` with writable `runs artifacts logs reports` (the `/app`
+  ownership bug is fixed and proven).
+- [x] TA-Lib on `python:3.13-slim-bookworm` verified: `TA-Lib==0.8.1`
+  installs from the lockfile and imports inside the image.
+- [x] Base-image digest pinned (was skipped in phase 6): digest
+  `sha256:a1165e27...5f4d641` resolved live from the registry via Podman,
+  not guessed; `Dockerfile` now uses `FROM ...@sha256:...`.
 - [ ] `docker-compose.yml` absent from the repo (v4.0 phase 6): nothing to add
   volumes/`env_file` to; compose-based deployment stays user-side.
 - [ ] Hash-pinned `requirements.lock` blocked (v4.0 phase 8): no local Docker,

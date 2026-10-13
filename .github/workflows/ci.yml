@@ -102,6 +102,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image (no push)
-        run: docker build -t yujtrade:ci .
+        run: podman build --format docker -t yujtrade:ci .
       - name: Healthcheck probe
-        run: docker run --rm yujtrade:ci python scripts/docker_healthcheck.py
+        run: podman run --rm yujtrade:ci python scripts/docker_healthcheck.py

@@ -117,3 +117,4 @@ verify via `/health` that the loop resumed.
 | Stale paper positions | Caller supplied no mark price; equity excludes them until fresh marks arrive |
 | Scheduler silent after restart | Check `runs/scheduler.db` readability; verify `/health` |
 | Golden mismatch after re-record | Expected only when fixture data changed; otherwise investigate before committing |
+| Podman TLS timeouts on pull/build | MTU blackhole in the podman-machine network: `podman machine ssh -- "sudo -n ip link set eth0 mtu 1280"` (runtime-only, repeat after machine restart) |
