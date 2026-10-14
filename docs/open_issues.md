@@ -1,102 +1,110 @@
 # Open Issues Register
 
-Migration v2.0 — residual and out-of-scope items. Updated as phases complete.
+Status as of 2026-10-14 (v4.0 + cache/TTL phase complete, verified locally).
 A `blocked` entry never guesses missing content; it records the reason and moves on.
+Resolved items live under Resolved with their evidence; nothing resolved stays
+in the open lists.
 
-## Blocked
+## Resolved — verified this session
 
-- [ ] `trading/` live execution internals beyond the paper ledger: no live-exchange
-  adapter exists in the repo. Live trading stays out of scope; paper only.
-- [ ] `bulk_download` for higher timeframes (network access): needs user approval
-  and execution. Until then `mtf_data_missing` rejections are expected on thin data.
-- [ ] Production holdout/train with real data: user-run via `docs/runbook.md`
-  after the migration. Agent never runs network training.
-- [ ] `LONG_TERM_CONFIG` thresholds and indicator formulas: frozen by directive
-  (only causality fixes allowed in phase 4). No change recorded.
-- [x] Container image build verified locally with Podman (v4.0 phase 6/8):
-  `podman build --format docker -t yujtrade:podman .` succeeds; the probe
-  `python scripts/docker_healthcheck.py` exits 0; the container runs as
-  `appuser` with writable `runs artifacts logs reports` (the `/app`
-  ownership bug is fixed and proven).
-- [x] TA-Lib on `python:3.13-slim-bookworm` verified: `TA-Lib==0.8.1`
-  installs from the lockfile and imports inside the image.
-- [x] Base-image digest pinned (was skipped in phase 6): digest
-  `sha256:a1165e27...5f4d641` resolved live from the registry via Podman,
-  not guessed; `Dockerfile` now uses `FROM ...@sha256:...`.
-- [ ] `docker-compose.yml` absent from the repo (v4.0 phase 6): nothing to add
-  volumes/`env_file` to; compose-based deployment stays user-side.
-- [ ] Hash-pinned `requirements.lock` blocked (v4.0 phase 8): no local Docker,
-  and a Windows-built `pip-compile --generate-hashes` would pin wrong-platform
-  hashes for the Linux image. `Dockerfile` keeps installing the unhashed lock
-  until then. Run the `lock-refresh` workflow (workflow_dispatch, Ubuntu) to
-  build the hashed lock, then switch the Dockerfile to `--require-hashes`.
+- [x] Container image verified with Podman: `podman build --format docker`
+  succeeds, `scripts/docker_healthcheck.py` exits 0 in-container, the image
+  runs as `appuser` with writable `runs artifacts logs reports`.
+- [x] TA-Lib on `python:3.13-slim-bookworm`: `TA-Lib==0.8.1` installs from the
+  lockfile and imports inside the image.
+- [x] Base-image digest pinned: `sha256:a1165e27...5f4d641`, resolved live
+  from the registry, not guessed.
+- [x] Full-repo lint is zero: `ruff check .` and `ruff format --check .` pass
+  (the v3.0 baseline of 948 errors is gone; the last of it fell to the
+  Python-3.13 modernization in phase 8). `mypy domain` is clean.
+- [x] Golden is hermetic and non-trivial: the determinism test resets
+  `runs/indicator_history.db*` before recording, so output no longer depends
+  on local warehouse state. 59 signals / 15 trades, byte-stable across runs:
+  `signals_baseline.json` `CAC5D8A6...`, `backtest_baseline.json` `833F5643...`.
+- [x] `docs/exceptions_audit.md` regenerated: all 159 `except Exception`
+  sites re-verified with current line numbers; every handler logs or
+  re-raises.
+- [x] Cache TTL consistency (3 commits, no behavior change): every effective
+  TTL asserted by `tests/unit/common/test_cache_ttl_config.py` (23 tests),
+  integer-literal `ex=`/`cache_ttl` forbidden by
+  `tests/unit/test_cache_ttl_source.py`. Golden hashes unchanged.
+- [x] OpenSpec proposal `add-asset-reference-store` validated (`--strict`)
+  and committed; implementation awaits approval.
+- [x] README test count corrected (321, was "197"); empty local fixture
+  stub directories removed.
+- [x] v4.0 core: enforced application gates, mandatory verified artifact
+  metadata, pickle removal, strategy-level holdout, exit-code-2 startup,
+  zero-comment code, CI lint/types/tests/coverage/golden/audit/secrets/docker
+  jobs, hash-less-lock documented with the `lock-refresh` workflow.
+- [x] v3.0 pre-flight items closed during v3.0/v4.0: junk scripts removed,
+  deterministic fixtures, expanded docs/ADRs, walk-forward/holdout and model
+  lifecycle tests added, `.gitignore` denylist complete.
 
-## Pre-flight audit (directive v3.0, phase A — verified locally)
+## Remaining — still true, verified
 
-- [x] `ci.yml` **exists** (`.github/workflows/ci.yml`): jobs `ruff check .`
-  (full-repo), `mypy domain`, `pytest -m "not slow and not ml"`. The v2.0
-  audit claim "CI absent" is stale. CI is currently RED because of the ruff
-  debt below; phase D must turn it green.
-- [x] Ruff baseline: **948 errors** (641 auto-fixable). Top rules: `UP006`
-  244, `E501` 198, `UP045` 185, `F401` 111, `UP035` 95, `I001` 71.
-- [x] Pytest baseline: **142 passed, 2 deselected** (`-m "not slow and not ml"`).
-- [x] Tracked binaries: 27 `.pkl` files under `models/lstm|models/xgboost`.
-  `calibration.json` is **not** tracked (the note in "Legacy tracked
-  artifacts" below is stale and will be corrected in phase G). No
-  default-marker test reads legacy `models/`; `ModelManager` predict path
-  goes through `ArtifactRegistry` (`artifacts/`). Untrack approved (phase B).
-- [x] Junk scripts `fix_test.py`, `tests/_fix_p1.py`, `tests/_probe_p1.py`,
-  `prompt` have no importers outside themselves. Removal approved (phase B).
-  Residual strays kept for now: `^` (0 bytes), `symtemp.txt`, `symbols.txt`
-  (no `.py` references found).
-- [x] Fixtures are exactly 1501 lines each (header + 1500 rows) but synthetic
-  per the v2.0 report; `signals_baseline.json` is `[]`. No warehouse DB on
-  disk and `config.json` carries no warehouse path → phase F is **blocked**
-  until the user supplies real warehouse data.
-- [x] Docs are stubs: ADRs 189–258 bytes, README 41 lines, runbook 27 lines;
-  `CLAUDE.md` claims "no test suite" (stale). Phase G required.
-- [x] Test gaps confirmed: `tests/unit/backtesting/` has only
-  `test_simulator.py` (no walk-forward/holdout tests); `tests/unit/modeling/`
-  has only `test_predict_no_autotrain.py`. Phase E required.
-- [x] Local `.gitignore` noise (duplicate `/copyfile` + `copyfile/copy.py`
-  lines) reverted to HEAD; the exporter script stays tracked.
+- [ ] Live execution: no live-exchange adapter exists; paper only. Out of
+  scope until a separately reviewed live deployment.
+- [ ] `bulk_download` for higher timeframes needs user approval and execution;
+  `mtf_data_missing` rejections on thin data are expected until then.
+- [ ] Real-data training, real holdout, and the 14-day paper soak are
+  user-side via `docs/runbook.md`. The agent never runs network training.
+- [ ] `LONG_TERM_CONFIG` thresholds and indicator formulas stay frozen.
+- [ ] Hash-pinned `requirements.lock` is blocked: no local Docker, and a
+  Windows-built `pip-compile --generate-hashes` would pin wrong-platform
+  hashes. Run the `lock-refresh` workflow (workflow_dispatch, Ubuntu), then
+  switch the Dockerfile to `--require-hashes`.
+- [ ] Proposal `add-asset-reference-store` is unapproved: sections 3.2-3.7 of
+  the cache directive must not be implemented until approved.
+- [ ] `config.json` is tracked but CLAUDE.md calls it an untracked runtime
+  override; it pins `signal_threshold: 10`, which the golden baselines
+  silently depend on. Decide: untrack it and make the golden independent of
+  it, or document it as tracked tuning.
 
-## Legacy tracked artifacts (resolved in v3.0)
+## New issues for the next phase — in fix order
 
-- `models/` (27 `.pkl` scalers + XGBoost `.json` files): untracked via
-  `git rm --cached` (files stay on disk); `/models/` added to `.gitignore`.
-  No default-marker test and no `ModelManager` predict path depends on it.
-- `calibration.json`: was never tracked; the earlier note claiming otherwise
-  was stale. It is covered by `.gitignore` and must stay untracked.
-- Any `*.db` under `runs/` created at runtime (untracked, ignored).
+1. Remove dead `scripts/run_golden.py` (near-duplicate of
+   `tests/golden/record_signals.py` with a hardcoded `C:/ME/YujTrade` path)
+   and dead `scripts/install_mock.py` (pandas_ta mock nothing imports).
+   Evidence: zero references repo-wide outside themselves. Add
+   importer-absence tests first, then delete.
+2. Remove tracked junk `symtemp.txt` (208-byte stale symbol list from the
+   initial commit, referenced nowhere). Same proof-then-delete discipline.
+3. Fix the stale `BacktestingEngine` claim in
+   `tests/unit/strategy/test_signal_tracker.py` (the engine was deleted in
+   v4.0; the docstring still names it the only `resolve()` caller) and audit
+   remaining test prose for references to removed code.
+4. Remove or wire the four caller-less fetcher methods
+   (`get_exchange_info`, `get_all_futures_symbols`, `get_circulating_supply`,
+   `get_all_assets` — definition-only matches repo-wide). If exchange
+   filters are wanted, that needs its own proposal first.
+5. Deduplicate OHLCV caching: `fetch_ohlcv_data` caches per timeframe and
+   `_get_higher_tf_data` re-fetches and re-caches the same candles under the
+   `mtf_analysis` TTL. Share one entry per symbol/timeframe/limit.
+6. Memoize run-level static fetches: without Redis,
+   `get_fundamental_data`/`get_onchain_data` hit the network once per
+   symbol per timeframe (5x per run). Cache per analysis cycle, not per
+   call. Changes fetch timing, so propose before implementing.
+7. Sync `sqlite3` in async paths (`SchedulerStore`, `IndicatorHistoryWarehouse`,
+   `PaperLedger` hold a blocking connection). Measure loop impact first,
+   then migrate behind the same discipline as the asset-reference store.
+8. `aiosqlite` is declared in `requirements.txt` but is not installed, not
+   pinned in `requirements.lock`, and imported nowhere. Pin or drop it
+   before anything depends on it.
+9. Naive `datetime.now()` in the Telegram date line
+   (`app/telegram_bot.py` display string) — use timezone-aware UTC.
 
-## Out of scope (user-side, section 6 of the directive)
+## Legacy tracked artifacts (resolved in v3.0, still true)
+
+- `models/` untracked via `git rm --cached` (files stay on disk);
+  `/models/` is gitignored. No default-marker test and no `ModelManager`
+  predict path depends on it.
+- `calibration.json` was never tracked; gitignored, stays untracked.
+- `*.db` under `runs/` are runtime-only, untracked and ignored.
+
+## Out of scope (user-side)
 
 - [ ] Move `ENCRYPTION_PASSWORD` to `SECRET_ENCRYPTION_PASSWORD` env var (user).
 - [ ] Physical reshuffle into `infrastructure/` (future work).
 - [ ] Organization secret manager adoption (future work).
 - [ ] Live execution enablement (future work, requires `execution_dry_run` review).
-
-## Resolved
-
-- [x] S.3 `.gitignore` denylist: already complete, no commit needed.
-- [x] S.5 snapshot: working tree was clean on `main`, no snapshot commit needed.
-- [x] Phase 2.5 `hash_data` versioning: `hash_data`/`verify_hashed_data` have no
-  callers outside `utils/security.py`; format stays `<salt>$<hash>` at 480000
-  iterations, no `v2$` migration required.
-- [x] Phase 2.6 warehouse filename: no `data warehouse.db` reference remains.
-- [x] Phase 9 `calculate_overall_quality_score`: kept as-is. The provider path
-  now uses the newer quality helpers; the orphan stays covered by existing
-  tests and is not called in production flow. No silent removal performed.
-- [x] Phase 10 README Backtest section: corrected to real entry points
-  (`EventDrivenSimulator`, `WalkForwardValidator.split`,
-  `scripts/run_holdout.py`); stale `run_walk_forward`/`walk_forward_splits`
-  names removed.
-
-## Known debt (non-blocking)
-
-- Full-repo `ruff check .` reports ~970 pre-existing violations (mostly
-  `E501`, `UP035`, `E402` in legacy code). Per-commit gate stays scoped
-  (`ruff check` on touched paths plus `domain`/`tests` additions,
-  `mypy domain`, full default-marker pytest). Cleanup tracked here, not
-  attempted as drive-by reformatting during the migration.
+- [ ] `docker-compose.yml` stays absent; compose-based deployment is user-side.

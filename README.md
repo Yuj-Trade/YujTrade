@@ -29,7 +29,7 @@ Layer map:
 | `app/` | `telegram_bot.py` (TelegramBotHandler), `tasks.py`. |
 | `utils/` | `background_manager`, `circuit_breaker`, `resource_manager`, `security` (`KeyEncryptor`), `scheduler_store`. |
 | `scripts/` | Operator entry points (see Commands). |
-| `tests/` | 197 unit tests + golden baselines (`tests/golden/`). |
+| `tests/` | 321 default-gate tests plus slow golden/holdout tests (`tests/golden/`). |
 
 ## Installation
 
