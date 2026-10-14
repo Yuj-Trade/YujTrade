@@ -101,6 +101,12 @@ class ConfigManager:
             "fundamental": 43200,
             "trending": 3600,
             "generic": 86400,
+            "asset_profile": 604800,
+            "fear_greed": 3600,
+            "defillama": 3600,
+            "onchain": 3600,
+            "sentiment": 1800,
+            "mtf_analysis": 3600,
         }
     }
 

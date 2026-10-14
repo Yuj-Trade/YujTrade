@@ -212,16 +212,27 @@
         }
     },
     "cache_config": {
-        "ohlcv_ttl": {
+        "default_ttl": 3600,
+        "ohlcv": {
             "1h": 300,
             "4h": 900,
             "1d": 1800,
             "1w": 3600,
             "1M": 7200
         },
-        "generic_ttl": 3600,
-        "news_ttl": 600,
-        "macro_ttl": 86400
+        "derivatives": 300,
+        "macro": 86400,
+        "indices": 600,
+        "news": 600,
+        "fundamental": 43200,
+        "trending": 3600,
+        "generic": 86400,
+        "asset_profile": 604800,
+        "fear_greed": 3600,
+        "defillama": 3600,
+        "onchain": 3600,
+        "sentiment": 1800,
+        "mtf_analysis": 3600
     },
     "external_data_weights": {
     "fear_greed": 40,
