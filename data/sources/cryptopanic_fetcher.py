@@ -44,5 +44,9 @@ class CryptoPanicFetcher(BaseFetcher):
         )
         media_list = data.get("results", [])
         if self.redis and media_list:
-            await self.redis.set(cache_key, json.dumps(media_list), ex=86400)
+            await self.redis.set(
+                cache_key,
+                json.dumps(media_list),
+                ex=self.config_manager.get_cache_ttl("generic"),
+            )
         return media_list

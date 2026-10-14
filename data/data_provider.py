@@ -145,6 +145,7 @@ class MarketDataProvider:
                 coindesk_fetcher=self.coindesk_fetcher,
                 messari_fetcher=self.messari_fetcher,
                 redis_client=self.redis,
+                config_manager=self.config_manager,
             )
 
         self.fetchers = [

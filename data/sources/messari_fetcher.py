@@ -72,7 +72,11 @@ class MessariFetcher(BaseFetcher):
                 metrics = data["data"]
                 try:
                     if self.redis:
-                        await self.redis.set(cache_key, json.dumps(metrics), ex=3600)
+                        await self.redis.set(
+                            cache_key,
+                            json.dumps(metrics),
+                            ex=self.config_manager.get_cache_ttl("onchain"),
+                        )
                 except Exception as e:
                     logger.warning(f"Redis SET failed for {cache_key}: {e}")
                 return metrics
@@ -111,7 +115,11 @@ class MessariFetcher(BaseFetcher):
 
             try:
                 if self.redis:
-                    await self.redis.set(cache_key, json.dumps(analysis_data), ex=3600)
+                    await self.redis.set(
+                        cache_key,
+                        json.dumps(analysis_data),
+                        ex=self.config_manager.get_cache_ttl("onchain"),
+                    )
             except Exception as e:
                 logger.warning(f"Redis SET failed for {cache_key}: {e}")
 
@@ -135,7 +143,11 @@ class MessariFetcher(BaseFetcher):
             data = await self._fetch("assets")
             if data and "data" in data and self.redis:
                 asset_list = data["data"]
-                await self.redis.set(cache_key, json.dumps(asset_list), ex=86400)
+                await self.redis.set(
+                    cache_key,
+                    json.dumps(asset_list),
+                    ex=self.config_manager.get_cache_ttl("generic"),
+                )
                 return asset_list
             return []
         except Exception as e:
@@ -159,7 +171,11 @@ class MessariFetcher(BaseFetcher):
             if data and "data" in data:
                 news_list = data["data"]
                 if self.redis:
-                    await self.redis.set(cache_key, json.dumps(news_list), ex=600)
+                    await self.redis.set(
+                        cache_key,
+                        json.dumps(news_list),
+                        ex=self.config_manager.get_cache_ttl("news"),
+                    )
                 return news_list
             return []
         except Exception as e:

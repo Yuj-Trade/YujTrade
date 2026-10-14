@@ -33,7 +33,11 @@ class DeFiLlamaFetcher(BaseFetcher):
         )
 
         if data and self.redis:
-            await self.redis.set(cache_key, json.dumps(data), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(data),
+                ex=self.config_manager.get_cache_ttl("defillama"),
+            )
         return data
 
     async def get_defi_protocols(self) -> list[dict]:
@@ -49,7 +53,11 @@ class DeFiLlamaFetcher(BaseFetcher):
         )
 
         if data and self.redis:
-            await self.redis.set(cache_key, json.dumps(data), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(data),
+                ex=self.config_manager.get_cache_ttl("defillama"),
+            )
         return data if data else []
 
     async def get_chain_tvl(self, chain: str) -> dict | None:
@@ -67,7 +75,11 @@ class DeFiLlamaFetcher(BaseFetcher):
         )
 
         if data and self.redis:
-            await self.redis.set(cache_key, json.dumps(data), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(data),
+                ex=self.config_manager.get_cache_ttl("defillama"),
+            )
         return data
 
     async def get_stablecoins(self) -> dict | None:
@@ -83,7 +95,11 @@ class DeFiLlamaFetcher(BaseFetcher):
         )
 
         if data and self.redis:
-            await self.redis.set(cache_key, json.dumps(data), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(data),
+                ex=self.config_manager.get_cache_ttl("defillama"),
+            )
         return data
 
     async def get_yields(self) -> list[dict]:
@@ -98,6 +114,10 @@ class DeFiLlamaFetcher(BaseFetcher):
 
         if data and "data" in data and self.redis:
             yield_data = data["data"]
-            await self.redis.set(cache_key, json.dumps(yield_data), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(yield_data),
+                ex=self.config_manager.get_cache_ttl("defillama"),
+            )
             return yield_data
         return []

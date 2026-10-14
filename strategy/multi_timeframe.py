@@ -23,7 +23,6 @@ class MultiTimeframeAnalyzer:
         self.redis = redis_client
         self.config = config_manager or ConfigManager()
         self.analyzer = MarketConditionAnalyzer()
-        self.cache_ttl = 3600
 
     async def get_confirmation_score(
         self,
@@ -80,7 +79,11 @@ class MultiTimeframeAnalyzer:
         data = await self.data_provider.fetch_ohlcv_data(symbol, timeframe, limit=200)
         if data is not None and not data.empty and self.redis:
             try:
-                await self.redis.set(cache_key, data.to_json(orient="split"), ex=self.cache_ttl)
+                await self.redis.set(
+                    cache_key,
+                    data.to_json(orient="split"),
+                    ex=self.config.get_cache_ttl("mtf_analysis"),
+                )
             except Exception as e:
                 logger.warning(f"Redis SET for MTF data failed: {e}")
 

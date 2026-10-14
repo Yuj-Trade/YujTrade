@@ -6,6 +6,7 @@ import redis
 
 from common.cache import CacheCategory, CacheKeyBuilder
 from config.logger import logger
+from config.settings import ConfigManager
 from data.sources.alternativeme_fetcher import AlternativeMeFetcher
 from data.sources.coindesk_fetcher import CoinDeskFetcher
 from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
@@ -20,12 +21,14 @@ class NewsFetcher:
         coindesk_fetcher: CoinDeskFetcher | None = None,
         messari_fetcher: MessariFetcher | None = None,
         redis_client: redis.Redis | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         self.cryptopanic = cryptopanic_fetcher
         self.alternativeme = alternativeme_fetcher
         self.coindesk = coindesk_fetcher
         self.messari = messari_fetcher
         self.redis = redis_client
+        self.config_manager = config_manager or ConfigManager()
         self._is_closed = False
         self.source_name = "news_aggregator"
 
@@ -89,7 +92,9 @@ class NewsFetcher:
         )
 
         if self.redis and unique_news:
-            await self.redis.set(key, json.dumps(unique_news), ex=600)
+            await self.redis.set(
+                key, json.dumps(unique_news), ex=self.config_manager.get_cache_ttl("news")
+            )
 
         return unique_news
 
@@ -182,7 +187,11 @@ class NewsFetcher:
             }
 
             if self.redis:
-                await self.redis.set(cache_key, json.dumps(sentiment_data), ex=1800)
+                await self.redis.set(
+                    cache_key,
+                    json.dumps(sentiment_data),
+                    ex=self.config_manager.get_cache_ttl("sentiment"),
+                )
 
             return sentiment_data
         except Exception as e:
@@ -213,7 +222,11 @@ class NewsFetcher:
                         topics.append(code)
 
             if self.redis and topics:
-                await self.redis.set(cache_key, json.dumps(topics), ex=3600)
+                await self.redis.set(
+                    cache_key,
+                    json.dumps(topics),
+                    ex=self.config_manager.get_cache_ttl("trending"),
+                )
 
             return topics
         except Exception as e:

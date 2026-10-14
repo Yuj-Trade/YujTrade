@@ -25,5 +25,9 @@ class AlternativeMeFetcher(BaseFetcher):
 
         results = data.get("data", [])
         if results and self.redis:
-            await self.redis.set(cache_key, json.dumps(results), ex=3600)
+            await self.redis.set(
+                cache_key,
+                json.dumps(results),
+                ex=self.config_manager.get_cache_ttl("fear_greed"),
+            )
         return results
