@@ -263,6 +263,13 @@ class TradingService(ModelDataProvider):
         return True
 
     async def run_analysis_for_all_symbols(self) -> list[TradingSignal]:
+        await self.signal_generator.begin_run_cycle()
+        try:
+            return await self._run_analysis_cycle_all()
+        finally:
+            await self.signal_generator.end_run_cycle()
+
+    async def _run_analysis_cycle_all(self) -> list[TradingSignal]:
         try:
             await self.reconcile_pending_signals()
         except Exception as e:
@@ -326,6 +333,13 @@ class TradingService(ModelDataProvider):
         return final_signals
 
     async def run_quick_analysis(self, timeframes: list[str] | None = None) -> list[TradingSignal]:
+        await self.signal_generator.begin_run_cycle()
+        try:
+            return await self._run_quick_analysis_cycle(timeframes)
+        finally:
+            await self.signal_generator.end_run_cycle()
+
+    async def _run_quick_analysis_cycle(self, timeframes: list[str] | None) -> list[TradingSignal]:
         try:
             await self.reconcile_pending_signals()
         except Exception as e:

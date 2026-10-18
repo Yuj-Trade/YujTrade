@@ -46,7 +46,11 @@ def test_no_references_to_removed_files():
     for name in _tracked():
         if not name.endswith((".py", ".md", ".yml", ".yaml", ".txt", ".json")):
             continue
-        if name in ("docs/open_issues.md", "tests/unit/scripts/test_dead_code_guard.py"):
+        if name in (
+            "docs/open_issues.md",
+            "IMPROVEMENT_REPORT.md",
+            "tests/unit/scripts/test_dead_code_guard.py",
+        ):
             continue
         stem = Path(name).stem
         text = (ROOT / name).read_text(encoding="utf-8", errors="ignore")

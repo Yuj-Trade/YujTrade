@@ -51,6 +51,13 @@ class SignalGenerator:
         self.data_validator = DataQualityChecker()
 
         self.threshold_manager = AdaptiveThresholdManager()
+        self._cycle_memo: dict[tuple[str, str | None], Any] | None = None
+
+    async def begin_run_cycle(self) -> None:
+        self._cycle_memo = {}
+
+    async def end_run_cycle(self) -> None:
+        self._cycle_memo = None
 
     @staticmethod
     def _hurst_range(hurst) -> str:
@@ -241,25 +248,41 @@ class SignalGenerator:
         return signal
 
     async def _gather_external_data(self, symbol: str) -> dict[str, Any]:
-        tasks = {
-            "derivatives": self.data_provider.get_derivatives_data(symbol),
-            "fundamental": self.data_provider.get_fundamental_data(symbol),
-            "onchain": self.data_provider.get_onchain_data(symbol),
-            "order_book": self.data_provider.get_order_book(symbol),
-            "macro": self.data_provider.get_macro_data(),
-            "trending": self.data_provider.get_trending_data(),
-            "market_indices": self.data_provider.get_all_indices(),
+        factories = {
+            "derivatives": lambda: self.data_provider.get_derivatives_data(symbol),
+            "fundamental": lambda: self.data_provider.get_fundamental_data(symbol),
+            "onchain": lambda: self.data_provider.get_onchain_data(symbol),
+            "order_book": lambda: self.data_provider.get_order_book(symbol),
+            "macro": lambda: self.data_provider.get_macro_data(),
+            "trending": lambda: self.data_provider.get_trending_data(),
+            "market_indices": lambda: self.data_provider.get_all_indices(),
+        }
+        memo_scope = {
+            "fundamental": symbol,
+            "onchain": symbol,
+            "macro": None,
+            "trending": None,
+            "market_indices": None,
         }
 
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        external_data: dict[str, Any] = {}
+        memo = self._cycle_memo
+        pending: dict[str, Any] = {}
+        for key, factory in factories.items():
+            if key in memo_scope and memo is not None and (key, memo_scope[key]) in memo:
+                external_data[key] = memo[(key, memo_scope[key])]
+            else:
+                pending[key] = factory()
 
-        external_data = {}
-        for key, result in zip(tasks.keys(), results, strict=False):
+        results = await asyncio.gather(*pending.values(), return_exceptions=True) if pending else []
+        for key, result in zip(pending.keys(), results, strict=False):
             if isinstance(result, Exception):
                 logger.warning(f"Failed to fetch {key} for {symbol}: {result}")
                 external_data[key] = None
             else:
                 external_data[key] = result
+                if memo is not None and key in memo_scope:
+                    memo[(key, memo_scope[key])] = result
 
         try:
             base_currency = symbol.split("/")[0]
