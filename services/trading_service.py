@@ -80,7 +80,6 @@ class TradingService(ModelDataProvider):
 
         self.multi_tf_analyzer = MultiTimeframeAnalyzer(
             market_data_provider=market_data_provider,
-            redis_client=self._redis_client,
             config_manager=self.config_manager,
         )
         risk_cfg = build_risk_config(self.config_manager)

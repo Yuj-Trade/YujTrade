@@ -128,7 +128,9 @@ class FeatureEngineer:
         volatility_map = {"1h": 0.01, "4h": 0.02, "1d": 0.04, "1w": 0.08, "1M": 0.15}
         return volatility_map.get(timeframe, 0.04)
 
-    def get_last_indicator_results(self, data: pd.DataFrame, timeframe: str) -> dict[str, Any]:
+    async def get_last_indicator_results(
+        self, data: pd.DataFrame, timeframe: str
+    ) -> dict[str, Any]:
         results = {}
         active_indicators = self.config_manager.get_indicator_weights(timeframe).keys()
 
@@ -150,16 +152,23 @@ class FeatureEngineer:
         if self.history_provider is None:
             history = None
         elif hasattr(self.history_provider, "read"):
-            history = self.history_provider.read(results, 500)
+            history = await self.history_provider.read(results, 500)
         else:
             history = self.history_provider(list(results), 500)
         self.correlation_manager.compute_correlations(results, history)
         if self.history_provider is not None:
             timestamp = data.index[-1].isoformat()
-            for name, item in results.items():
-                value = item["result"].value
-                if hasattr(self.history_provider, "write"):
-                    self.history_provider.write(name, timestamp, float(value))
+            if hasattr(self.history_provider, "write_many"):
+                await self.history_provider.write_many(
+                    [
+                        (name, timestamp, float(item["result"].value))
+                        for name, item in results.items()
+                    ]
+                )
+            elif hasattr(self.history_provider, "write"):
+                for name, item in results.items():
+                    value = item["result"].value
+                    await self.history_provider.write(name, timestamp, float(value))
         return results
 
     def get_decorrelation_weights(self, results: dict[str, Any]) -> dict[str, float]:

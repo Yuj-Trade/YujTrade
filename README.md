@@ -75,7 +75,7 @@ decrypted via `KeyEncryptor` (see `scripts/encrypt_keys.py`):
 | Key | Default | Meaning |
 |---|---|---|
 | `symbols` / `timeframes` | from `symbols.txt` / `1h 4h 1d 1w 1M` | Universe |
-| `signal_threshold` | `50` | Minimum score to emit a signal |
+| `signal_threshold` | `10` | Minimum score to emit a signal |
 | `max_signals_per_timeframe` | `1` | Cap per timeframe per run |
 | `enable_scheduled_analysis` | `false` | Scheduled loop off unless enabled |
 | `schedule_hour` | `"*/1"` | `"*/N"` = every N hours, plain number = hour |

@@ -231,8 +231,7 @@
         "fear_greed": 3600,
         "defillama": 3600,
         "onchain": 3600,
-        "sentiment": 1800,
-        "mtf_analysis": 3600
+        "sentiment": 1800
     },
     "external_data_weights": {
     "fear_greed": 40,

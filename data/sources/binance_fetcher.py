@@ -439,32 +439,6 @@ class BinanceFetcher(BaseFetcher):
             logger.error(f"Error fetching ticker price from Binance for {symbol}: {e}")
             return None
 
-    async def get_exchange_info(self, symbol: str | None = None) -> dict | None:
-        self._check_if_closed()
-        cache_key = CacheKeyBuilder.generic_key(self.source_name, "exchange_info", symbol)
-        cache_ttl = self.config_manager.get_cache_ttl("generic")
-        try:
-            if self.redis:
-                cached = await self.redis.get(cache_key)
-                if cached:
-                    return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
-
-        try:
-            params = {}
-            if symbol:
-                params["symbol"] = symbol.replace("/", "").upper()
-            data = await self._fetch(self.base_url, "exchangeInfo", params)
-            if data and self.redis:
-                await self.redis.set(cache_key, json.dumps(data), ex=cache_ttl)
-            return data
-        except InvalidSymbolError:
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching exchange info from Binance: {e}")
-            return None
-
     async def get_agg_trades(self, symbol: str, limit: int = 500) -> list[dict]:
         self._check_if_closed()
         try:
@@ -476,28 +450,4 @@ class BinanceFetcher(BaseFetcher):
             return []
         except Exception as e:
             logger.error(f"Error fetching aggregate trades from Binance for {symbol}: {e}")
-            return []
-
-    async def get_all_futures_symbols(self) -> list[dict]:
-        self._check_if_closed()
-        cache_key = CacheKeyBuilder.generic_key(self.source_name, "futures_symbols")
-        cache_ttl = self.config_manager.get_cache_ttl("generic")
-        try:
-            if self.redis:
-                cached = await self.redis.get(cache_key)
-                if cached:
-                    return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
-
-        try:
-            data = await self._fetch(self.fapi_url, "exchangeInfo")
-            if data and "symbols" in data:
-                symbols = data["symbols"]
-                if self.redis:
-                    await self.redis.set(cache_key, json.dumps(symbols), ex=cache_ttl)
-                return symbols
-            return []
-        except Exception as e:
-            logger.error(f"Error fetching futures symbols: {e}")
             return []

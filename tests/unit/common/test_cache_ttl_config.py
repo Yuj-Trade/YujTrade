@@ -26,7 +26,6 @@ EXPECTED_TTLS = {
     ("defillama", None): 3600,
     ("onchain", None): 3600,
     ("sentiment", None): 1800,
-    ("mtf_analysis", None): 3600,
 }
 
 # Keys reserved for the approved next phase; not read by current code yet.

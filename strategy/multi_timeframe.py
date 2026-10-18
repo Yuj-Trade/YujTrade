@@ -1,9 +1,7 @@
 import numpy as np
 import pandas as pd
-import redis
 
 from analysis.market_analyzer import MarketConditionAnalyzer
-from common.cache import CacheKeyBuilder
 from common.constants import MULTI_TF_CONFIRMATION_MAP, MULTI_TF_CONFIRMATION_WEIGHTS
 from common.core import MarketAnalysis, SignalType, TrendDirection
 from common.exceptions import InsufficientDataError
@@ -16,11 +14,9 @@ class MultiTimeframeAnalyzer:
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
-        redis_client: redis.Redis | None = None,
         config_manager: ConfigManager | None = None,
     ):
         self.data_provider = market_data_provider
-        self.redis = redis_client
         self.config = config_manager or ConfigManager()
         self.analyzer = MarketConditionAnalyzer()
 
@@ -67,27 +63,7 @@ class MultiTimeframeAnalyzer:
         return final_score, analyses, direction_conflict
 
     async def _get_higher_tf_data(self, symbol: str, timeframe: str) -> pd.DataFrame | None:
-        cache_key = CacheKeyBuilder.mtf_analysis_key(symbol, timeframe)
-        if self.redis:
-            try:
-                cached_data = await self.redis.get(cache_key)
-                if cached_data:
-                    return pd.read_json(cached_data, orient="split")
-            except Exception as e:
-                logger.warning(f"Redis GET for MTF data failed: {e}")
-
-        data = await self.data_provider.fetch_ohlcv_data(symbol, timeframe, limit=200)
-        if data is not None and not data.empty and self.redis:
-            try:
-                await self.redis.set(
-                    cache_key,
-                    data.to_json(orient="split"),
-                    ex=self.config.get_cache_ttl("mtf_analysis"),
-                )
-            except Exception as e:
-                logger.warning(f"Redis SET for MTF data failed: {e}")
-
-        return data
+        return await self.data_provider.fetch_ohlcv_data(symbol, timeframe, limit=200)
 
     def _calculate_single_tf_score(
         self, analysis: MarketAnalysis, signal_type: SignalType

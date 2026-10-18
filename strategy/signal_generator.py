@@ -83,7 +83,9 @@ class SignalGenerator:
         market_regime = detect_market_regime(data)
         market_context = self.market_analyzer.analyze_market_condition(data)
 
-        last_indicator_results = self.feature_engineer.get_last_indicator_results(data, timeframe)
+        last_indicator_results = await self.feature_engineer.get_last_indicator_results(
+            data, timeframe
+        )
 
         base_weights = self.config_manager.get_indicator_weights(timeframe) or {}
         regime_weights = self.adjust_weights_by_regime(dict(base_weights), market_regime)
@@ -138,7 +140,7 @@ class SignalGenerator:
 
         vol_regime = str(market_regime.get("volatility_regime", "normal"))
         hurst_range = self._hurst_range(market_context.hurst_exponent)
-        base_threshold = self.config_manager.get("signal_threshold", 50)
+        base_threshold = self.config_manager.get("signal_threshold", 10)
         threshold = self.threshold_manager.get_optimal_threshold(
             vol_regime, hurst_range, base_threshold
         )
@@ -285,7 +287,7 @@ class SignalGenerator:
 
     def determine_signal_type(self, score: float, threshold: float = None) -> SignalType:
         if threshold is None:
-            threshold = self.config_manager.get("signal_threshold", 50)
+            threshold = self.config_manager.get("signal_threshold", 10)
         if score > threshold:
             return SignalType.BUY
         if score < -threshold:

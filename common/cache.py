@@ -46,12 +46,6 @@ class CacheKeyBuilder:
         return CacheKeyBuilder.build(CacheCategory.GENERIC, source, [identifier], symbol)
 
     @staticmethod
-    def mtf_analysis_key(symbol: str, timeframe: str) -> str:
-        return CacheKeyBuilder.build(
-            CacheCategory.METRICS, "internal", ["mtf_analysis", timeframe], symbol
-        )
-
-    @staticmethod
     def derivatives_key(source: str, metric: str, symbol: str) -> str:
         return CacheKeyBuilder.build(CacheCategory.DERIVATIVES, source, [metric], symbol)
 

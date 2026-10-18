@@ -1,9 +1,10 @@
 """
 P0 Tests for SignalTracker — covers gaps 31 and 37.
 
-Gap 31: SignalTracker.resolve only called from BacktestingEngine; in Production
-        (TradingService/TelegramBotHandler/main.py) no resolve calls exist.
-        Live signals stay pending forever; calibration loop only fed by backtest data.
+Gap 31: SignalTracker.resolve was once reachable only from historical paths;
+        production now reconciles expired signals through
+        TradingService.reconcile_pending_signals, so resolve() runs in both
+        flows and the calibration loop is fed by live outcomes too.
 
 Gap 37: SignalTracker._save_history writes entire file sync (json.dump, no lock,
         no run_in_executor). TradingService.analyze_symbol calls record() in
@@ -85,10 +86,10 @@ class TestSignalTrackerGap31:
         # In reality, a reconciliation task would call get_pending_expired and resolve
         # but that task doesn't exist in production path yet
 
-        # Check: resolve was NOT called during normal signal generation
+        # Check: resolve is NOT called during normal signal generation
         assert len(resolve_called) == 0, (
-            "Gap 31 CONFIRMED: resolve() should not be called during normal "
-            "signal generation in production. Only BacktestingEngine calls resolve()."
+            "resolve() should not be called during normal "
+            "signal generation; it runs in the reconciliation step instead."
         )
 
         # Now simulate what SHOULD happen: reconciliation task picks up expired signals
@@ -105,12 +106,12 @@ class TestSignalTrackerGap31:
 
     @pytest.mark.asyncio
     async def test_gap31_resolve_called_from_backtest_only(self, tracker):
-        """Verify BacktestingEngine is the only path that calls resolve."""
+        """Verify resolve persists the outcome on the tracker record."""
         signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
 
         await tracker.record(signal_id, None, {"symbol": "BTC/USDT", "timeframe": "1h"})
 
-        # This simulates what BacktestingEngine does
+        # This simulates what the reconciliation step does
         await tracker.resolve(signal_id, True, {"exit_price": 51000})
 
         # Verify resolved
@@ -307,7 +308,7 @@ class TestAdaptiveThresholdManager:
         """
         Contract test (gap 46): the internal key is a (vol, hurst) tuple so
         regimes containing "_" (e.g. "high_vol") cannot collide, while the
-        display regime stays "vol|hurst" for BacktestingEngine partition("|").
+        display regime stays "vol|hurst" for the calibration partition("|").
         """
         threshold_manager.record_performance("high", "persistent", 70.0, True)
 

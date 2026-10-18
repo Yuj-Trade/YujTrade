@@ -11,7 +11,7 @@ Covers:
 - combined_weights = regime × decorrelation product.
 - _hurst_range mappings.
 - threshold_regime format f"{vol_regime}|{hurst_range}" contract with
-  BacktestingEngine._flush_calibration partition("|").
+  the calibration partition("|") in TradingService.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -260,7 +260,7 @@ class TestGenerateSignalErrorContract:
         assert signal.confidence_score == 90.0  # abs(final_score)
         assert signal.risk_reward_ratio == pytest.approx(2.8835, abs=1e-3)
         assert signal.reasons == ["buy reason"]
-        assert signal.threshold_used == 50.0  # config default signal_threshold
+        assert signal.threshold_used == 10.0  # config default signal_threshold
         # threshold_regime = "normal|mid" (vol_regime="normal", hurst=0.5 → "mid")
         assert signal.threshold_regime == "normal|mid"
         assert signal.ml_confidence == 0.0  # include_ml=False
@@ -513,7 +513,7 @@ class TestCombinedWeights:
 
 class TestThresholdRegimeContract:
     """قرارداد: threshold_regime = f"{vol_regime}|{hurst_range}" — چون
-    BacktestingEngine._flush_calibration با partition("|") تجزیه می‌کند."""
+    کالیبراسیون TradingService با partition("|") تجزیه می‌کند."""
 
     @pytest.mark.asyncio
     async def test_threshold_regime_format_pipe_separated(self, rigged_generator, valid_1h_ohlcv):
@@ -533,7 +533,7 @@ class TestThresholdRegimeContract:
         assert signal.threshold_regime == "high|mid"
         assert signal.threshold_regime.count("|") == 1
 
-        # BacktestingEngine contract: partition("|") باید دقیقا دو بخش بدهد
+        # Calibration contract: partition("|") باید دقیقا دو بخش بدهد
         vol, _, hurst = signal.threshold_regime.partition("|")
         assert vol == "high"
         assert hurst == "mid"
@@ -553,8 +553,8 @@ class TestThresholdRegimeContract:
                 "BTC/USDT", "1h", valid_1h_ohlcv, include_external=False, include_ml=False
             )
 
-        # AdaptiveThresholdManager با history خالی → base_threshold (=50) برگردانده شده
-        assert signal.threshold_used == 50.0
+        # AdaptiveThresholdManager با history خالی → base_threshold (=10) برگردانده شده
+        assert signal.threshold_used == 10.0
 
     @pytest.mark.asyncio
     async def test_threshold_regime_with_low_vol_low_hurst(
@@ -749,7 +749,7 @@ class TestMarketRegime:
 
     def test_volatility_regime_safe_for_threshold_key(self, valid_1h_ohlcv):
         """volatility_regime همان جزء اول threshold_regime در generate_signal
-        است (فرمت "vol|hurst" — قرارداد BacktestingEngine._flush_calibration)؛
+        است (فرمت "vol|hurst" — قرارداد partition کالیبراسیون)؛
         نباید خودش '|' داشته باشد."""
         regime = detect_market_regime(valid_1h_ohlcv, lookback=150)
         vol = str(regime.get("volatility_regime", "normal"))

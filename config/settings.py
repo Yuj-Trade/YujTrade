@@ -70,7 +70,7 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         "symbols": SYMBOLS,
         "timeframes": TIME_FRAMES,
-        "signal_threshold": 50,
+        "signal_threshold": 10,
         "max_signals_per_timeframe": 1,
         "enable_scheduled_analysis": False,
         "schedule_hour": "*/1",
@@ -106,7 +106,6 @@ class ConfigManager:
             "defillama": 3600,
             "onchain": 3600,
             "sentiment": 1800,
-            "mtf_analysis": 3600,
         }
     }
 

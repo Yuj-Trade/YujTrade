@@ -57,18 +57,18 @@ class MainApp:
             if self.shutdown_event.is_set():
                 break
             now = datetime.now(UTC)
-            if not self.scheduler_store.is_due("scheduled_analysis", now, interval):
+            if not await self.scheduler_store.is_due("scheduled_analysis", now, interval):
                 continue
             started = datetime.now(UTC)
             try:
                 await self.bot_handler.run_scheduled_analysis()
             except Exception as e:
-                self.scheduler_store.record(
+                await self.scheduler_store.record(
                     "scheduled_analysis", now, started, datetime.now(UTC), "failed", str(e)
                 )
                 logger.error(f"Scheduled analysis failed: {e}", exc_info=True)
             else:
-                self.scheduler_store.record(
+                await self.scheduler_store.record(
                     "scheduled_analysis",
                     now,
                     started,
@@ -167,7 +167,7 @@ class MainApp:
             if self.background_tasks_manager:
                 await self.background_tasks_manager.cancel_all()
             if self.scheduler_store:
-                self.scheduler_store.close()
+                await self.scheduler_store.close()
 
             if self.trading_service:
                 try:

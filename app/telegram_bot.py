@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -394,7 +394,7 @@ class TelegramBotHandler:
         predicted_profit_str = escape_markdown_v2(f"{signal.predicted_profit:.2f}")
 
         main_info = (
-            f"\n\n📅 *Date:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+            f"\n\n📅 *Date:* `{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}`\n"
             f"🎯 *Confidence:* `{confidence_score_str}%`\n"
             f"➡️ *Entry:* `{entry_price_str}`\n"
             f"✅ *Take Profit:* `{exit_price_str}`\n"

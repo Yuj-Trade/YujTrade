@@ -207,28 +207,3 @@ class CoinGeckoFetcher(BaseFetcher):
                 await self.redis.set(cache_key, json.dumps(trending_symbols), ex=cache_ttl)
             return trending_symbols
         return []
-
-    async def get_circulating_supply(self, coin_id_or_symbol: str) -> float | None:
-        self._check_if_closed()
-        coin_id = await self._get_coin_id(coin_id_or_symbol)
-        if not coin_id:
-            return None
-        try:
-            url = f"{self.base_url}/coins/{coin_id}"
-            params = {"market_data": "true"}
-            coin_data = await self._fetch_json(
-                url,
-                params,
-                limiter=coingecko_rate_limiter,
-                endpoint_name=f"coins_info_{coin_id}",
-            )
-
-            if coin_data and "market_data" in coin_data:
-                circulating = coin_data["market_data"].get("circulating_supply")
-                if circulating:
-                    return float(circulating)
-
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching circulating supply for {coin_id}: {e}")
-            return None

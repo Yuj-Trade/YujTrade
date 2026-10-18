@@ -128,32 +128,6 @@ class MessariFetcher(BaseFetcher):
             logger.error(f"Error processing on-chain data from Messari for {symbol}: {e}")
             return None
 
-    async def get_all_assets(self) -> list[dict]:
-        self._check_if_closed()
-        cache_key = CacheKeyBuilder.build(CacheCategory.GENERIC, self.source_name, ["all_assets"])
-        try:
-            if self.redis:
-                cached = await self.redis.get(cache_key)
-                if cached:
-                    return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}")
-
-        try:
-            data = await self._fetch("assets")
-            if data and "data" in data and self.redis:
-                asset_list = data["data"]
-                await self.redis.set(
-                    cache_key,
-                    json.dumps(asset_list),
-                    ex=self.config_manager.get_cache_ttl("generic"),
-                )
-                return asset_list
-            return []
-        except Exception as e:
-            logger.error(f"Error fetching all assets: {e}")
-            return []
-
     async def get_news(self, symbol: str) -> list[dict]:
         self._check_if_closed()
         cache_key = CacheKeyBuilder.build(CacheCategory.NEWS, self.source_name, ["news"], symbol)
