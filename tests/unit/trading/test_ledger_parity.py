@@ -7,6 +7,8 @@ sequence (FakeAdapter style: no network, no exchange).
 
 from datetime import UTC, datetime, timedelta
 
+import aiosqlite
+
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from domain.outcome import resolve_outcome
 from trading.ledger import PaperLedger
@@ -14,6 +16,28 @@ from trading.ledger import PaperLedger
 
 def _ledger(tmp_path) -> PaperLedger:
     return PaperLedger(tmp_path / "paper_ledger.db")
+
+
+async def _insert_position(db_path, symbol, side, quantity, entry_price):
+    async with aiosqlite.connect(db_path) as connection:
+        await connection.execute(
+            "INSERT INTO positions(symbol, side, quantity, entry_price) VALUES (?, ?, ?, ?)",
+            (symbol, side, quantity, entry_price),
+        )
+        await connection.commit()
+
+
+async def _fetch_stale(db_path):
+    async with aiosqlite.connect(db_path) as connection:
+        cursor = await connection.execute("SELECT stale FROM positions WHERE id = 1")
+        return await cursor.fetchone()
+
+
+async def _count_orders(db_path):
+    async with aiosqlite.connect(db_path) as connection:
+        cursor = await connection.execute("SELECT COUNT(*) FROM orders")
+        row = await cursor.fetchone()
+        return int(row[0])
 
 
 def _candles():
@@ -33,15 +57,13 @@ def _candles():
     ]
 
 
-def test_duplicate_signal_id_rejected_and_recorded(tmp_path):
+async def test_duplicate_signal_id_rejected_and_recorded(tmp_path):
     ledger = _ledger(tmp_path)
-    first = ledger.append_order("sig-1", "BTC/USDT", "buy", 2.0)
-    second = ledger.append_order("sig-1", "BTC/USDT", "buy", 2.0)
+    first = await ledger.append_order("sig-1", "BTC/USDT", "buy", 2.0)
+    second = await ledger.append_order("sig-1", "BTC/USDT", "buy", 2.0)
     assert isinstance(first, int)
     assert second is None
-    count = ledger.connection.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-    assert count == 1
-    ledger.close()
+    assert await _count_orders(tmp_path / "paper_ledger.db") == 1
 
 
 def test_resolution_matches_simulator_for_same_candles():
@@ -71,12 +93,10 @@ def test_resolution_matches_simulator_for_same_candles():
     assert trades[0].exit_price == expected.exit_price
 
 
-def test_equity_uses_mark_price_and_flags_stale(tmp_path):
+async def test_equity_uses_mark_price_and_flags_stale(tmp_path):
     ledger = _ledger(tmp_path)
-    ledger.connection.execute(
-        "INSERT INTO positions(symbol, side, quantity, entry_price) VALUES (?, ?, ?, ?)",
-        ("BTC/USDT", "buy", 1.0, 100.0),
-    )
+    await ledger.initialize()
+    await _insert_position(tmp_path / "paper_ledger.db", "BTC/USDT", "buy", 1.0, 100.0)
     positions = [
         {
             "id": 1,
@@ -86,13 +106,10 @@ def test_equity_uses_mark_price_and_flags_stale(tmp_path):
             "entry_price": 100.0,
         }
     ]
-    equity = ledger.snapshot_equity(9000.0, positions, {"BTC/USDT": 110.0})
+    equity = await ledger.snapshot_equity(9000.0, positions, {"BTC/USDT": 110.0})
     assert equity == 9010.0
-    stale = ledger.connection.execute("SELECT stale FROM positions WHERE id = 1")
-    assert stale.fetchone()[0] == 0
+    assert (await _fetch_stale(tmp_path / "paper_ledger.db"))[0] == 0
 
-    equity_missing = ledger.snapshot_equity(9000.0, positions, {})
+    equity_missing = await ledger.snapshot_equity(9000.0, positions, {})
     assert equity_missing == 9000.0
-    stale = ledger.connection.execute("SELECT stale FROM positions WHERE id = 1")
-    assert stale.fetchone()[0] == 1
-    ledger.close()
+    assert (await _fetch_stale(tmp_path / "paper_ledger.db"))[0] == 1

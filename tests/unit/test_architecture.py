@@ -95,3 +95,32 @@ def _serialization_violations() -> list[str]:
 
 def test_no_pickle_or_unsafe_deserialization_in_production_code():
     assert _serialization_violations() == []
+
+
+RUNTIME_PACKAGES = (
+    "common",
+    "config",
+    "data",
+    "features",
+    "analysis",
+    "strategy",
+    "modeling",
+    "backtesting",
+    "trading",
+    "services",
+    "app",
+    "utils",
+    "application",
+    "domain",
+    "main.py",
+)
+
+
+def test_no_blocking_sqlite_connect_in_production_code():
+    offenders = []
+    for entry in RUNTIME_PACKAGES:
+        paths = [ROOT / entry] if entry.endswith(".py") else sorted((ROOT / entry).rglob("*.py"))
+        for path in paths:
+            if "sqlite3.connect" in path.read_text(encoding="utf-8", errors="ignore"):
+                offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
