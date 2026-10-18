@@ -55,10 +55,19 @@ in the open lists.
   switch the Dockerfile to `--require-hashes`.
 - [ ] Proposal `add-asset-reference-store` is unapproved: sections 3.2-3.7 of
   the cache directive must not be implemented until approved.
-- [ ] `config.json` is tracked but CLAUDE.md calls it an untracked runtime
-  override; it pins `signal_threshold: 10`, which the golden baselines
-  silently depend on. Decide: untrack it and make the golden independent of
-  it, or document it as tracked tuning.
+- [x] `config.json` contradiction resolved: untracked in `98bcc57`
+  (file removed from the index, stays on disk, `.gitignore:194` intact).
+  Golden independence is proven by
+  `tests/unit/common/test_config_json_independence.py` (defaults identical
+  with and without the legacy override) and untracked status is enforced by
+  `tests/unit/scripts/test_dead_code_guard.py::test_config_json_stays_untracked`.
+- [x] `aiosqlite==0.22.1` is pinned in `requirements.lock` and imported by
+  the async stores; the "declared but unpinned" entry was stale.
+- [x] Naive `datetime.now()` replaced with timezone-aware
+  `datetime.now(UTC)` in `app/telegram_bot.py:397`.
+- [x] `backtrader` removed from `requirements.txt` (never imported by any
+  tracked production module); enforced by
+  `tests/unit/scripts/test_dead_code_guard.py::test_backtrader_neither_declared_nor_imported`.
 
 ## New issues for the next phase — in fix order
 
@@ -87,11 +96,8 @@ in the open lists.
 7. Sync `sqlite3` in async paths (`SchedulerStore`, `IndicatorHistoryWarehouse`,
    `PaperLedger` hold a blocking connection). Measure loop impact first,
    then migrate behind the same discipline as the asset-reference store.
-8. `aiosqlite` is declared in `requirements.txt` but is not installed, not
-   pinned in `requirements.lock`, and imported nowhere. Pin or drop it
-   before anything depends on it.
-9. Naive `datetime.now()` in the Telegram date line
-   (`app/telegram_bot.py` display string) — use timezone-aware UTC.
+   (Warehouse + SchedulerStore are migrated; `PaperLedger` remains — see
+   IMPROVEMENT_REPORT.md Phase 1.)
 
 ## Legacy tracked artifacts (resolved in v3.0, still true)
 

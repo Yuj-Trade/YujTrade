@@ -54,3 +54,23 @@ def test_no_references_to_removed_files():
             if Path(removed).stem in text and Path(removed).stem != stem:
                 offenders.append(f"{name} references {removed}")
     assert offenders == []
+
+
+def test_config_json_stays_untracked():
+    tracked = _tracked()
+    assert "config.json" not in tracked
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "config.json" in gitignore
+
+
+def test_backtrader_neither_declared_nor_imported():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "backtrader" not in requirements
+    offenders = []
+    for name in _tracked():
+        if not name.endswith(".py") or name.startswith(("tests/", "skills/", "copyfile/", "Main/")):
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+        if "import backtrader" in text or "from backtrader" in text:
+            offenders.append(name)
+    assert offenders == []

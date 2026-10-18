@@ -11,7 +11,6 @@ anyio
 APScheduler
 astunparse
 attrs
-backtrader
 beautifulsoup4
 billiard
 bitarray
