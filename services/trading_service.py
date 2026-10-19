@@ -1,10 +1,12 @@
 import asyncio
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
 
 from application.gate_config import build_gate_config
+from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME
 from common.core import TradingSignal
 from common.exceptions import InvalidSymbolError
@@ -93,7 +95,14 @@ class TradingService(ModelDataProvider):
                 dry_run=bool(self.config_manager.get("execution_dry_run", True))
             )
         )
-        self.signal_tracker = SignalTracker()
+        self.signal_tracker = SignalTracker(
+            ttl_days=int(self.config_manager.get("signal_history_ttl_days", 30)),
+            max_entries=int(self.config_manager.get("signal_history_max_entries", 5000)),
+        )
+        self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
+
+    def _log(self):
+        return self._cycle_log
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -132,10 +141,10 @@ class TradingService(ModelDataProvider):
 
     async def analyze_symbol(self, symbol: str, timeframe: str) -> TradingSignal | None:
         if symbol in self.invalid_symbols:
-            logger.debug(f"Skipping analysis for invalid symbol: {symbol}")
+            self._log().debug(f"Skipping analysis for invalid symbol: {symbol}")
             return None
 
-        logger.info(f"Analyzing {symbol} on {timeframe} timeframe...")
+        self._log().info(f"Analyzing {symbol} on {timeframe} timeframe...")
         try:
             min_data_points = LONG_TERM_CONFIG.get("min_data_points", {})
             limit = min_data_points.get(timeframe, 600)
@@ -144,12 +153,20 @@ class TradingService(ModelDataProvider):
             )
 
             if ohlcv_data is None or ohlcv_data.empty:
-                logger.warning(f"No OHLCV data for {symbol}-{timeframe}")
+                self._log().warning(f"No OHLCV data for {symbol}-{timeframe}")
                 return None
 
             signal = await self.signal_generator.generate_signal(symbol, timeframe, ohlcv_data)
 
             if signal:
+                metrics.record_candidate(signal.symbol, signal.timeframe)
+                signal_id = make_signal_id(
+                    signal.symbol,
+                    signal.timeframe,
+                    signal.timestamp,
+                    signal.signal_type.value,
+                )
+                signal_log = self._log().bind(signal_id=signal_id)
                 (
                     multi_tf_score,
                     _,
@@ -158,16 +175,18 @@ class TradingService(ModelDataProvider):
                     symbol, timeframe, signal.signal_type, ohlcv_data
                 )
                 if multi_tf_score < 0.3 or direction_conflict:
-                    logger.info(
+                    metrics.record_gate_rejection("multi_timeframe")
+                    signal_log.info(
                         f"Signal for {symbol}-{timeframe} rejected due to multi-timeframe conflict."
                     )
                     return None
 
                 if not self._passes_quality_gates(signal):
-                    logger.info(f"Signal for {symbol}-{timeframe} rejected by quality gates.")
+                    metrics.record_gate_rejection("quality_gates")
+                    signal_log.info(f"Signal for {symbol}-{timeframe} rejected by quality gates.")
                     return None
 
-                logger.info(
+                signal_log.info(
                     f"Generated signal for {symbol} on {timeframe}: "
                     f"{signal.signal_type.value} "
                     f"with confidence {signal.confidence_score:.2f}"
@@ -175,12 +194,7 @@ class TradingService(ModelDataProvider):
 
                 try:
                     await self.signal_tracker.record(
-                        make_signal_id(
-                            signal.symbol,
-                            signal.timeframe,
-                            signal.timestamp,
-                            signal.signal_type.value,
-                        ),
+                        signal_id,
                         None,
                         {
                             "symbol": signal.symbol,
@@ -197,12 +211,12 @@ class TradingService(ModelDataProvider):
                         },
                     )
                 except Exception as e:
-                    logger.debug(f"Signal tracking skipped: {e}")
+                    signal_log.debug(f"Signal tracking skipped: {e}")
                 return signal
 
             return None
         except InvalidSymbolError:
-            logger.warning(f"Symbol {symbol} is invalid. Adding to ignore list.")
+            self._log().warning(f"Symbol {symbol} is invalid. Adding to ignore list.")
             self.invalid_symbols.add(symbol)
             return None
 
@@ -211,7 +225,7 @@ class TradingService(ModelDataProvider):
         errors = [res for res in results if isinstance(res, Exception)]
         self.last_errors = len(errors)
         for err in errors:
-            logger.error(f"Signal generation failed: {err}", exc_info=err)
+            self._log().error(f"Signal generation failed: {err}", exc_info=err)
         return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:
@@ -263,6 +277,7 @@ class TradingService(ModelDataProvider):
         return True
 
     async def run_analysis_for_all_symbols(self) -> list[TradingSignal]:
+        self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
         await self.signal_generator.begin_run_cycle()
         try:
             return await self._run_analysis_cycle_all()
@@ -317,22 +332,24 @@ class TradingService(ModelDataProvider):
         final_signals = capped_signals[:max_signals]
 
         if final_signals:
-            logger.info(
+            self._log().info(
                 f"Selected {len(final_signals)} top quality long-term signals "
                 f"from {len(signals)} candidates."
             )
             for i, sig in enumerate(final_signals, 1):
-                logger.info(
+                metrics.record_signal(sig.symbol, sig.timeframe, sig.signal_type.value)
+                self._log().info(
                     f"  #{i}: {sig.symbol} {sig.timeframe} {sig.signal_type.value.upper()} "
                     f"(Confidence: {sig.confidence_score:.1f}%, R/R: {sig.risk_reward_ratio:.2f}, "
                     f"Rank Score: {SignalRanking.calculate_signal_score(sig):.2f})"
                 )
         else:
-            logger.info("No signals met the final quality criteria.")
+            self._log().info("No signals met the final quality criteria.")
 
         return final_signals
 
     async def run_quick_analysis(self, timeframes: list[str] | None = None) -> list[TradingSignal]:
+        self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
         await self.signal_generator.begin_run_cycle()
         try:
             return await self._run_quick_analysis_cycle(timeframes)
@@ -361,12 +378,13 @@ class TradingService(ModelDataProvider):
         resolved_count = 0
         for item in expired:
             signal_id = item["signal_id"]
+            signal_log = self._log().bind(signal_id=signal_id)
             details = item["details"]
             symbol = details.get("symbol")
             timeframe = details.get("timeframe")
             entry = details.get("entry")
             if not symbol or not timeframe or entry is None:
-                logger.debug(f"Reconciliation skipped (missing fields): {signal_id}")
+                signal_log.debug("Reconciliation skipped (missing fields).")
                 continue
             try:
                 created_at = SignalTracker._extract_created_at(signal_id, details)
@@ -375,7 +393,7 @@ class TradingService(ModelDataProvider):
                     symbol, timeframe, details, created_at, expiry_hours
                 )
                 if outcome is None:
-                    logger.debug(f"Reconciliation skipped (no price): {signal_id}")
+                    signal_log.debug("Reconciliation skipped (no price).")
                     continue
                 success, resolved_price = outcome
                 await self.signal_tracker.resolve(
@@ -387,10 +405,11 @@ class TradingService(ModelDataProvider):
                         "resolved_at": datetime.now(UTC).isoformat(),
                     },
                 )
+                metrics.record_resolution(success)
                 resolved_count += 1
                 await self._record_live_calibration(symbol, timeframe, details, success)
             except Exception as e:
-                logger.debug(f"Signal reconciliation skipped: {e}")
+                signal_log.debug(f"Signal reconciliation skipped: {e}")
 
         if resolved_count:
             logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
@@ -498,6 +517,7 @@ class TradingService(ModelDataProvider):
                 self.signal_generator.threshold_manager.record_performance(
                     vol_regime, hurst_range, threshold, success
                 )
+                await self.signal_generator.threshold_manager.flush()
         except (TypeError, ValueError, AttributeError) as e:
             logger.debug(f"Live calibration feedback skipped: {e}")
 
