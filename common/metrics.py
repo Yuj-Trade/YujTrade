@@ -7,6 +7,20 @@ try:
     _orders_total = Counter(
         "yujtrade_orders_total", "Orders executed", ["symbol", "mode", "status"]
     )
+    _candidates_total = Counter(
+        "yujtrade_candidates_total",
+        "Candidate signals produced by the generator",
+        ["symbol", "timeframe"],
+    )
+    _gate_rejections_total = Counter(
+        "yujtrade_gate_rejections_total", "Signals rejected by a pipeline gate", ["gate"]
+    )
+    _resolutions_total = Counter(
+        "yujtrade_resolutions_total", "Expired signal resolutions", ["outcome"]
+    )
+    _artifact_mismatches_total = Counter(
+        "yujtrade_artifact_mismatches_total", "Artifact integrity mismatches on load"
+    )
     _equity = Gauge("yujtrade_equity", "Portfolio equity")
     _exposure = Gauge("yujtrade_exposure_pct", "Portfolio exposure pct")
     _signal_latency = Histogram("yujtrade_signal_latency_seconds", "Signal pipeline latency")
@@ -36,6 +50,26 @@ def init_sentry(dsn: str = "") -> bool:
 def record_signal(symbol: str, timeframe: str, side: str):
     if _PROM:
         _signals_total.labels(symbol, timeframe, side).inc()
+
+
+def record_candidate(symbol: str, timeframe: str):
+    if _PROM:
+        _candidates_total.labels(symbol, timeframe).inc()
+
+
+def record_gate_rejection(gate: str):
+    if _PROM:
+        _gate_rejections_total.labels(gate).inc()
+
+
+def record_resolution(outcome: bool):
+    if _PROM:
+        _resolutions_total.labels("success" if outcome else "failure").inc()
+
+
+def record_artifact_mismatch():
+    if _PROM:
+        _artifact_mismatches_total.inc()
 
 
 def record_order(symbol: str, mode: str, status: str):

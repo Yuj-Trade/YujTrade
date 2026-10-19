@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import redis
 
+from common import metrics
 from common.exceptions import ArtifactIntegrityError, ObjectClosedError
 from config.logger import logger
 from modeling.artifacts import ArtifactRegistry, build_metadata
@@ -168,6 +169,7 @@ class ModelManager:
                                 f"Loaded existing {model_type.upper()} model for {key}"
                             )
                         except ArtifactIntegrityError as e:
+                            metrics.record_artifact_mismatch()
                             self.logger.warning(
                                 f"model_unavailable: integrity check failed for "
                                 f"{model_type.upper()} model for {key}: {e}"
