@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
+from config.logger import logger
 from domain.signal_id import make_signal_id as _make_signal_id
 
 
@@ -15,10 +16,21 @@ def make_signal_id(symbol: str, timeframe: str, timestamp: datetime, signal_type
 
 
 class SignalTracker:
-    def __init__(self, storage_path: str = "signal_history.json"):
+    def __init__(
+        self,
+        storage_path: str = "signal_history.json",
+        ttl_days: int = 30,
+        max_entries: int = 5000,
+    ):
         self.storage_path = Path(storage_path)
+        self.ttl_days = int(ttl_days)
+        self.max_entries = int(max_entries)
         self.history = self._load_history()
         self._lock = asyncio.Lock()
+
+    @property
+    def rotation_path(self) -> Path:
+        return self.storage_path.with_suffix(".rotated.json")
 
     def _load_history(self) -> dict[str, Any]:
         if self.storage_path.exists():
@@ -52,7 +64,59 @@ class SignalTracker:
             }
         else:
             self.history[signal_id] = {"outcome": outcome, "details": details}
+        self._prune_expired()
+        self._rotate_if_needed()
         await self._save_history()
+
+    def _entry_age_cutoff(self) -> datetime:
+        return datetime.now(UTC) - timedelta(days=self.ttl_days)
+
+    def _prune_expired(self) -> None:
+        cutoff = self._entry_age_cutoff()
+        expired_ids = []
+        for sid, data in self.history.items():
+            if data.get("outcome") is None:
+                continue
+            details = data.get("details", {})
+            raw = details.get("resolved_at") or details.get("created_at")
+            resolved_at = None
+            if isinstance(raw, str):
+                try:
+                    resolved_at = datetime.fromisoformat(raw)
+                except ValueError:
+                    resolved_at = None
+            if resolved_at is None:
+                continue
+            if resolved_at.tzinfo is None:
+                resolved_at = resolved_at.replace(tzinfo=UTC)
+            if resolved_at < cutoff:
+                expired_ids.append(sid)
+        for sid in expired_ids:
+            del self.history[sid]
+
+    def _rotate_if_needed(self) -> None:
+        overflow = len(self.history) - self.max_entries
+        if overflow <= 0:
+            return
+        ordered = sorted(
+            self.history.items(),
+            key=lambda item: (
+                SignalTracker._extract_created_at(item[0], item[1].get("details", {}))
+                or datetime.min.replace(tzinfo=UTC)
+            ),
+        )
+        rotated_out = dict(ordered[:overflow])
+        self.history = dict(ordered[overflow:])
+        existing_rotated = {}
+        if self.rotation_path.exists():
+            try:
+                with open(self.rotation_path) as f:
+                    existing_rotated = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                existing_rotated = {}
+        existing_rotated.update(rotated_out)
+        with open(self.rotation_path, "w") as f:
+            json.dump(existing_rotated, f, indent=4)
 
     async def resolve(self, signal_id: str, outcome: bool, details: dict[str, Any] = None):
         async with self._lock:
@@ -125,13 +189,73 @@ class SignalTracker:
 
 
 class AdaptiveThresholdManager:
-    def __init__(self):
+    def __init__(
+        self,
+        storage_path: str = "threshold_calibration.json",
+        ttl_days: int = 90,
+        max_samples_per_key: int = 100,
+    ):
+        self.storage_path = Path(storage_path)
+        self.ttl_days = int(ttl_days)
+        self.max_samples_per_key = int(max_samples_per_key)
         self.performance_history: dict[tuple, list[dict]] = {}
         self.min_samples = 50
+        self._dirty = False
+        self._load()
 
     @staticmethod
     def _key(volatility_regime: str, hurst_range: str) -> tuple:
         return (str(volatility_regime), str(hurst_range))
+
+    @staticmethod
+    def _serialize_key(key: tuple) -> str:
+        return f"{key[0]}|{key[1]}"
+
+    @staticmethod
+    def _deserialize_key(raw: str) -> tuple:
+        vol_regime, _, hurst_range = str(raw).partition("|")
+        return (vol_regime, hurst_range)
+
+    def _load(self) -> None:
+        if not self.storage_path.exists():
+            return
+        try:
+            with open(self.storage_path) as f:
+                payload = json.load(f)
+            for raw_key, records in payload.items():
+                key = self._deserialize_key(raw_key)
+                loaded = []
+                for record in records:
+                    raw_timestamp = record.get("timestamp")
+                    timestamp = None
+                    if isinstance(raw_timestamp, str):
+                        try:
+                            timestamp = datetime.fromisoformat(raw_timestamp)
+                        except ValueError:
+                            timestamp = None
+                    loaded.append(
+                        {
+                            "threshold": float(record.get("threshold", 0.0)),
+                            "success": bool(record.get("success", False)),
+                            "timestamp": timestamp or datetime.now(UTC),
+                        }
+                    )
+                self.performance_history[key] = loaded
+            self._prune_expired()
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.warning(f"Threshold calibration store unreadable, starting fresh: {e}")
+            self.performance_history = {}
+
+    def _prune_expired(self) -> None:
+        cutoff = datetime.now(UTC) - timedelta(days=self.ttl_days)
+        for key in list(self.performance_history):
+            kept = [
+                record for record in self.performance_history[key] if record["timestamp"] >= cutoff
+            ]
+            if kept:
+                self.performance_history[key] = kept
+            else:
+                del self.performance_history[key]
 
     def record_performance(
         self, volatility_regime: str, hurst_range: str, threshold: float, signal_success: bool
@@ -146,8 +270,33 @@ class AdaptiveThresholdManager:
                 "timestamp": datetime.now(UTC),
             }
         )
-        if len(self.performance_history[key]) > 100:
-            self.performance_history[key] = self.performance_history[key][-100:]
+        if len(self.performance_history[key]) > self.max_samples_per_key:
+            trimmed = self.performance_history[key][-self.max_samples_per_key :]
+            self.performance_history[key] = trimmed
+        self._dirty = True
+
+    def _flush_sync(self) -> None:
+        self._prune_expired()
+        payload = {
+            self._serialize_key(key): [
+                {
+                    "threshold": record["threshold"],
+                    "success": record["success"],
+                    "timestamp": record["timestamp"].isoformat(),
+                }
+                for record in records
+            ]
+            for key, records in self.performance_history.items()
+        }
+        with open(self.storage_path, "w") as f:
+            json.dump(payload, f, indent=4)
+
+    async def flush(self) -> None:
+        if not self._dirty:
+            return
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._flush_sync)
+        self._dirty = False
 
     def get_optimal_threshold(
         self, volatility_regime: str, hurst_range: str, default_threshold: float

@@ -139,6 +139,8 @@ runs/
 *.pkl
 calibration.json
 signal_history.json
+signal_history.rotated.json
+threshold_calibration.json
 .venv
 env/
 venv/

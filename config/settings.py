@@ -88,6 +88,8 @@ class ConfigManager:
         "metrics_enabled": False,
         "METRICS_PORT": 9108,
         "scheduler_db_path": "runs/scheduler.db",
+        "signal_history_ttl_days": 30,
+        "signal_history_max_entries": 5000,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {
