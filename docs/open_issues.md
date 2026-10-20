@@ -161,6 +161,16 @@ in the open lists.
     risk-free rate. The holdout report schema is locked and the holdout
     protocol is single-use, so the holdout path is left untouched. Unifying
     the two definitions needs its own proposal.
+13. The report equity curve is a model, not the paper portfolio. It
+    compounds fixed fractions of the equity, while `PaperTradingEngine`
+    sizes its positions with the risk model and the portfolio exposure cap
+    and keeps the positions in the `PortfolioManager`. The two are
+    deliberately not reconciled in this phase; a reconciliation needs a
+    proposal because it changes the meaning of the reported equity.
+14. The reported cost model is flat per trade: no partial fill, no funding
+    cost, no maker/taker distinction and no slippage model beyond the
+    constant rate. The paper engine uses the same two rates, so the report
+    and the paper engine agree on the cost, but neither models the fill.
 
 ## Legacy tracked artifacts (resolved in v3.0, still true)
 

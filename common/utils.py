@@ -613,61 +613,6 @@ def detect_market_regime(data: pd.DataFrame, lookback: int = 50) -> dict[str, An
     }
 
 
-def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
-    if len(returns) < 2:
-        return 0.0
-
-    excess_returns = returns.mean() - (risk_free_rate / 252)
-    std_dev = returns.std()
-
-    if std_dev == 0:
-        return 0.0
-
-    sharpe = (excess_returns / std_dev) * np.sqrt(252)
-    return round(sharpe, 3)
-
-
-def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
-    if len(returns) < 2:
-        return 0.0
-
-    excess_returns = returns.mean() - (risk_free_rate / 252)
-    downside_returns = returns[returns < 0]
-
-    if len(downside_returns) == 0:
-        return float("inf")
-
-    downside_std = downside_returns.std()
-
-    if downside_std == 0:
-        return 0.0
-
-    sortino = (excess_returns / downside_std) * np.sqrt(252)
-    return round(sortino, 3)
-
-
-def calculate_max_drawdown(data: pd.DataFrame) -> tuple[float, int]:
-    if len(data) < 2:
-        return 0.0, 0
-
-    cumulative = (1 + data["close"].pct_change()).cumprod()
-    running_max = cumulative.expanding().max()
-    drawdown = (cumulative - running_max) / running_max
-
-    max_dd = drawdown.min()
-    max_dd_percentage = abs(max_dd * 100)
-
-    dd_end_idx = drawdown.idxmin()
-    dd_start_idx = (cumulative[:dd_end_idx]).idxmax()
-
-    if isinstance(data.index, pd.DatetimeIndex):
-        duration = (dd_end_idx - dd_start_idx).days
-    else:
-        duration = int(data.index.get_loc(dd_end_idx) - data.index.get_loc(dd_start_idx))
-
-    return round(max_dd_percentage, 2), duration
-
-
 def format_number(value: float, decimals: int = 2) -> str:
     return f"{value:,.{decimals}f}"
 

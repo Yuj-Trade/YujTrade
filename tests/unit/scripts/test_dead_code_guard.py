@@ -13,6 +13,12 @@ REMOVED_METHODS = (
     "mtf_analysis_key",
 )
 
+REMOVED_FUNCTIONS = (
+    "calculate_sharpe_ratio",
+    "calculate_sortino_ratio",
+    "calculate_max_drawdown",
+)
+
 
 def _tracked() -> list[str]:
     return subprocess.run(
@@ -57,6 +63,18 @@ def test_no_references_to_removed_files():
         for removed in REMOVED:
             if Path(removed).stem in text and Path(removed).stem != stem:
                 offenders.append(f"{name} references {removed}")
+    assert offenders == []
+
+
+def test_removed_metric_helpers_stay_gone():
+    offenders = []
+    for name in _tracked():
+        if not name.endswith(".py"):
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+        for function in REMOVED_FUNCTIONS:
+            if f"def {function}" in text or f"{function}(" in text:
+                offenders.append(f"{name} references {function}")
     assert offenders == []
 
 

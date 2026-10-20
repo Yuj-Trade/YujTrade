@@ -51,3 +51,35 @@ lives in `domain/gates.py:normalize_confidence` (0-100 scale; non-finite
 maps to 0). Level geometry validation lives in
 `domain/levels.py:validate_levels` and runs before quality gates in
 `application/decide.py`.
+
+## Paper performance flow
+
+```
+reconcile_pending_signals
+  -> domain.outcome.resolve_signal_outcome   (pure: window, coverage, exit reason)
+  -> trading.ledger.PaperLedger.record_resolution   (append-only signal_resolutions)
+  -> strategy.signal_tracker.resolve / update_resolution_details
+```
+
+The resolution is a pure domain decision. The service only fetches the
+candles, asks the domain and hands the outcome to the ledger; it never
+computes an exit price itself and never uses the current market price as
+an exit. The ledger row is written before the tracker is synchronised, so
+a failed write leaves the signal pending and the next cycle retries it.
+
+```
+PaperLedger.signal_resolutions
+  -> services.trading_service.build_performance_report(as_of)
+  -> application.performance_report.build_performance_report(records, config, as_of)
+       -> domain.performance (net R, equity curve, daily series, MDD, Sharpe, Sortino)
+```
+
+The report builder is the only place that composes the metrics, the
+service only loads the data and the display layers (the Telegram command
+and `scripts/generate_performance_report.py`) only render the result. The
+report carries a `data_hash` over the included records and a `config_hash`
+over the effective parameters, so the same ledger and configuration always
+produce the same report.
+
+Definitions, decisions and limitations: `docs/adr/ADR-0009-performance-metrics.md`.
+Worked example: `docs/performance-worked-example.md`.

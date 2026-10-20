@@ -156,7 +156,58 @@ verify via `/health` that the loop resumed.
   (admin only).
 - Keep `execution_dry_run=true` until a separately reviewed live deployment.
 
-## 10. Troubleshooting
+## 10. Paper performance report
+
+### Reading the report
+
+- In Telegram: `/performance` (admin only). It shows the tracker summary
+  plus the trade count, the status, the profit factor, the expectancy,
+  the total return, the maximum drawdown, the Sharpe and Sortino ratios,
+  the `no_data` count and the first eight characters of the `data_hash`.
+- As a file:
+  `python scripts/generate_performance_report.py --as-of 2026-10-20T12:00:00+00:00`
+  writes `runs/performance/performance-report.json` and prints the
+  `data_hash`. The same data and configuration always produce the same
+  hash; a changed hash means the data or a parameter changed.
+- The full definitions and the arithmetic: `docs/performance-worked-example.md`
+  and `docs/adr/ADR-0009-performance-metrics.md`.
+
+### Configuration keys
+
+| Key | Default | Meaning |
+|---|---|---|
+| `performance_ledger_enabled` | `false` | write every resolution to the ledger |
+| `paper_fee_rate` | `0.001` | fee rate of the paper engine and of the report cost |
+| `paper_slippage_rate` | `0.0005` | slippage rate of the paper engine and of the report cost |
+| `performance_rf_annual` | `0` | annual risk-free rate of the Sharpe and Sortino ratios |
+| `performance_periods_per_year` | `365` | annualisation factor |
+| `performance_min_trades_for_ratios` | `30` | below this the status is `insufficient_sample` |
+| `risk_per_trade_pct` | `1.0` | fixed fraction risked per trade |
+| `initial_cash` | `10000.0` | starting equity of the report |
+
+The keys live in `ConfigManager.DEFAULT_CONFIG`. `performance_ledger_enabled`
+stays `false` in the committed defaults and is turned on in the local
+`config.json` only after the fourteen-day soak.
+
+### Daily controls
+
+1. Check `/health` and the reconciliation log line
+   `Reconciled N expired pending signal(s).`
+2. Check the `no_data` ratio in the report. Above 5 % the reconciliation
+   cadence is too coarse for the expiry window: the resolver asks for
+   `ceil(expiry / candle_duration) + 2` candles and marks the rest
+   `no_data`.
+3. Compare the ledger and the tracker with
+   `python scripts/compare_ledger_and_tracker.py`. The number of new
+   tracker resolutions must equal the number of new ledger rows plus the
+   recorded `no_data` rows.
+4. The ledger is append-only: `UPDATE` and `DELETE` on
+   `signal_resolutions` raise. Never prune it, and never delete the
+   database to "clean up"; a deletion destroys the audit trail.
+5. Two runs of the report script over the same data must print the same
+   `data_hash`.
+
+## 11. Troubleshooting
 
 | Symptom | Action |
 |---|---|

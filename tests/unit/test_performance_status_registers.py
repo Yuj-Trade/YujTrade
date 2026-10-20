@@ -71,11 +71,11 @@ def _referenced_names() -> set[str]:
     return referenced
 
 
-def test_the_three_metric_helpers_are_defined_in_common_utils():
+def test_the_three_metric_helpers_are_gone_from_common_utils():
     defined = _defined_functions(Path("common/utils.py"))
 
     for helper in METRIC_HELPERS:
-        assert helper in defined
+        assert helper not in defined
 
 
 def test_the_three_metric_helpers_have_no_caller_anywhere():
