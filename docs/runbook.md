@@ -200,7 +200,8 @@ stays `false` in the committed defaults and is turned on in the local
 3. Compare the ledger and the tracker with
    `python scripts/compare_ledger_and_tracker.py`. The number of new
    tracker resolutions must equal the number of new ledger rows plus the
-   recorded `no_data` rows.
+   recorded `no_data` rows. The acceptance checklist is
+   `docs/soak-checklist.md`.
 4. The ledger is append-only: `UPDATE` and `DELETE` on
    `signal_resolutions` raise. Never prune it, and never delete the
    database to "clean up"; a deletion destroys the audit trail.
