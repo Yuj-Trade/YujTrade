@@ -3,17 +3,43 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
 from config.logger import logger
+from domain.outcome import OutcomeEvent
 from domain.signal_id import make_signal_id as _make_signal_id
 
 TERMINAL_NOTIFICATION_STATES = frozenset({"sent", "shadowed", "suppressed", "abandoned"})
+
+
+@dataclass(frozen=True)
+class OpenSignal:
+    signal_id: str
+    symbol: str
+    timeframe: str
+    side: str
+    entry: float
+    stop: float
+    target: float
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class PendingNotification:
+    signal_id: str
+    event: OutcomeEvent
+    symbol: str
+    timeframe: str
+    side: str
+    entry: float
+    created_at: datetime
+    attempts: int
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -39,6 +65,32 @@ def _is_protected(data: Mapping[str, Any]) -> bool:
         "outcome_event" in details
         and details.get("notification_state") not in TERMINAL_NOTIFICATION_STATES
     )
+
+
+def _optional_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _optional_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _optional_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def make_signal_id(symbol: str, timeframe: str, timestamp: datetime, signal_type: str) -> str:
@@ -198,6 +250,156 @@ class SignalTracker:
             merged = dict(entry.get("details", {}))
             merged.update(details)
             await self._record_locked(signal_id, entry.get("outcome"), merged)
+
+    async def set_outcome_event(self, signal_id: str, event: OutcomeEvent) -> bool:
+        async with self._lock:
+            entry = self.history.get(signal_id)
+            if entry is None:
+                return False
+            details = dict(entry.get("details") or {})
+            if "outcome_event" in details:
+                return False
+            details["outcome_event"] = event.kind
+            details["outcome_event_at"] = event.at.isoformat()
+            details["outcome_event_price"] = float(event.price)
+            details["notification_state"] = "pending"
+            details["notification_attempts"] = 0
+            await self._record_locked(signal_id, entry.get("outcome"), details)
+            return True
+
+    async def open_signals(self, now: datetime, since: datetime | None = None) -> list[OpenSignal]:
+        async with self._lock:
+            found: list[OpenSignal] = []
+            for signal_id, data in self.history.items():
+                if data.get("outcome") is not None:
+                    continue
+                details = dict(data.get("details") or {})
+                if "outcome_event" in details:
+                    continue
+                if details.get("resolution_status") == "no_data":
+                    continue
+                try:
+                    symbol = str(details["symbol"])
+                    timeframe = str(details["timeframe"])
+                    side = str(details["signal_type"]).lower()
+                    entry = float(details["entry"])
+                    stop = float(details["stop"])
+                    target = float(details["target"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning(f"Signal {signal_id} is not observable: {exc}")
+                    continue
+                expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
+                if not expiry_hours:
+                    logger.warning(
+                        f"Signal {signal_id} has an unsupported timeframe {timeframe!r}."
+                    )
+                    continue
+                created_at = self._extract_created_at(signal_id, details)
+                if created_at is None:
+                    logger.warning(f"Signal {signal_id} has no usable creation time.")
+                    continue
+                if since is not None and created_at < since:
+                    continue
+                if now - created_at >= timedelta(hours=expiry_hours):
+                    continue
+                found.append(
+                    OpenSignal(
+                        signal_id=signal_id,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        side=side,
+                        entry=entry,
+                        stop=stop,
+                        target=target,
+                        created_at=created_at,
+                    )
+                )
+            return found
+
+    async def due_notifications(self) -> list[PendingNotification]:
+        async with self._lock:
+            pending: list[PendingNotification] = []
+            for signal_id, data in self.history.items():
+                details = dict(data.get("details") or {})
+                kind = details.get("outcome_event")
+                if not kind:
+                    continue
+                if details.get("notification_state") in TERMINAL_NOTIFICATION_STATES:
+                    continue
+                try:
+                    price = float(details["outcome_event_price"])
+                    at = datetime.fromisoformat(str(details["outcome_event_at"]))
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning(f"Signal {signal_id} has an unreadable outcome event: {exc}")
+                    continue
+                if at.tzinfo is None:
+                    at = at.replace(tzinfo=UTC)
+                try:
+                    event = OutcomeEvent(signal_id=signal_id, kind=str(kind), price=price, at=at)
+                except ValueError as exc:
+                    logger.warning(f"Signal {signal_id} has an invalid outcome event: {exc}")
+                    continue
+                created_at = self._extract_created_at(signal_id, details) or at
+                pending.append(
+                    PendingNotification(
+                        signal_id=signal_id,
+                        event=event,
+                        symbol=str(details.get("symbol", "")),
+                        timeframe=str(details.get("timeframe", "")),
+                        side=str(details.get("signal_type", "")).lower(),
+                        entry=_optional_float(details.get("entry")),
+                        created_at=created_at,
+                        attempts=_optional_int(details.get("notification_attempts")),
+                    )
+                )
+            return pending
+
+    async def claim_notification(self, signal_id: str, now: datetime, claim_ttl: timedelta) -> bool:
+        async with self._lock:
+            entry = self.history.get(signal_id)
+            if entry is None:
+                return False
+            details = dict(entry.get("details") or {})
+            state = details.get("notification_state")
+            if state == "pending":
+                pass
+            elif state == "claimed":
+                claimed_at = _optional_datetime(details.get("notification_claimed_at"))
+                if claimed_at is None or now - claimed_at < claim_ttl:
+                    return False
+            else:
+                return False
+            details["notification_state"] = "claimed"
+            details["notification_claimed_at"] = now.isoformat()
+            await self._record_locked(signal_id, entry.get("outcome"), details)
+            return True
+
+    async def complete_notification(
+        self, signal_id: str, state: Literal["sent", "shadowed", "suppressed"]
+    ) -> None:
+        async with self._lock:
+            entry = self.history.get(signal_id)
+            if entry is None:
+                return
+            details = dict(entry.get("details") or {})
+            details["notification_state"] = state
+            details.pop("notification_claimed_at", None)
+            await self._record_locked(signal_id, entry.get("outcome"), details)
+
+    async def fail_notification(
+        self, signal_id: str, state: Literal["pending", "abandoned"]
+    ) -> None:
+        async with self._lock:
+            entry = self.history.get(signal_id)
+            if entry is None:
+                return
+            details = dict(entry.get("details") or {})
+            details["notification_attempts"] = (
+                _optional_int(details.get("notification_attempts")) + 1
+            )
+            details["notification_state"] = state
+            details.pop("notification_claimed_at", None)
+            await self._record_locked(signal_id, entry.get("outcome"), details)
 
     async def get_pending_expired(self, now: datetime | None = None) -> list[dict[str, Any]]:
         now = now or datetime.now(UTC)

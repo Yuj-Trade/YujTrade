@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from domain.outcome import OutcomeEvent
 from strategy.signal_tracker import (
     AdaptiveThresholdManager,
     MLConfidenceCalibrator,
@@ -696,3 +697,196 @@ class TestSignalTrackerProtectedEntries:
         assert "open|1h|sig|BUY" in tracker.history
         rotated = json.loads((tmp_path / "history.rotated.json").read_text(encoding="utf-8"))
         assert set(rotated) == {"settled|1h|sig|BUY"}
+
+
+class TestSignalTrackerNotificationState:
+    """The notification state API of the tracker."""
+
+    def _tracker(self, tmp_path) -> SignalTracker:
+        return SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+
+    async def test_a_second_event_is_rejected(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+
+        assert await tracker.set_outcome_event("sig-1", event) is True
+        assert await tracker.set_outcome_event("sig-1", event) is False
+        details = tracker.history["sig-1"]["details"]
+        assert details["outcome_event"] == "target"
+        assert details["notification_state"] == "pending"
+        assert details["notification_attempts"] == 0
+
+    async def test_an_event_for_an_unknown_signal_is_rejected(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        event = OutcomeEvent("sig-x", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+
+        assert await tracker.set_outcome_event("sig-x", event) is False
+
+    async def test_two_concurrent_claims_only_one_wins(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+
+        results = await asyncio.gather(
+            tracker.claim_notification("sig-1", now, timedelta(minutes=5)),
+            tracker.claim_notification("sig-1", now, timedelta(minutes=5)),
+        )
+
+        assert sum(1 for result in results if result) == 1
+        assert tracker.history["sig-1"]["details"]["notification_state"] == "claimed"
+
+    async def test_an_expired_claim_becomes_claimable_again(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+
+        assert await tracker.claim_notification("sig-1", now, timedelta(minutes=5)) is True
+        assert await tracker.claim_notification("sig-1", now, timedelta(minutes=5)) is False
+        assert (
+            await tracker.claim_notification(
+                "sig-1", now + timedelta(minutes=6), timedelta(minutes=5)
+            )
+            is True
+        )
+
+    async def test_a_fresh_claim_is_not_claimable_again(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+
+        assert await tracker.claim_notification("sig-1", now, timedelta(minutes=5)) is True
+        assert await tracker.claim_notification("sig-1", now, timedelta(minutes=5)) is False
+
+    async def test_fail_notification_increments_the_counter(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+        await tracker.claim_notification("sig-1", now, timedelta(minutes=5))
+
+        await tracker.fail_notification("sig-1", "pending")
+
+        details = tracker.history["sig-1"]["details"]
+        assert details["notification_attempts"] == 1
+        assert details["notification_state"] == "pending"
+        assert "notification_claimed_at" not in details
+
+    async def test_complete_notification_clears_the_claim(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+        await tracker.claim_notification("sig-1", now, timedelta(minutes=5))
+
+        await tracker.complete_notification("sig-1", "sent")
+
+        details = tracker.history["sig-1"]["details"]
+        assert details["notification_state"] == "sent"
+        assert "notification_claimed_at" not in details
+
+    async def test_open_signals_skips_old_and_expired_entries(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        now = datetime.now(UTC)
+        await tracker.record(
+            "sig-fresh",
+            None,
+            _notification_details(created_at=(now - timedelta(hours=1)).isoformat()),
+        )
+        await tracker.record(
+            "sig-expired",
+            None,
+            _notification_details(created_at=(now - timedelta(hours=13)).isoformat()),
+        )
+
+        found = await tracker.open_signals(now, None)
+
+        assert [item.signal_id for item in found] == ["sig-fresh"]
+        assert found[0].symbol == "BTC/USDT"
+        assert found[0].timeframe == "1h"
+        assert found[0].side == "buy"
+        assert found[0].entry == 100.0
+        assert found[0].stop == 95.0
+        assert found[0].target == 110.0
+
+    async def test_open_signals_skips_the_entries_before_the_since_bound(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        now = datetime.now(UTC)
+        await tracker.record(
+            "sig-old",
+            None,
+            _notification_details(created_at=(now - timedelta(hours=2)).isoformat()),
+        )
+        await tracker.record(
+            "sig-new",
+            None,
+            _notification_details(created_at=(now - timedelta(hours=1)).isoformat()),
+        )
+
+        found = await tracker.open_signals(now, now - timedelta(hours=1, minutes=30))
+
+        assert [item.signal_id for item in found] == ["sig-new"]
+
+    async def test_open_signals_skips_incomplete_entries(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        now = datetime.now(UTC)
+        await tracker.record("sig-1", None, {"symbol": "BTC/USDT"})
+
+        found = await tracker.open_signals(now, None)
+
+        assert found == []
+
+    async def test_due_notifications_returns_the_pending_events(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+
+        due = await tracker.due_notifications()
+
+        assert len(due) == 1
+        assert due[0].signal_id == "sig-1"
+        assert due[0].event.kind == "target"
+        assert due[0].event.price == 110.0
+        assert due[0].attempts == 0
+        assert due[0].symbol == "BTC/USDT"
+        assert due[0].timeframe == "1h"
+        assert due[0].side == "buy"
+
+    async def test_due_notifications_skips_the_terminal_states(self, tmp_path):
+        tracker = self._tracker(tmp_path)
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        await tracker.complete_notification("sig-1", "sent")
+
+        due = await tracker.due_notifications()
+
+        assert due == []
+
+    async def test_the_state_survives_a_reload(self, tmp_path):
+        path = tmp_path / "signal_history.json"
+        tracker = SignalTracker(storage_path=str(path))
+        await tracker.record("sig-1", None, _notification_details())
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 10, 1, 14, tzinfo=UTC))
+        await tracker.set_outcome_event("sig-1", event)
+        now = datetime.now(UTC)
+        await tracker.claim_notification("sig-1", now, timedelta(minutes=5))
+
+        restored = SignalTracker(storage_path=str(path))
+        details = restored.history["sig-1"]["details"]
+
+        assert details["outcome_event"] == "target"
+        assert details["outcome_event_at"] == "2026-10-01T14:00:00+00:00"
+        assert details["outcome_event_price"] == 110.0
+        assert details["notification_state"] == "claimed"
+        assert details["notification_attempts"] == 0
+        assert "notification_claimed_at" in details
