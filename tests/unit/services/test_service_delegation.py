@@ -74,9 +74,9 @@ def _frame(rows):
                 "open": 100.0,
                 "high": high,
                 "low": low,
-                "close": 100.0,
+                "close": close,
             }
-            for high, low in rows
+            for high, low, close in rows
         ],
         index=[base + timedelta(hours=i) for i in range(len(rows))],
     )
@@ -93,7 +93,7 @@ def _details(**overrides):
     return base
 
 
-class TestDecideExpiredOutcome:
+class TestResolveSignalOutcome:
     def _run(self, provider, **kwargs):
         service = _service(provider)
         created = datetime(2024, 1, 1, tzinfo=UTC)
@@ -102,31 +102,59 @@ class TestDecideExpiredOutcome:
             "timeframe": "1h",
             "details": _details(),
             "created_at": created,
-            "expiry_hours": 24.0,
+            "expiry_hours": 3.0,
         }
         params.update(kwargs)
-        return asyncio.run(service._decide_expired_outcome(**params))
+        return asyncio.run(service._resolve_signal_outcome(**params))
 
     def test_stop_hit_resolves_failure(self):
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=_frame([(112.0, 94.0)])))
-        assert self._run(provider) == (False, 95.0)
+        provider = SimpleNamespace(
+            fetch_ohlcv_data=AsyncMock(
+                return_value=_frame(
+                    [(112.0, 94.0, 100.0), (101.0, 99.0, 100.0), (101.0, 99.0, 100.0)]
+                )
+            )
+        )
+        resolution = self._run(provider)
+        assert resolution is not None
+        assert resolution.exit_reason == "stop"
+        assert resolution.exit_price == 95.0
 
     def test_target_hit_resolves_success(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(return_value=_frame([(112.0, 101.0)]))
+            fetch_ohlcv_data=AsyncMock(
+                return_value=_frame(
+                    [(101.0, 99.0, 100.0), (112.0, 101.0, 110.0), (101.0, 99.0, 100.0)]
+                )
+            )
         )
-        assert self._run(provider) == (True, 110.0)
+        resolution = self._run(provider)
+        assert resolution is not None
+        assert resolution.exit_reason == "target"
+        assert resolution.exit_price == 110.0
 
-    def test_no_hit_falls_back_to_reference_price(self):
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=_frame([(101.0, 99.0)])))
-        assert self._run(provider) == (False, 100.0)
+    def test_no_hit_expires_at_the_last_close_of_the_window(self):
+        provider = SimpleNamespace(
+            fetch_ohlcv_data=AsyncMock(
+                return_value=_frame(
+                    [(101.0, 99.0, 100.0), (101.0, 99.0, 101.0), (101.0, 99.0, 102.0)]
+                )
+            )
+        )
+        resolution = self._run(provider)
+        assert resolution is not None
+        assert resolution.exit_reason == "expired"
+        assert resolution.exit_price == 102.0
 
-    def test_no_data_no_reference_returns_none(self):
+    def test_no_data_without_candles_returns_none(self):
         provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=pd.DataFrame()))
         assert self._run(provider) is None
 
     def test_malformed_rows_skipped(self):
-        frame = _frame([(112.0, 101.0)])
+        frame = _frame([(112.0, 101.0, 110.0), (101.0, 99.0, 100.0), (101.0, 99.0, 100.0)])
         frame.loc[frame.index[0], "high"] = None
         provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=frame))
-        assert self._run(provider) == (False, 100.0)
+        resolution = self._run(provider)
+        assert resolution is not None
+        assert resolution.exit_reason == "expired"
+        assert resolution.exit_price == 100.0

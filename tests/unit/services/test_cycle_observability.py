@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import services.trading_service as trading_service_module
 from common.core import SignalType, TradingSignal
 from config.logger import logger as root_logger
+from domain.outcome import Resolution
 from services.trading_service import TradingService
 
 
@@ -135,6 +136,8 @@ class TestMetricsWiring:
             "symbol": "BTC/USDT",
             "timeframe": "1h",
             "entry": 100.0,
+            "stop": 95.0,
+            "target": 110.0,
             "signal_type": "buy",
             "created_at": datetime.now(UTC).isoformat(),
             "confidence": 90.0,
@@ -146,6 +149,7 @@ class TestMetricsWiring:
                 return_value=[{"signal_id": "BTC/USDT|1h|t|buy", "details": expired_details}]
             ),
             resolve=AsyncMock(),
+            update_resolution_details=AsyncMock(),
         )
         service.market_data_provider = SimpleNamespace(
             fetch_ohlcv_data=AsyncMock(return_value=None)
@@ -155,10 +159,10 @@ class TestMetricsWiring:
         threshold_manager.flush = AsyncMock()
         service.signal_generator = SimpleNamespace(threshold_manager=threshold_manager)
 
-        async def fake_decide(symbol, timeframe, details, created_at, expiry_hours):
-            return True, 110.0
+        async def fake_resolve(symbol, timeframe, details, created_at, expiry_hours):
+            return Resolution("target", 110.0, datetime.now(UTC), 3)
 
-        service._decide_expired_outcome = fake_decide
+        service._resolve_signal_outcome = fake_resolve
 
         resolved = await service.reconcile_pending_signals()
 

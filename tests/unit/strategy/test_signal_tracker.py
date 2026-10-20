@@ -493,3 +493,35 @@ class TestSignalTrackerPerformanceSummary:
         assert details["original"] == "data"
         assert details["entry"] == 50000
         assert details["exit"] == 51000
+
+    @pytest.mark.asyncio
+    async def test_no_data_entries_are_not_pending_anymore(self, tracker):
+        """A no_data resolution leaves the outcome unset and is skipped."""
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
+        await tracker.record(signal_id, None, {"created_at": datetime.now(UTC).isoformat()})
+        await tracker.update_resolution_details(
+            signal_id,
+            {"resolution_status": "no_data", "resolved_at": datetime.now(UTC).isoformat()},
+        )
+
+        pending = await tracker.get_pending_expired(datetime.now(UTC) + timedelta(days=30))
+        summary = tracker.get_performance_summary()
+
+        assert pending == []
+        assert summary["total"] == 0
+        assert summary["pending"] == 1
+        assert summary["no_data"] == 1
+
+    @pytest.mark.asyncio
+    async def test_update_resolution_details_keeps_the_outcome(self, tracker):
+        """The details update never invents a boolean outcome."""
+        signal_id = make_signal_id("BTC/USDT", "1h", datetime.now(UTC), "BUY")
+        await tracker.record(signal_id, None, {"entry": 100.0})
+        await tracker.update_resolution_details(signal_id, {"resolution_status": "expired"})
+
+        with open(tracker.storage_path) as f:
+            history = json.load(f)
+
+        assert history[signal_id]["outcome"] is None
+        assert history[signal_id]["details"]["entry"] == 100.0
+        assert history[signal_id]["details"]["resolution_status"] == "expired"

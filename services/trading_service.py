@@ -1,20 +1,22 @@
 import asyncio
+import math
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
 
 from application.gate_config import build_gate_config
 from common import metrics
-from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME
+from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
 from common.core import TradingSignal
 from common.exceptions import InvalidSymbolError
 from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from domain.gates import normalize_confidence, quality_gate_reason
-from domain.outcome import resolve_outcome
+from domain.outcome import Resolution, resolve_signal_outcome
+from domain.performance import RESOLVER_VERSION, ResolutionRecord
 from domain.types import SignalDraft
 from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
@@ -23,10 +25,47 @@ from strategy.signal_generator import SignalGenerator
 from strategy.signal_ranking import SignalRanking
 from strategy.signal_tracker import SignalTracker, make_signal_id
 from trading.execution import ExchangeAdapter, ExecutionEngine
+from trading.ledger import PaperLedger
 from trading.paper_trading import PaperTradingEngine
 from trading.portfolio import PortfolioManager
 from trading.risk_manager import RiskManager, build_risk_config
 from utils.resource_manager import ResourceManager
+
+
+def _utc_moment(value: Any) -> datetime | None:
+    if isinstance(value, pd.Timestamp):
+        moment = value.to_pydatetime()
+    elif isinstance(value, datetime):
+        moment = value
+    else:
+        return None
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
+
+
+def _frame_candles(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
+    if frame is None or frame.empty:
+        return []
+    candles: list[dict[str, Any]] = []
+    has_timestamp_column = "timestamp" in frame.columns
+    for index, row in frame.iterrows():
+        moment = _utc_moment(index)
+        if moment is None and has_timestamp_column:
+            moment = _utc_moment(row["timestamp"])
+        if moment is None:
+            continue
+        try:
+            high = float(row["high"])
+            low = float(row["low"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        try:
+            close = float(row["close"])
+        except (KeyError, TypeError, ValueError):
+            close = None
+        candles.append({"timestamp": moment, "high": high, "low": low, "close": close})
+    return candles
 
 
 async def create_trading_stack(
@@ -52,6 +91,9 @@ async def create_trading_stack(
 
 
 class TradingService(ModelDataProvider):
+    performance_ledger: PaperLedger | None = None
+    _performance_ledger_enabled: bool = False
+
     def __init__(
         self,
         market_data_provider: MarketDataProvider,
@@ -105,6 +147,10 @@ class TradingService(ModelDataProvider):
         self.signal_tracker = SignalTracker(
             ttl_days=int(self.config_manager.get("signal_history_ttl_days", 30)),
             max_entries=int(self.config_manager.get("signal_history_max_entries", 5000)),
+        )
+        self.performance_ledger = PaperLedger()
+        self._performance_ledger_enabled = bool(
+            self.config_manager.get("performance_ledger_enabled", False)
         )
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
 
@@ -396,25 +442,22 @@ class TradingService(ModelDataProvider):
             try:
                 created_at = SignalTracker._extract_created_at(signal_id, details)
                 expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
-                outcome = await self._decide_expired_outcome(
+                resolution = await self._resolve_signal_outcome(
                     symbol, timeframe, details, created_at, expiry_hours
                 )
-                if outcome is None:
-                    signal_log.debug("Reconciliation skipped (no price).")
+                if resolution is None:
+                    signal_log.debug("Reconciliation skipped (incomplete levels).")
                     continue
-                success, resolved_price = outcome
-                await self.signal_tracker.resolve(
-                    signal_id,
-                    success,
-                    {
-                        "resolved_price": resolved_price,
-                        "resolution_source": "live_reconciliation",
-                        "resolved_at": datetime.now(UTC).isoformat(),
-                    },
-                )
-                metrics.record_resolution(success)
+                if self._performance_ledger_enabled:
+                    stored = await self._store_resolution(
+                        signal_id, symbol, timeframe, details, created_at, resolution
+                    )
+                    if not stored:
+                        continue
+                await self._sync_tracker(signal_id, symbol, timeframe, details, resolution)
                 resolved_count += 1
-                await self._record_live_calibration(symbol, timeframe, details, success)
+            except ValueError as e:
+                signal_log.error(f"Signal reconciliation failed: {e}")
             except Exception as e:
                 signal_log.debug(f"Signal reconciliation skipped: {e}")
 
@@ -422,82 +465,125 @@ class TradingService(ModelDataProvider):
             logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
         return resolved_count
 
-    async def _decide_expired_outcome(
+    async def _resolve_signal_outcome(
         self,
         symbol: str,
         timeframe: str,
         details: dict[str, Any],
         created_at: datetime | None,
         expiry_hours: float | None,
-    ) -> tuple[bool, float] | None:
+    ) -> Resolution | None:
+        if created_at is None or not expiry_hours:
+            return None
         try:
             entry = float(details.get("entry"))
+            stop = float(details.get("stop"))
+            target = float(details.get("target"))
         except (TypeError, ValueError):
             return None
         signal_type = str(details.get("signal_type", "")).lower()
         if signal_type not in ("buy", "sell"):
             return None
 
+        duration = candle_duration(timeframe)
+        candle_count = int(math.ceil(expiry_hours * 3600 / duration.total_seconds())) + 2
         try:
-            stop = details.get("stop")
-            stop = float(stop) if stop is not None else None
-        except (TypeError, ValueError):
-            stop = None
-        try:
-            target = details.get("target")
-            target = float(target) if target is not None else None
-        except (TypeError, ValueError):
-            target = None
-
-        if stop is not None and target is not None and created_at is not None:
-            try:
-                df = await self.market_data_provider.fetch_ohlcv_data(
-                    symbol, timeframe, limit=500, bypass_cache=True
-                )
-            except Exception as e:
-                logger.debug(f"Resolution candles fetch failed: {e}")
-                df = None
-            if df is not None and not df.empty:
-                window = df[df.index >= created_at]
-                if expiry_hours:
-                    window = window[window.index <= created_at + timedelta(hours=expiry_hours)]
-                candles: list[dict[str, Any]] = []
-                for _, row in window.iterrows():
-                    try:
-                        high = float(row["high"])
-                        low = float(row["low"])
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    candles.append({"timestamp": row.name, "high": high, "low": low})
-                outcome = resolve_outcome(
-                    candles,
-                    signal_type,
-                    entry,
-                    stop,
-                    target,
-                    created_at=created_at,
-                    expiry_hours=expiry_hours,
-                )
-                if outcome is not None:
-                    return outcome.success, outcome.exit_price
-
-        price = await self._get_reference_price(symbol, timeframe)
-        if price is None:
-            return None
-        success = price > entry if signal_type == "buy" else price < entry
-        return success, price
-
-    async def _get_reference_price(self, symbol: str, timeframe: str) -> float | None:
-        try:
-            df = await self.market_data_provider.fetch_ohlcv_data(
-                symbol, timeframe, limit=2, bypass_cache=True
+            frame = await self.market_data_provider.fetch_ohlcv_data(
+                symbol, timeframe, limit=candle_count, bypass_cache=True
             )
-            if df is None or df.empty:
-                return None
-            return float(df["close"].iloc[-1])
         except Exception as e:
-            logger.debug(f"Reference price fetch failed for {symbol}-{timeframe}: {e}")
+            logger.debug(f"Resolution candles fetch failed: {e}")
+            frame = None
+        candles = _frame_candles(frame)
+        if not candles:
             return None
+        return resolve_signal_outcome(
+            candles,
+            signal_type,
+            entry,
+            stop,
+            target,
+            created_at=created_at,
+            expiry_hours=expiry_hours,
+            candle_duration=duration,
+        )
+
+    async def _store_resolution(
+        self,
+        signal_id: str,
+        symbol: str,
+        timeframe: str,
+        details: dict[str, Any],
+        created_at: datetime,
+        resolution: Resolution,
+    ) -> bool:
+        ledger = self.performance_ledger
+        if ledger is None:
+            logger.error(f"Performance ledger is unavailable for {signal_id}")
+            return False
+        if await ledger.has_resolution(signal_id):
+            return True
+        record = ResolutionRecord(
+            signal_id=signal_id,
+            symbol=symbol,
+            timeframe=timeframe,
+            side=str(details.get("signal_type", "")).lower(),
+            entry=float(details.get("entry")),
+            stop=float(details.get("stop")),
+            target=float(details.get("target")),
+            created_at=created_at,
+            exit_at=resolution.exit_at,
+            exit_price=resolution.exit_price,
+            exit_reason=resolution.exit_reason,
+            candles_used=resolution.candles_used,
+            resolver_version=RESOLVER_VERSION,
+        )
+        try:
+            return await ledger.record_resolution(record)
+        except Exception as e:
+            logger.error(f"Performance ledger write failed for {signal_id}: {e}")
+            return False
+
+    async def _sync_tracker(
+        self,
+        signal_id: str,
+        symbol: str,
+        timeframe: str,
+        details: dict[str, Any],
+        resolution: Resolution,
+    ) -> None:
+        resolved_at = datetime.now(UTC).isoformat()
+        if resolution.exit_reason == "no_data":
+            await self.signal_tracker.update_resolution_details(
+                signal_id,
+                {"resolution_status": "no_data", "resolved_at": resolved_at},
+            )
+            return
+        success = self._tracker_outcome(details, resolution)
+        await self.signal_tracker.resolve(
+            signal_id,
+            success,
+            {
+                "resolved_price": resolution.exit_price,
+                "resolution_source": "live_reconciliation",
+                "resolved_at": resolved_at,
+                "resolution_status": resolution.exit_reason,
+            },
+        )
+        metrics.record_resolution(success)
+        await self._record_live_calibration(symbol, timeframe, details, success)
+
+    @staticmethod
+    def _tracker_outcome(details: dict[str, Any], resolution: Resolution) -> bool:
+        if resolution.exit_reason == "target":
+            return True
+        if resolution.exit_reason == "stop":
+            return False
+        exit_price = float(resolution.exit_price or 0.0)
+        entry = float(details.get("entry"))
+        if str(details.get("signal_type", "")).lower() == "sell":
+            return exit_price < entry
+        return exit_price > entry
 
     @staticmethod
     def _normalize_confidence_0_100(confidence: Any) -> float:

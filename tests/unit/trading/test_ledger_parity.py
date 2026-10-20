@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import aiosqlite
 
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
-from domain.outcome import resolve_outcome
+from domain.outcome import resolve_outcome, resolve_signal_outcome
 from trading.ledger import PaperLedger
 
 
@@ -91,6 +91,76 @@ def test_resolution_matches_simulator_for_same_candles():
     assert len(trades) == 1
     assert trades[0].exit_reason == expected.reason
     assert trades[0].exit_price == expected.exit_price
+
+
+def test_full_coverage_resolver_matches_the_simulator_on_a_hit():
+    candles = _candles()
+    base = candles[0]["timestamp"]
+
+    resolution = resolve_signal_outcome(
+        candles, "buy", 100.0, 95.0, 110.0, base, 3.0, timedelta(hours=1)
+    )
+
+    simulator = EventDrivenSimulator(SimulatorConfig(slippage_rate=0.0, commission_rate=0.0))
+    signals = [
+        {
+            "signal_id": "sig-1",
+            "side": "buy",
+            "timestamp": base,
+            "stop": 95.0,
+            "target": 110.0,
+        }
+    ]
+    trades = simulator.run(candles, signals, equity=100_000.0)
+
+    assert resolution.exit_reason == "target"
+    assert resolution.exit_price == 110.0
+    assert len(trades) == 1
+    assert trades[0].exit_reason == resolution.exit_reason
+    assert trades[0].exit_price == resolution.exit_price
+
+
+def _stop_candles():
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    opens = [99.0, 100.0, 101.0, 102.0]
+    highs = [99.5, 101.0, 103.0, 104.0]
+    lows = [98.5, 96.0, 100.5, 101.5]
+    return [
+        {
+            "timestamp": base + timedelta(hours=i),
+            "open": opens[i],
+            "high": highs[i],
+            "low": lows[i],
+            "close": (opens[i] + highs[i]) / 2,
+        }
+        for i in range(4)
+    ]
+
+
+def test_full_coverage_resolver_matches_the_simulator_on_a_stop():
+    candles = _stop_candles()
+    base = candles[0]["timestamp"]
+
+    resolution = resolve_signal_outcome(
+        candles, "buy", 100.0, 98.0, 1000.0, base, 3.0, timedelta(hours=1)
+    )
+
+    simulator = EventDrivenSimulator(SimulatorConfig(slippage_rate=0.0, commission_rate=0.0))
+    signals = [
+        {
+            "signal_id": "sig-1",
+            "side": "buy",
+            "timestamp": base,
+            "stop": 98.0,
+            "target": 1000.0,
+        }
+    ]
+    trades = simulator.run(candles, signals, equity=100_000.0)
+
+    assert resolution.exit_reason == "stop"
+    assert len(trades) == 1
+    assert trades[0].exit_reason == resolution.exit_reason
+    assert trades[0].exit_price == resolution.exit_price
 
 
 async def test_equity_uses_mark_price_and_flags_stale(tmp_path):

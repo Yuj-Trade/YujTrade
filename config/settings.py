@@ -104,6 +104,7 @@ class ConfigManager:
         "scheduler_db_path": "runs/scheduler.db",
         "signal_history_ttl_days": 30,
         "signal_history_max_entries": 5000,
+        "performance_ledger_enabled": False,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {

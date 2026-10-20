@@ -137,6 +137,30 @@ in the open lists.
 8. Feature store for training reuse. The Phase 3 prediction trace records
    what the model saw at prediction time; a store that training can consume
    needs its own OpenSpec proposal (`add-feature-store`) before it is built.
+9. Performance report — legacy resolutions. Signals that the tracker resolved
+   with the pre-phase-3 logic (the current-price fallback) are not written to
+   `signal_resolutions` and are therefore not part of the report. The report
+   only covers resolutions recorded from the phase-3 resolution path onwards.
+   Backfilling them would require re-running the old fallback, which is
+   exactly the non-reproducible behaviour this work removed.
+10. Performance report — data provider windowing. `fetch_ohlcv_data` only
+    accepts a candle *count*, not a time range, so the resolver asks for
+    `ceil(expiry / candle_duration) + 2` candles and then verifies the
+    coverage itself. A signal that is reconciled later than its expiry can
+    therefore fail the coverage check and resolve to `no_data`. A time-range
+    fetch in `data/data_provider.py` would remove the limit; that is a data
+    contract change and needs its own proposal.
+11. Performance report — the `1M` candle duration is a fixed 43200 minutes
+    (30 days) because a calendar month has no fixed length. The coverage
+    check for a monthly signal is therefore approximate. A per-month
+    duration derived from the candle timestamps themselves would remove the
+    approximation.
+12. Sharpe in `scripts/run_holdout.py` is a different quantity from the
+    report Sharpe: it divides the mean pnl by `pstdev(pnl)` and multiplies by
+    the square root of the trade count, with no annualisation and no
+    risk-free rate. The holdout report schema is locked and the holdout
+    protocol is single-use, so the holdout path is left untouched. Unifying
+    the two definitions needs its own proposal.
 
 ## Legacy tracked artifacts (resolved in v3.0, still true)
 

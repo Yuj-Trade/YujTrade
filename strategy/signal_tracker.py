@@ -126,6 +126,13 @@ class SignalTracker:
                 merged.update(details)
             await self._record_locked(signal_id, outcome, merged)
 
+    async def update_resolution_details(self, signal_id: str, details: dict[str, Any]):
+        async with self._lock:
+            entry = self.history.get(signal_id, {})
+            merged = dict(entry.get("details", {}))
+            merged.update(details)
+            await self._record_locked(signal_id, entry.get("outcome"), merged)
+
     async def get_pending_expired(self, now: datetime | None = None) -> list[dict[str, Any]]:
         now = now or datetime.now(UTC)
         async with self._lock:
@@ -134,6 +141,8 @@ class SignalTracker:
                 if data.get("outcome") is not None:
                     continue
                 details = dict(data.get("details", {}))
+                if details.get("resolution_status") == "no_data":
+                    continue
                 parts = sid.split("|")
                 timeframe = details.get("timeframe") or (parts[1] if len(parts) > 1 else None)
                 expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
@@ -176,15 +185,26 @@ class SignalTracker:
             for sid, data in self.history.items()
             if data.get("outcome") is True or data.get("outcome") is False
         }
+        no_data = sum(
+            1
+            for data in self.history.values()
+            if (data.get("details") or {}).get("resolution_status") == "no_data"
+        )
         total_signals = len(resolved)
         if total_signals == 0:
-            return {"total": 0, "win_rate": 0.0, "pending": len(self.history)}
+            return {
+                "total": 0,
+                "win_rate": 0.0,
+                "pending": len(self.history),
+                "no_data": no_data,
+            }
         wins = sum(1 for data in resolved.values() if data.get("outcome"))
         win_rate = (wins / total_signals) * 100
         return {
             "total": total_signals,
             "win_rate": win_rate,
             "pending": len(self.history) - total_signals,
+            "no_data": no_data,
         }
 
 

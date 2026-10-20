@@ -85,8 +85,8 @@ def test_the_three_metric_helpers_have_no_caller_anywhere():
         assert helper not in referenced
 
 
-def test_paper_ledger_is_not_imported_by_any_production_code():
-    offenders = []
+def test_paper_ledger_is_used_by_the_trading_service_only():
+    importers = []
     for path, tree in _trees(_production_python_files()):
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
@@ -94,14 +94,14 @@ def test_paper_ledger_is_not_imported_by_any_production_code():
                 if module == "trading.ledger" or (
                     module == "trading" and any(a.name == "PaperLedger" for a in node.names)
                 ):
-                    offenders.append(f"{path.name}: from {module} import PaperLedger")
+                    importers.append(path.name)
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name == "trading.ledger":
-                        offenders.append(f"{path.name}: import {alias.name}")
+                        importers.append(path.name)
             elif isinstance(node, ast.Name) and node.id == "PaperLedger":
-                offenders.append(f"{path.name}: PaperLedger")
-    assert offenders == []
+                importers.append(path.name)
+    assert sorted(set(importers)) == ["trading_service.py"]
 
 
 def test_paper_trading_engine_hard_codes_its_cost_defaults():

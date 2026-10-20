@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from enum import Enum
 
 from config.logger import logger
@@ -84,6 +85,16 @@ MULTI_TF_CONFIRMATION_WEIGHTS = {
 }
 
 SIGNAL_EXPIRY_BY_TIMEFRAME = {"1h": 12, "4h": 24, "1d": 72, "1w": 168, "1M": 720}
+
+CANDLE_DURATION_MINUTES = {"1h": 60, "4h": 240, "1d": 1440, "1w": 10080, "1M": 43200}
+
+
+def candle_duration(timeframe: str) -> timedelta:
+    minutes = CANDLE_DURATION_MINUTES.get(timeframe)
+    if minutes is None:
+        raise ValueError(f"unknown timeframe {timeframe!r}")
+    return timedelta(minutes=minutes)
+
 
 DECAY_HALF_LIFE_BY_TIMEFRAME = {"1h": 24, "4h": 48, "1d": 168, "1w": 720, "1M": 2160}
 
