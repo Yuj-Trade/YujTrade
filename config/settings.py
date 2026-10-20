@@ -112,6 +112,14 @@ class ConfigManager:
         "performance_min_trades_for_ratios": 30,
         "risk_per_trade_pct": 1.0,
         "initial_cash": 10000.0,
+        "outcome_notifications_mode": "off",
+        "outcome_notifications_since": "",
+        "outcome_notification_kinds": ["target", "stop", "expired"],
+        "outcome_notification_timeframes": [],
+        "outcome_watch_interval_minutes": 15,
+        "outcome_notification_max_attempts": 3,
+        "outcome_claim_ttl_seconds": 300,
+        "outcome_watch_concurrency": 4,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {
