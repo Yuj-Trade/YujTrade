@@ -6,7 +6,9 @@ from typing import Any
 
 import pandas as pd
 
+from application import performance_report
 from application.gate_config import build_gate_config
+from application.performance_report import PerformanceConfig, PerformanceReport
 from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
 from common.core import TradingSignal
@@ -30,6 +32,44 @@ from trading.paper_trading import PaperTradingEngine
 from trading.portfolio import PortfolioManager
 from trading.risk_manager import RiskManager, build_risk_config
 from utils.resource_manager import ResourceManager
+
+_LEDGER_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+async def build_performance_report_from_ledger(
+    ledger: PaperLedger, config_manager: ConfigManager, as_of: datetime
+) -> PerformanceReport:
+    records = await ledger.load_resolutions(_LEDGER_EPOCH, as_of)
+    return performance_report.build_performance_report(
+        records, build_performance_config(config_manager), as_of
+    )
+
+
+def build_performance_config(config_manager: ConfigManager) -> PerformanceConfig:
+    defaults = ConfigManager.DEFAULT_CONFIG
+    return PerformanceConfig(
+        initial_cash=float(config_manager.get("initial_cash", defaults["initial_cash"])),
+        risk_per_trade_pct=float(
+            config_manager.get("risk_per_trade_pct", defaults["risk_per_trade_pct"])
+        ),
+        fee_rate=float(config_manager.get("paper_fee_rate", defaults["paper_fee_rate"])),
+        slippage_rate=float(
+            config_manager.get("paper_slippage_rate", defaults["paper_slippage_rate"])
+        ),
+        rf_annual=float(
+            config_manager.get("performance_rf_annual", defaults["performance_rf_annual"])
+        ),
+        periods_per_year=float(
+            config_manager.get(
+                "performance_periods_per_year", defaults["performance_periods_per_year"]
+            )
+        ),
+        min_trades_for_ratios=int(
+            config_manager.get(
+                "performance_min_trades_for_ratios", defaults["performance_min_trades_for_ratios"]
+            )
+        ),
+    )
 
 
 def _utc_moment(value: Any) -> datetime | None:
@@ -137,7 +177,18 @@ class TradingService(ModelDataProvider):
         self.risk_manager = RiskManager(risk_cfg)
         self.portfolio = PortfolioManager(float(self.config_manager.get("initial_cash", 10000.0)))
         self.paper_engine = PaperTradingEngine(
-            portfolio=self.portfolio, risk_manager=self.risk_manager
+            portfolio=self.portfolio,
+            risk_manager=self.risk_manager,
+            fee_rate=float(
+                self.config_manager.get(
+                    "paper_fee_rate", ConfigManager.DEFAULT_CONFIG["paper_fee_rate"]
+                )
+            ),
+            slippage_rate=float(
+                self.config_manager.get(
+                    "paper_slippage_rate", ConfigManager.DEFAULT_CONFIG["paper_slippage_rate"]
+                )
+            ),
         )
         self.execution_engine = ExecutionEngine(
             adapter=ExchangeAdapter(
@@ -613,6 +664,14 @@ class TradingService(ModelDataProvider):
                 await self.signal_generator.threshold_manager.flush()
         except (TypeError, ValueError, AttributeError) as e:
             logger.debug(f"Live calibration feedback skipped: {e}")
+
+    async def build_performance_report(self, as_of: datetime) -> PerformanceReport:
+        ledger = self.performance_ledger
+        if ledger is None:
+            return performance_report.build_performance_report(
+                [], build_performance_config(self.config_manager), as_of
+            )
+        return await build_performance_report_from_ledger(ledger, self.config_manager, as_of)
 
     async def cleanup(self):
         logger.info("Cleaning up TradingService resources.")

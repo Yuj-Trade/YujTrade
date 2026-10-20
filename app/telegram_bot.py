@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from application.performance_report import PerformanceReport
 from common.constants import LONG_TERM_CONFIG
 from common.core import TradingSignal
 from config.logger import logger
@@ -33,6 +34,26 @@ QUICK_TIMEFRAMES = ["1h"]
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r"_*[]()~`>#+-=|{}.!"
     return "".join(f"\\{char}" if char in escape_chars else char for char in str(text))
+
+
+def _number(value: float | None, suffix: str = "") -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}{suffix}"
+
+
+def _performance_report_lines(report: PerformanceReport) -> str:
+    drawdown = report.max_drawdown
+    return (
+        f"Trades: {report.total_resolved} | Status: {report.status}\n"
+        f"Profit factor: {_number(report.profit_factor)} | "
+        f"Expectancy: {_number(report.expectancy_r, 'R')}\n"
+        f"Return: {_number(report.total_return * 100, '%')} | "
+        f"MDD: {_number(-drawdown.depth * 100, '%')}\n"
+        f"Sharpe: {_number(report.sharpe)} | Sortino: {_number(report.sortino)}\n"
+        f"No data: {report.exit_counts.get('no_data', 0)} | "
+        f"Data hash: {report.data_hash[:8]}"
+    )
 
 
 class TelegramBotHandler:
@@ -239,6 +260,13 @@ class TelegramBotHandler:
             f"Win rate: {summary.get('win_rate', 0.0):.1f}% | "
             f"Pending: {summary.get('pending', 0)}"
         )
+        report = None
+        try:
+            report = await self.trading_service.build_performance_report(datetime.now(UTC))
+        except Exception as e:
+            logger.debug(f"Performance report unavailable: {e}", exc_info=True)
+        if report is not None:
+            text = f"{text}\n{_performance_report_lines(report)}"
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
     async def risk_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

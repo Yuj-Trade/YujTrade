@@ -104,8 +104,8 @@ def test_paper_ledger_is_used_by_the_trading_service_only():
     assert sorted(set(importers)) == ["trading_service.py"]
 
 
-def test_paper_trading_engine_hard_codes_its_cost_defaults():
+def test_paper_trading_engine_has_no_hard_coded_cost_defaults():
     parameters = inspect.signature(PaperTradingEngine.__init__).parameters
 
-    assert parameters["fee_rate"].default == 0.001
-    assert parameters["slippage_rate"].default == 0.0005
+    assert parameters["fee_rate"].default is inspect.Parameter.empty
+    assert parameters["slippage_rate"].default is inspect.Parameter.empty

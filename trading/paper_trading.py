@@ -21,8 +21,9 @@ class PaperTradingEngine:
         self,
         portfolio: PortfolioManager | None = None,
         risk_manager: RiskManager | None = None,
-        fee_rate: float = 0.001,
-        slippage_rate: float = 0.0005,
+        *,
+        fee_rate: float,
+        slippage_rate: float,
         funding_rate_per_day: float = 0.0,
     ):
         self.portfolio = portfolio or PortfolioManager()

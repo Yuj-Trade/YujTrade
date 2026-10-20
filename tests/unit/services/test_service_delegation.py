@@ -158,3 +158,55 @@ class TestResolveSignalOutcome:
         assert resolution is not None
         assert resolution.exit_reason == "expired"
         assert resolution.exit_price == 100.0
+
+
+class TestBuildPerformanceReport:
+    def _service(self, tmp_path, ledger):
+        from config.settings import ConfigManager
+
+        service = TradingService.__new__(TradingService)
+        service.performance_ledger = ledger
+        service.config_manager = ConfigManager(
+            config_path=str(tmp_path / "config.json"),
+            weights_path=str(tmp_path / "weights.json"),
+        )
+        return service
+
+    async def test_the_service_loads_the_ledger_and_delegates(self, tmp_path):
+        from domain.performance import ResolutionRecord
+        from trading.ledger import PaperLedger
+
+        ledger = PaperLedger(tmp_path / "paper_ledger.db")
+        await ledger.record_resolution(
+            ResolutionRecord(
+                signal_id="sig-1",
+                symbol="BTC/USDT",
+                timeframe="1h",
+                side="buy",
+                entry=100.0,
+                stop=90.0,
+                target=120.0,
+                created_at=datetime(2026, 10, 1, 10, tzinfo=UTC),
+                exit_at=datetime(2026, 10, 1, 14, tzinfo=UTC),
+                exit_price=120.0,
+                exit_reason="target",
+                candles_used=4,
+                resolver_version="paper-resolution-v1",
+            )
+        )
+        service = self._service(tmp_path, ledger)
+
+        report = await service.build_performance_report(datetime(2026, 10, 20, tzinfo=UTC))
+
+        assert report.mode == "paper"
+        assert report.total_resolved == 1
+        assert report.status == "insufficient_sample"
+        assert report.exit_counts["target"] == 1
+
+    async def test_a_service_without_a_ledger_reports_no_trades(self, tmp_path):
+        service = self._service(tmp_path, None)
+
+        report = await service.build_performance_report(datetime(2026, 10, 20, tzinfo=UTC))
+
+        assert report.status == "no_trades"
+        assert report.total_resolved == 0
