@@ -24,6 +24,9 @@ try:
     _outcome_events_total = Counter(
         "yujtrade_outcome_events_total", "Signal outcome events detected", ["kind"]
     )
+    _outcome_notifications_total = Counter(
+        "yujtrade_outcome_notifications_total", "Outcome notification results", ["state"]
+    )
     _equity = Gauge("yujtrade_equity", "Portfolio equity")
     _exposure = Gauge("yujtrade_exposure_pct", "Portfolio exposure pct")
     _signal_latency = Histogram("yujtrade_signal_latency_seconds", "Signal pipeline latency")
@@ -78,6 +81,11 @@ def record_artifact_mismatch():
 def record_outcome_event(kind: str):
     if _PROM:
         _outcome_events_total.labels(kind).inc()
+
+
+def record_outcome_notification(state: str):
+    if _PROM:
+        _outcome_notifications_total.labels(state).inc()
 
 
 def record_order(symbol: str, mode: str, status: str):

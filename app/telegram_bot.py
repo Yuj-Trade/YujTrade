@@ -1,8 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -13,6 +14,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from application.outcome_ports import NotificationDeliveryError
 from application.performance_report import PerformanceReport
 from common.constants import LONG_TERM_CONFIG
 from common.core import TradingSignal
@@ -54,6 +56,26 @@ def _performance_report_lines(report: PerformanceReport) -> str:
         f"No data: {report.exit_counts.get('no_data', 0)} | "
         f"Data hash: {report.data_hash[:8]}"
     )
+
+
+class TelegramOutcomeNotifier:
+    def __init__(self, bot: Bot, chat_id: str) -> None:
+        self._bot = bot
+        self._chat_id = chat_id
+
+    async def send(self, text: str) -> None:
+        try:
+            await self._bot.send_message(chat_id=self._chat_id, text=text)
+        except RetryAfter as exc:
+            raise NotificationDeliveryError(str(exc), permanent=False) from exc
+        except BadRequest as exc:
+            raise NotificationDeliveryError(str(exc), permanent=True) from exc
+        except Forbidden as exc:
+            raise NotificationDeliveryError(str(exc), permanent=True) from exc
+        except TimedOut as exc:
+            raise NotificationDeliveryError(str(exc), permanent=False) from exc
+        except NetworkError as exc:
+            raise NotificationDeliveryError(str(exc), permanent=False) from exc
 
 
 class TelegramBotHandler:

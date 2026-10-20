@@ -6,6 +6,13 @@ from domain.outcome import EVENT_KINDS
 
 MODES = frozenset({"off", "shadow", "live"})
 
+_DEFAULT_KINDS = ("target", "stop", "expired")
+_DEFAULT_TIMEFRAMES: tuple[str, ...] = ()
+_DEFAULT_MAX_ATTEMPTS = 3
+_DEFAULT_CLAIM_TTL_SECONDS = 300
+_DEFAULT_WATCH_INTERVAL_MINUTES = 15
+_DEFAULT_CONCURRENCY = 4
+
 
 class PolicyError(ValueError):
     pass
@@ -35,26 +42,29 @@ def build_policy(
         raise PolicyError(f"unknown outcome_notifications_mode {mode!r}")
     return NotificationPolicy(
         mode=mode,
-        kinds=_parse_kinds(raw.get("outcome_notification_kinds")),
+        kinds=_parse_kinds(raw.get("outcome_notification_kinds", _DEFAULT_KINDS)),
         timeframes=_parse_timeframes(
-            raw.get("outcome_notification_timeframes"), allowed_timeframes
+            raw.get("outcome_notification_timeframes", _DEFAULT_TIMEFRAMES), allowed_timeframes
         ),
-        since=_parse_since(raw.get("outcome_notifications_since"), mode),
+        since=_parse_since(raw.get("outcome_notifications_since", ""), mode),
         max_attempts=_parse_positive_int(
-            raw.get("outcome_notification_max_attempts"), "outcome_notification_max_attempts"
+            raw.get("outcome_notification_max_attempts", _DEFAULT_MAX_ATTEMPTS),
+            "outcome_notification_max_attempts",
         ),
         claim_ttl=timedelta(
             seconds=_parse_positive_number(
-                raw.get("outcome_claim_ttl_seconds"), "outcome_claim_ttl_seconds"
+                raw.get("outcome_claim_ttl_seconds", _DEFAULT_CLAIM_TTL_SECONDS),
+                "outcome_claim_ttl_seconds",
             )
         ),
         watch_interval=timedelta(
             minutes=_parse_positive_number(
-                raw.get("outcome_watch_interval_minutes"), "outcome_watch_interval_minutes"
+                raw.get("outcome_watch_interval_minutes", _DEFAULT_WATCH_INTERVAL_MINUTES),
+                "outcome_watch_interval_minutes",
             )
         ),
         concurrency=_parse_positive_int(
-            raw.get("outcome_watch_concurrency"), "outcome_watch_concurrency"
+            raw.get("outcome_watch_concurrency", _DEFAULT_CONCURRENCY), "outcome_watch_concurrency"
         ),
     )
 

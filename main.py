@@ -3,9 +3,12 @@ import signal
 import sys
 from datetime import UTC, datetime
 
-from app.telegram_bot import TelegramBotHandler
+from app.telegram_bot import TelegramBotHandler, TelegramOutcomeNotifier
+from application.outcome_policy import NotificationPolicy, PolicyError, build_policy
+from common.constants import TIME_FRAMES
 from config.logger import logger
 from config.settings import SecretsManager
+from services.outcome_dispatch import dispatch_outcomes
 from services.trading_service import TradingService
 from utils.resource_manager import ResourceManager
 from utils.scheduler_store import SchedulerStore
@@ -43,9 +46,6 @@ class MainApp:
     async def _scheduled_analysis_loop(self, config_manager):
         interval = self._parse_schedule_hour(config_manager.get("schedule_hour", "*/1"))
         logger.info(f"Scheduled analysis enabled every {interval / 3600:.2f}h.")
-        self.scheduler_store = SchedulerStore(
-            config_manager.get("scheduler_db_path", "runs/scheduler.db")
-        )
         first_iteration = True
         while not self.shutdown_event.is_set():
             if not first_iteration:
@@ -76,6 +76,46 @@ class MainApp:
                     "success",
                 )
 
+    def _load_outcome_policy(self, config_manager) -> NotificationPolicy:
+        try:
+            return build_policy(config_manager.config, frozenset(TIME_FRAMES))
+        except PolicyError as exc:
+            logger.error(f"Outcome notifications disabled: {exc}")
+        except Exception as exc:
+            logger.error(f"Outcome notifications disabled: {exc}", exc_info=True)
+        return build_policy({"outcome_notifications_mode": "off"}, frozenset(TIME_FRAMES))
+
+    async def _outcome_watch_loop(self, policy: NotificationPolicy) -> None:
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self.shutdown_event.wait(), timeout=policy.watch_interval.total_seconds()
+                )
+            except TimeoutError:
+                pass
+            if self.shutdown_event.is_set():
+                break
+            started = datetime.now(UTC)
+            status, error = "success", None
+            try:
+                notifier = (
+                    None
+                    if policy.mode == "shadow"
+                    else TelegramOutcomeNotifier(
+                        self.bot_handler.application.bot, self.bot_handler.admin_chat_id
+                    )
+                )
+                await self.trading_service.watch_outcomes(policy, started)
+                await dispatch_outcomes(
+                    self.trading_service.signal_tracker, notifier, policy, started
+                )
+            except Exception as exc:
+                status, error = "failed", str(exc)
+                logger.error(f"Outcome watch tick failed: {exc}", exc_info=True)
+            await self.scheduler_store.record(
+                "outcome_watch", started, started, datetime.now(UTC), status, error
+            )
+
     async def run(self):
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -99,6 +139,12 @@ class MainApp:
             )
             init_sentry(str(SecretsManager.SENTRY_DSN or ""))
             logger.info(f"YujTrade v{config_manager.get('app_version', '?')} initialized.")
+
+            policy = self._load_outcome_policy(config_manager)
+            if config_manager.get("enable_scheduled_analysis", False) or policy.enabled:
+                self.scheduler_store = SchedulerStore(
+                    config_manager.get("scheduler_db_path", "runs/scheduler.db")
+                )
 
             bot_token = SecretsManager.TELEGRAM_BOT_TOKEN
             if not bot_token:
@@ -137,6 +183,11 @@ class MainApp:
                     self.background_tasks_manager.create_task(
                         self._scheduled_analysis_loop(config_manager),
                         name="ScheduledAnalysis",
+                    )
+                if policy.enabled:
+                    self.background_tasks_manager.create_task(
+                        self._outcome_watch_loop(policy),
+                        name="OutcomeWatch",
                     )
             else:
                 logger.warning("Telegram bot not started due to missing token or admin chat ID.")
