@@ -7,6 +7,7 @@ from typing import Any
 import aiosqlite
 
 from config.logger import logger
+from domain.performance import ResolutionRecord, format_utc_timestamp, parse_utc_timestamp
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
@@ -40,9 +41,43 @@ CREATE TABLE IF NOT EXISTS equity_snapshots (
     mark_prices TEXT NOT NULL,
     captured_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS signal_resolutions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+    entry REAL NOT NULL,
+    stop REAL NOT NULL,
+    target REAL NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    exit_at_utc TEXT,
+    exit_price REAL,
+    exit_reason TEXT NOT NULL CHECK (exit_reason IN ('stop', 'target', 'expired', 'no_data')),
+    candles_used INTEGER NOT NULL CHECK (candles_used >= 0),
+    resolver_version TEXT NOT NULL,
+    recorded_at_utc TEXT NOT NULL,
+    CHECK ((exit_reason = 'no_data') = (exit_price IS NULL)),
+    CHECK ((exit_reason = 'no_data') = (exit_at_utc IS NULL))
+);
+CREATE TRIGGER IF NOT EXISTS signal_resolutions_no_update
+BEFORE UPDATE ON signal_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'signal_resolutions is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS signal_resolutions_no_delete
+BEFORE DELETE ON signal_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'signal_resolutions is append-only');
+END;
 """
 
 _POSITIONS_UPDATED_AT = "ALTER TABLE positions ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+
+_RESOLUTION_COLUMNS = (
+    "signal_id, symbol, timeframe, side, entry, stop, target, created_at_utc, "
+    "exit_at_utc, exit_price, exit_reason, candles_used, resolver_version"
+)
 
 
 class PaperLedger:
@@ -113,6 +148,74 @@ class PaperLedger:
             await connection.close()
         return equity
 
+    async def record_resolution(self, resolution: ResolutionRecord) -> bool:
+        connection = await self._connect()
+        try:
+            await connection.execute(
+                "INSERT INTO signal_resolutions(signal_id, symbol, timeframe, side, entry, stop, "
+                "target, created_at_utc, exit_at_utc, exit_price, exit_reason, candles_used, "
+                "resolver_version, recorded_at_utc) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    resolution.signal_id,
+                    resolution.symbol,
+                    resolution.timeframe,
+                    resolution.side,
+                    float(resolution.entry),
+                    float(resolution.stop),
+                    float(resolution.target),
+                    format_utc_timestamp(resolution.created_at),
+                    None
+                    if resolution.exit_at is None
+                    else format_utc_timestamp(resolution.exit_at),
+                    None if resolution.exit_price is None else float(resolution.exit_price),
+                    resolution.exit_reason,
+                    int(resolution.candles_used),
+                    resolution.resolver_version,
+                    format_utc_timestamp(datetime.now(UTC)),
+                ),
+            )
+            await connection.commit()
+            return True
+        except aiosqlite.IntegrityError as exc:
+            message = str(exc)
+            if "UNIQUE constraint failed" not in message or "signal_id" not in message:
+                raise
+            logger.debug(f"Duplicate resolution ignored for {resolution.signal_id}")
+            return False
+        finally:
+            await connection.close()
+
+    async def has_resolution(self, signal_id: str) -> bool:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                "SELECT 1 FROM signal_resolutions WHERE signal_id = ? LIMIT 1",
+                (signal_id,),
+            )
+            row = await cursor.fetchone()
+            return row is not None
+        finally:
+            await connection.close()
+
+    async def load_resolutions(
+        self, start_utc: datetime, end_utc: datetime
+    ) -> list[ResolutionRecord]:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                f"SELECT {_RESOLUTION_COLUMNS} FROM signal_resolutions "
+                "WHERE COALESCE(exit_at_utc, created_at_utc) BETWEEN ? AND ? "
+                "ORDER BY (exit_at_utc IS NULL), exit_at_utc, signal_id",
+                (format_utc_timestamp(start_utc), format_utc_timestamp(end_utc)),
+            )
+            rows = await cursor.fetchall()
+        finally:
+            await connection.close()
+        records = [_resolution_from_row(row) for row in rows]
+        records.sort(key=_resolution_sort_key)
+        return records
+
     async def _mark_position_stale(
         self, position: dict[str, Any], connection: aiosqlite.Connection
     ) -> None:
@@ -133,3 +236,28 @@ class PaperLedger:
 
     async def close(self) -> None:
         return None
+
+
+def _resolution_sort_key(record: ResolutionRecord) -> tuple[int, str, str]:
+    if record.exit_at is None:
+        return (1, "", record.signal_id)
+    return (0, format_utc_timestamp(record.exit_at), record.signal_id)
+
+
+def _resolution_from_row(row: tuple[Any, ...]) -> ResolutionRecord:
+    exit_at = row[8]
+    return ResolutionRecord(
+        signal_id=str(row[0]),
+        symbol=str(row[1]),
+        timeframe=str(row[2]),
+        side=str(row[3]),
+        entry=float(row[4]),
+        stop=float(row[5]),
+        target=float(row[6]),
+        created_at=parse_utc_timestamp(str(row[7])),
+        exit_at=None if exit_at is None else parse_utc_timestamp(str(exit_at)),
+        exit_price=None if row[9] is None else float(row[9]),
+        exit_reason=str(row[10]),
+        candles_used=int(row[11]),
+        resolver_version=str(row[12]),
+    )
