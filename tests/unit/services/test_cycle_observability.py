@@ -150,6 +150,7 @@ class TestMetricsWiring:
             ),
             resolve=AsyncMock(),
             update_resolution_details=AsyncMock(),
+            set_outcome_event=AsyncMock(return_value=True),
         )
         service.market_data_provider = SimpleNamespace(
             fetch_ohlcv_data=AsyncMock(return_value=None)

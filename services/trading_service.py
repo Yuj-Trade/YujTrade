@@ -1,6 +1,7 @@
 import asyncio
 import math
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -8,6 +9,7 @@ import pandas as pd
 
 from application import performance_report
 from application.gate_config import build_gate_config
+from application.outcome_policy import NotificationPolicy
 from application.performance_report import PerformanceConfig, PerformanceReport
 from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
@@ -17,7 +19,12 @@ from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from domain.gates import normalize_confidence, quality_gate_reason
-from domain.outcome import Resolution, resolve_signal_outcome
+from domain.outcome import (
+    Resolution,
+    event_from_resolution,
+    observe_signal_barrier,
+    resolve_signal_outcome,
+)
 from domain.performance import RESOLVER_VERSION, ResolutionRecord
 from domain.types import SignalDraft
 from modeling.model_manager import ModelDataProvider, ModelManager
@@ -25,7 +32,7 @@ from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.prediction_trace import PredictionTraceRecorder
 from strategy.signal_generator import SignalGenerator
 from strategy.signal_ranking import SignalRanking
-from strategy.signal_tracker import SignalTracker, make_signal_id
+from strategy.signal_tracker import OpenSignal, SignalTracker, make_signal_id
 from trading.execution import ExchangeAdapter, ExecutionEngine
 from trading.ledger import PaperLedger
 from trading.paper_trading import PaperTradingEngine
@@ -34,6 +41,14 @@ from trading.risk_manager import RiskManager, build_risk_config
 from utils.resource_manager import ResourceManager
 
 _LEDGER_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+@dataclass(frozen=True)
+class WatchReport:
+    detected: int
+    groups: int
+    failed_groups: int
+    settled: int
 
 
 async def build_performance_report_from_ledger(
@@ -480,40 +495,110 @@ class TradingService(ModelDataProvider):
 
         resolved_count = 0
         for item in expired:
-            signal_id = item["signal_id"]
-            signal_log = self._log().bind(signal_id=signal_id)
-            details = item["details"]
-            symbol = details.get("symbol")
-            timeframe = details.get("timeframe")
-            entry = details.get("entry")
-            if not symbol or not timeframe or entry is None:
-                signal_log.debug("Reconciliation skipped (missing fields).")
-                continue
             try:
-                created_at = SignalTracker._extract_created_at(signal_id, details)
-                expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
-                resolution = await self._resolve_signal_outcome(
-                    symbol, timeframe, details, created_at, expiry_hours
-                )
-                if resolution is None:
-                    signal_log.debug("Reconciliation skipped (incomplete levels).")
-                    continue
-                if self._performance_ledger_enabled:
-                    stored = await self._store_resolution(
-                        signal_id, symbol, timeframe, details, created_at, resolution
-                    )
-                    if not stored:
-                        continue
-                await self._sync_tracker(signal_id, symbol, timeframe, details, resolution)
-                resolved_count += 1
+                if await self._settle_expired(item):
+                    resolved_count += 1
             except ValueError as e:
-                signal_log.error(f"Signal reconciliation failed: {e}")
+                logger.error(f"Signal reconciliation failed: {e}")
             except Exception as e:
-                signal_log.debug(f"Signal reconciliation skipped: {e}")
+                logger.debug(f"Signal reconciliation skipped: {e}")
 
         if resolved_count:
             logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
         return resolved_count
+
+    async def _settle_expired(self, item: dict[str, Any]) -> bool:
+        signal_id = item["signal_id"]
+        signal_log = self._log().bind(signal_id=signal_id)
+        details = item["details"]
+        symbol = details.get("symbol")
+        timeframe = details.get("timeframe")
+        entry = details.get("entry")
+        if not symbol or not timeframe or entry is None:
+            signal_log.debug("Reconciliation skipped (missing fields).")
+            return False
+        created_at = SignalTracker._extract_created_at(signal_id, details)
+        expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
+        resolution = await self._resolve_signal_outcome(
+            symbol, timeframe, details, created_at, expiry_hours
+        )
+        if resolution is None:
+            signal_log.debug("Reconciliation skipped (incomplete levels).")
+            return False
+        if self._performance_ledger_enabled:
+            stored = await self._store_resolution(
+                signal_id, symbol, timeframe, details, created_at, resolution
+            )
+            if not stored:
+                return False
+        event = event_from_resolution(signal_id, resolution)
+        if event is not None:
+            await self.signal_tracker.set_outcome_event(signal_id, event)
+        await self._sync_tracker(signal_id, symbol, timeframe, details, resolution)
+        return True
+
+    async def watch_outcomes(self, policy: NotificationPolicy, now: datetime) -> WatchReport:
+        open_signals = await self.signal_tracker.open_signals(now, policy.since)
+        groups: dict[tuple[str, str], list[OpenSignal]] = {}
+        for signal in open_signals:
+            if signal.timeframe in policy.timeframes:
+                groups.setdefault((signal.symbol, signal.timeframe), []).append(signal)
+        semaphore = asyncio.Semaphore(policy.concurrency)
+        results = await asyncio.gather(
+            *(
+                self._watch_group(symbol, timeframe, items, now, semaphore)
+                for (symbol, timeframe), items in groups.items()
+            ),
+            return_exceptions=True,
+        )
+        detected = sum(result for result in results if isinstance(result, int))
+        failed = sum(1 for result in results if isinstance(result, BaseException))
+        settled = await self.reconcile_pending_signals()
+        return WatchReport(detected, len(groups), failed, settled)
+
+    async def _watch_group(
+        self,
+        symbol: str,
+        timeframe: str,
+        items: list[OpenSignal],
+        now: datetime,
+        semaphore: asyncio.Semaphore,
+    ) -> int:
+        async with semaphore:
+            duration = candle_duration(timeframe)
+            oldest = min(item.created_at for item in items)
+            count = int(math.ceil((now - oldest).total_seconds() / duration.total_seconds())) + 2
+            try:
+                frame = await self.market_data_provider.fetch_ohlcv_data(
+                    symbol, timeframe, limit=count, bypass_cache=True
+                )
+            except Exception as e:
+                logger.error(f"Outcome watch fetch failed for {symbol}-{timeframe}: {e}")
+                raise
+            candles = _frame_candles(frame)
+            if not candles:
+                logger.debug(f"Outcome watch found no candles for {symbol}-{timeframe}.")
+                return 0
+            detected = 0
+            for signal in items:
+                hit = observe_signal_barrier(
+                    candles,
+                    signal.side,
+                    signal.stop,
+                    signal.target,
+                    signal.created_at,
+                    now,
+                    duration,
+                )
+                if hit is None:
+                    continue
+                event = event_from_resolution(signal.signal_id, hit)
+                if event is not None and await self.signal_tracker.set_outcome_event(
+                    signal.signal_id, event
+                ):
+                    metrics.record_outcome_event(event.kind)
+                    detected += 1
+            return detected
 
     async def _resolve_signal_outcome(
         self,

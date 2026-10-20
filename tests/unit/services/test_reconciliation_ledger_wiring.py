@@ -37,6 +37,7 @@ def _service(ledger, resolution, tracker=None):
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service.model_manager = SimpleNamespace(record_signal_performance=AsyncMock())
     service.signal_generator = SimpleNamespace(threshold_manager=MagicMock(flush=AsyncMock()))
@@ -66,6 +67,7 @@ async def test_the_ledger_is_written_before_the_tracker_is_synchronised():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(side_effect=lambda *_: calls.append("resolve")),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
 
@@ -80,6 +82,7 @@ async def test_an_existing_resolution_skips_the_write_and_syncs_the_tracker():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
 
@@ -99,6 +102,7 @@ async def test_a_ledger_error_keeps_the_signal_pending():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
 
@@ -115,6 +119,7 @@ async def test_a_duplicate_write_keeps_the_signal_pending():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
 
@@ -130,6 +135,7 @@ async def test_a_no_data_resolution_writes_no_boolean_outcome():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("no_data", None, None, 0), tracker)
 
@@ -148,6 +154,7 @@ async def test_the_ledger_is_not_touched_when_the_flag_is_off():
         get_pending_expired=AsyncMock(return_value=[{"signal_id": "sig-1", "details": _details()}]),
         resolve=AsyncMock(),
         update_resolution_details=AsyncMock(),
+        set_outcome_event=AsyncMock(return_value=True),
     )
     service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
     service._performance_ledger_enabled = False
