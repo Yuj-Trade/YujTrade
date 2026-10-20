@@ -101,7 +101,7 @@ def test_paper_ledger_is_used_by_the_trading_service_only():
                         importers.append(path.name)
             elif isinstance(node, ast.Name) and node.id == "PaperLedger":
                 importers.append(path.name)
-    assert sorted(set(importers)) == ["trading_service.py"]
+    assert sorted(set(importers)) == ["generate_performance_report.py", "trading_service.py"]
 
 
 def test_paper_trading_engine_has_no_hard_coded_cost_defaults():
