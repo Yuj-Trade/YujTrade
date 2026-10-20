@@ -1,9 +1,10 @@
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 _NO_DATA = "no_data"
+EVENT_KINDS: frozenset[str] = frozenset({"target", "stop", "expired"})
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,36 @@ class Resolution:
     exit_price: float | None
     exit_at: datetime | None
     candles_used: int
+
+
+@dataclass(frozen=True)
+class OutcomeEvent:
+    signal_id: str
+    kind: str
+    price: float
+    at: datetime
+
+    def __post_init__(self) -> None:
+        if not self.signal_id:
+            raise ValueError("signal_id must be non-empty")
+        if self.kind not in EVENT_KINDS:
+            raise ValueError(f"unsupported outcome kind {self.kind!r}")
+        if not math.isfinite(self.price) or self.price <= 0:
+            raise ValueError("price must be a positive finite number")
+        if self.at.tzinfo is None:
+            raise ValueError("at must be timezone-aware")
+
+
+def event_from_resolution(signal_id: str, resolution: Resolution) -> OutcomeEvent | None:
+    if (
+        resolution.exit_reason not in EVENT_KINDS
+        or resolution.exit_price is None
+        or resolution.exit_at is None
+    ):
+        return None
+    return OutcomeEvent(
+        signal_id, resolution.exit_reason, resolution.exit_price, resolution.exit_at
+    )
 
 
 def resolve_outcome(
@@ -88,22 +119,60 @@ def resolve_signal_outcome(
     if window[-1][0] + candle_duration < end_at:
         return Resolution(_NO_DATA, None, None, 0)
 
-    for index, (timestamp, high, low, _close) in enumerate(window):
-        if normalized_side == "buy":
-            if low <= stop:
-                return Resolution("stop", stop, timestamp, index + 1)
-            if high >= target:
-                return Resolution("target", target, timestamp, index + 1)
-        else:
-            if high >= stop:
-                return Resolution("stop", stop, timestamp, index + 1)
-            if low <= target:
-                return Resolution("target", target, timestamp, index + 1)
+    hit = _first_barrier_hit(window, normalized_side, stop, target)
+    if hit is not None:
+        return hit
 
     for timestamp, _high, _low, close in reversed(window):
         if close is not None:
             return Resolution("expired", close, timestamp, len(window))
     return Resolution(_NO_DATA, None, None, 0)
+
+
+def _first_barrier_hit(
+    window: Sequence[tuple[datetime, float, float, float | None]],
+    side: str,
+    stop: float,
+    target: float,
+) -> Resolution | None:
+    for index, (timestamp, high, low, _close) in enumerate(window):
+        if side == "buy":
+            stop_hit = low <= stop
+            target_hit = high >= target
+        else:
+            stop_hit = high >= stop
+            target_hit = low <= target
+        if stop_hit:
+            return Resolution("stop", stop, timestamp, index + 1)
+        if target_hit:
+            return Resolution("target", target, timestamp, index + 1)
+    return None
+
+
+def observe_signal_barrier(
+    candles: Iterable[Mapping[str, object]],
+    side: str,
+    stop: float,
+    target: float,
+    created_at: datetime,
+    observed_until: datetime,
+    candle_duration: timedelta,
+) -> Resolution | None:
+    normalized_side = side.lower()
+    if normalized_side not in {"buy", "sell"}:
+        raise ValueError(f"unsupported side {side!r}")
+    if created_at.tzinfo is None or observed_until.tzinfo is None:
+        raise ValueError("timestamps must be timezone-aware")
+    if candle_duration <= timedelta(0):
+        raise ValueError("candle_duration must be positive")
+    closed = [
+        item
+        for item in _window_candles(candles, created_at, observed_until)
+        if item[0] + candle_duration <= observed_until
+    ]
+    if not closed or closed[0][0] > created_at + candle_duration:
+        return None
+    return _first_barrier_hit(closed, normalized_side, stop, target)
 
 
 def _window_candles(

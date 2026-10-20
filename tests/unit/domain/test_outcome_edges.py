@@ -1,10 +1,19 @@
 """Edge coverage for the domain outcome resolver: sell side and expiry."""
 
+import math
+import random
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from domain.outcome import resolve_outcome, resolve_signal_outcome
+from domain.outcome import (
+    OutcomeEvent,
+    Resolution,
+    event_from_resolution,
+    observe_signal_barrier,
+    resolve_outcome,
+    resolve_signal_outcome,
+)
 
 _ONE_HOUR = timedelta(hours=1)
 
@@ -253,3 +262,196 @@ class TestResolveSignalOutcome:
         assert previous is not None
         assert resolution.exit_price == previous.exit_price
         assert (resolution.exit_reason == "target") == previous.success
+
+
+class TestObserveSignalBarrier:
+    def test_a_target_touch_is_detected_for_a_buy(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        candles = [
+            _full_candle(base, 101.0, 99.0, 100.0),
+            _full_candle(base + _ONE_HOUR, 112.0, 101.0, 110.0),
+        ]
+
+        observed = observe_signal_barrier(
+            candles, "buy", 95.0, 110.0, base, base + timedelta(hours=2), _ONE_HOUR
+        )
+
+        assert observed is not None
+        assert observed.exit_reason == "target"
+        assert observed.exit_price == 110.0
+        assert observed.exit_at == base + _ONE_HOUR
+        assert observed.candles_used == 2
+
+    def test_a_stop_touch_is_detected_for_a_sell(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        candles = [
+            _full_candle(base, 101.0, 99.0, 100.0),
+            _full_candle(base + _ONE_HOUR, 106.0, 101.0, 105.0),
+        ]
+
+        observed = observe_signal_barrier(
+            candles, "sell", 105.0, 90.0, base, base + timedelta(hours=2), _ONE_HOUR
+        )
+
+        assert observed is not None
+        assert observed.exit_reason == "stop"
+        assert observed.exit_price == 105.0
+        assert observed.exit_at == base + _ONE_HOUR
+
+    def test_the_stop_wins_when_one_candle_touches_both_levels(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        candles = [_full_candle(base, 112.0, 94.0, 100.0)]
+
+        observed = observe_signal_barrier(
+            candles, "buy", 95.0, 110.0, base, base + timedelta(hours=1), _ONE_HOUR
+        )
+
+        assert observed is not None
+        assert observed.exit_reason == "stop"
+
+    def test_a_candle_that_is_not_closed_is_not_used(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        candles = [
+            _full_candle(base, 101.0, 99.0, 100.0),
+            _full_candle(base + _ONE_HOUR, 112.0, 101.0, 110.0),
+        ]
+
+        observed = observe_signal_barrier(
+            candles, "buy", 95.0, 110.0, base, base + timedelta(hours=1), _ONE_HOUR
+        )
+
+        assert observed is None
+
+    def test_a_window_that_starts_too_late_is_not_observed(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        candles = [_full_candle(base + timedelta(hours=2), 112.0, 101.0, 110.0)]
+
+        observed = observe_signal_barrier(
+            candles, "buy", 95.0, 110.0, base, base + timedelta(hours=3), _ONE_HOUR
+        )
+
+        assert observed is None
+
+    def test_an_empty_candle_set_is_not_observed(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+
+        observed = observe_signal_barrier(
+            [], "buy", 95.0, 110.0, base, base + timedelta(hours=3), _ONE_HOUR
+        )
+
+        assert observed is None
+
+    def test_an_unsupported_side_raises(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+
+        with pytest.raises(ValueError):
+            observe_signal_barrier([], "hold", 95.0, 110.0, base, base, _ONE_HOUR)
+
+    def test_a_naive_timestamp_raises(self):
+        base = datetime(2026, 1, 1)
+
+        with pytest.raises(ValueError):
+            observe_signal_barrier([], "buy", 95.0, 110.0, base, base, _ONE_HOUR)
+
+    def test_a_non_positive_candle_duration_raises(self):
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+
+        with pytest.raises(ValueError):
+            observe_signal_barrier([], "buy", 95.0, 110.0, base, base, timedelta(0))
+
+
+class TestOutcomeEvent:
+    def test_a_valid_event_is_accepted(self):
+        event = OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 1, 1, tzinfo=UTC))
+
+        assert event.kind == "target"
+        assert event.price == 110.0
+
+    def test_an_unknown_kind_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("sig-1", "timeout", 110.0, datetime(2026, 1, 1, tzinfo=UTC))
+
+    def test_a_zero_price_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("sig-1", "target", 0.0, datetime(2026, 1, 1, tzinfo=UTC))
+
+    def test_a_negative_price_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("sig-1", "target", -1.0, datetime(2026, 1, 1, tzinfo=UTC))
+
+    def test_a_non_finite_price_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("sig-1", "target", math.inf, datetime(2026, 1, 1, tzinfo=UTC))
+
+    def test_a_naive_timestamp_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("sig-1", "target", 110.0, datetime(2026, 1, 1))
+
+    def test_an_empty_signal_id_raises(self):
+        with pytest.raises(ValueError):
+            OutcomeEvent("", "target", 110.0, datetime(2026, 1, 1, tzinfo=UTC))
+
+    def test_a_resolution_becomes_an_event(self):
+        resolution = Resolution("target", 110.0, datetime(2026, 1, 1, tzinfo=UTC), 2)
+
+        event = event_from_resolution("sig-1", resolution)
+
+        assert event is not None
+        assert event.signal_id == "sig-1"
+        assert event.kind == "target"
+        assert event.price == 110.0
+
+    def test_a_no_data_resolution_becomes_no_event(self):
+        resolution = Resolution("no_data", None, None, 0)
+
+        assert event_from_resolution("sig-1", resolution) is None
+
+
+class TestObserveSignalBarrierParity:
+    def test_the_observation_matches_the_final_resolution(self):
+        rng = random.Random(20261020)
+        created = datetime(2026, 1, 1, tzinfo=UTC)
+        expiry = 24
+        duration = _ONE_HOUR
+        compared = 0
+
+        for _ in range(300):
+            side = rng.choice(["buy", "sell"])
+            stop = 95.0 if side == "buy" else 105.0
+            target = 110.0 if side == "buy" else 90.0
+            candles = []
+            for index in range(-1, expiry + 1):
+                candles.append(
+                    {
+                        "timestamp": created + timedelta(hours=index),
+                        "high": 100.0 + rng.uniform(0.0, 14.0),
+                        "low": 100.0 - rng.uniform(0.0, 14.0),
+                        "close": 100.0 + rng.uniform(-3.0, 3.0),
+                    }
+                )
+            hours = rng.randint(1, expiry)
+            observed_until = created + timedelta(hours=hours)
+
+            observed = observe_signal_barrier(
+                candles, side, stop, target, created, observed_until, duration
+            )
+            if observed is None:
+                continue
+            compared += 1
+            final = resolve_signal_outcome(
+                candles,
+                side,
+                100.0,
+                stop,
+                target,
+                created_at=created,
+                expiry_hours=expiry,
+                candle_duration=duration,
+            )
+
+            assert final.exit_reason == observed.exit_reason
+            assert final.exit_price == observed.exit_price
+            assert final.exit_at == observed.exit_at
+            assert final.candles_used == observed.candles_used
+
+        assert compared > 0
