@@ -545,8 +545,7 @@ def _notification_details(**overrides):
 class TestSignalTrackerOutcomeNotificationDefects:
     """The defects that block a reliable outcome notification."""
 
-    @pytest.mark.xfail(strict=True, reason="D1")
-    async def test_reopened_open_signal_keeps_first_creation_and_levels(self, tmp_path):
+    async def test_a_re_recorded_open_signal_is_kept_by_record_if_absent(self, tmp_path):
         tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
         first = _notification_details(notification_state="pending")
         second = _notification_details(
@@ -556,8 +555,8 @@ class TestSignalTrackerOutcomeNotificationDefects:
             target=210.0,
         )
 
-        await tracker.record("sig-1", None, first)
-        await tracker.record("sig-1", None, second)
+        assert await tracker.record_if_absent("sig-1", first) is True
+        assert await tracker.record_if_absent("sig-1", second) is False
 
         details = tracker.history["sig-1"]["details"]
         assert details["created_at"] == first["created_at"]
@@ -566,7 +565,6 @@ class TestSignalTrackerOutcomeNotificationDefects:
         assert details["target"] == 110.0
         assert details["notification_state"] == "pending"
 
-    @pytest.mark.xfail(strict=True, reason="D2")
     async def test_rotation_never_drops_protected_entries(self, tmp_path):
         tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"), max_entries=2)
         old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
@@ -619,7 +617,6 @@ class TestSignalTrackerOutcomeNotificationDefects:
 
         assert path.read_text(encoding="utf-8") == previous
 
-    @pytest.mark.xfail(strict=True, reason="D6")
     async def test_prune_keeps_resolved_entry_with_open_notification(self, tmp_path):
         tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"), ttl_days=30)
         old = (datetime.now(UTC) - timedelta(days=45)).isoformat()
@@ -657,3 +654,45 @@ class TestSignalTrackerNotificationCharacterization:
 
         assert list(tracker.history) == ["sig-1"]
         assert tracker.history["sig-1"]["details"]["entry"] == 101.0
+
+
+class TestSignalTrackerProtectedEntries:
+    """The entries that carry a pending state must survive the housekeeping."""
+
+    async def test_record_if_absent_returns_false_for_existing_open_signal(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+        details = _notification_details()
+
+        assert await tracker.record_if_absent("sig-1", details) is True
+        assert await tracker.record_if_absent("sig-1", _notification_details(entry=200.0)) is False
+        assert tracker.history["sig-1"]["details"]["entry"] == 100.0
+
+    async def test_record_if_absent_keeps_the_first_creation_and_levels(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+        first = _notification_details(notification_state="pending")
+        second = _notification_details(
+            created_at=datetime(2026, 10, 5, 10, tzinfo=UTC).isoformat(),
+            entry=200.0,
+        )
+
+        await tracker.record_if_absent("sig-1", first)
+        await tracker.record_if_absent("sig-1", second)
+
+        details = tracker.history["sig-1"]["details"]
+        assert details["created_at"] == first["created_at"]
+        assert details["entry"] == 100.0
+        assert details["notification_state"] == "pending"
+
+    async def test_rotation_moves_only_settled_entries_to_rotated_file(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "history.json"), max_entries=2)
+        old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+        mid = (datetime.now(UTC) - timedelta(days=5)).isoformat()
+        new = datetime.now(UTC).isoformat()
+
+        await tracker.record("open|1h|sig|BUY", None, _notification_details(created_at=old))
+        await tracker.record("settled|1h|sig|BUY", True, _notification_details(created_at=mid))
+        await tracker.record("fresh|1h|sig|BUY", None, _notification_details(created_at=new))
+
+        assert "open|1h|sig|BUY" in tracker.history
+        rotated = json.loads((tmp_path / "history.rotated.json").read_text(encoding="utf-8"))
+        assert set(rotated) == {"settled|1h|sig|BUY"}

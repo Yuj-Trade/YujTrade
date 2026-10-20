@@ -297,9 +297,8 @@ class TradingService(ModelDataProvider):
                 )
 
                 try:
-                    await self.signal_tracker.record(
+                    await self.signal_tracker.record_if_absent(
                         signal_id,
-                        None,
                         {
                             "symbol": signal.symbol,
                             "timeframe": signal.timeframe,

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ import numpy as np
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
 from config.logger import logger
 from domain.signal_id import make_signal_id as _make_signal_id
+
+TERMINAL_NOTIFICATION_STATES = frozenset({"sent", "shadowed", "suppressed", "abandoned"})
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -26,6 +29,16 @@ def write_text_atomic(path: Path, text: str) -> None:
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def _is_protected(data: Mapping[str, Any]) -> bool:
+    if data.get("outcome") is None:
+        return True
+    details = data.get("details") or {}
+    return (
+        "outcome_event" in details
+        and details.get("notification_state") not in TERMINAL_NOTIFICATION_STATES
+    )
 
 
 def make_signal_id(symbol: str, timeframe: str, timestamp: datetime, signal_type: str) -> str:
@@ -89,6 +102,16 @@ class SignalTracker:
         async with self._lock:
             await self._record_locked(signal_id, outcome, details)
 
+    async def record_if_absent(self, signal_id: str, details: dict[str, Any]) -> bool:
+        async with self._lock:
+            if signal_id in self.history:
+                return False
+            self.history[signal_id] = {"outcome": None, "details": details}
+            self._prune_expired()
+            self._rotate_if_needed()
+            await self._save_history()
+            return True
+
     async def _record_locked(self, signal_id: str, outcome: bool | None, details: dict[str, Any]):
         existing = self.history.get(signal_id)
         if existing is not None and existing.get("outcome") is not None and outcome is None:
@@ -111,7 +134,7 @@ class SignalTracker:
         cutoff = self._entry_age_cutoff()
         expired_ids = []
         for sid, data in self.history.items():
-            if data.get("outcome") is None:
+            if _is_protected(data):
                 continue
             details = data.get("details", {})
             raw = details.get("resolved_at") or details.get("created_at")
@@ -134,25 +157,32 @@ class SignalTracker:
         overflow = len(self.history) - self.max_entries
         if overflow <= 0:
             return
-        ordered = sorted(
-            self.history.items(),
+        candidates = [(sid, data) for sid, data in self.history.items() if not _is_protected(data)]
+        candidates.sort(
             key=lambda item: (
                 SignalTracker._extract_created_at(item[0], item[1].get("details", {}))
                 or datetime.min.replace(tzinfo=UTC)
             ),
         )
-        rotated_out = dict(ordered[:overflow])
-        self.history = dict(ordered[overflow:])
+        movable = candidates[:overflow]
+        if len(movable) < overflow:
+            protected = len(self.history) - len(movable)
+            logger.warning(
+                f"Signal history rotation kept {protected} protected entries, "
+                f"{len(self.history)} entries exceed the limit of {self.max_entries}."
+            )
+        rotated_out = dict(movable)
+        for sid in rotated_out:
+            del self.history[sid]
         existing_rotated = {}
         if self.rotation_path.exists():
             try:
-                with open(self.rotation_path) as f:
+                with open(self.rotation_path, encoding="utf-8") as f:
                     existing_rotated = json.load(f)
             except (OSError, json.JSONDecodeError):
                 existing_rotated = {}
         existing_rotated.update(rotated_out)
-        with open(self.rotation_path, "w") as f:
-            json.dump(existing_rotated, f, indent=4)
+        write_text_atomic(self.rotation_path, json.dumps(existing_rotated, indent=4))
 
     async def resolve(self, signal_id: str, outcome: bool, details: dict[str, Any] = None):
         async with self._lock:
