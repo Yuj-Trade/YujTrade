@@ -580,7 +580,6 @@ class TestSignalTrackerOutcomeNotificationDefects:
         assert "old|1h|sig|BUY" in tracker.history
         assert "new|1h|sig|BUY" in tracker.history
 
-    @pytest.mark.xfail(strict=True, reason="D3")
     def test_corrupt_history_is_backed_up_not_overwritten(self, tmp_path):
         path = tmp_path / "signal_history.json"
         path.write_text("{not json", encoding="utf-8")
@@ -590,9 +589,20 @@ class TestSignalTrackerOutcomeNotificationDefects:
         assert tracker.history == {}
         backups = sorted(tmp_path.glob("signal_history.corrupt-*.json"))
         assert backups, "the unreadable history must be backed up"
-        assert path.read_text(encoding="utf-8") == "{not json"
+        assert backups[0].read_text(encoding="utf-8") == "{not json"
 
-    @pytest.mark.xfail(strict=True, reason="D3")
+    async def test_history_roundtrip_is_byte_stable(self, tmp_path):
+        path = tmp_path / "signal_history.json"
+        tracker = SignalTracker(storage_path=str(path))
+
+        await tracker.record("sig-1", None, _notification_details())
+        written = path.read_text(encoding="utf-8")
+
+        restored = SignalTracker(storage_path=str(path))
+
+        assert restored.history == tracker.history
+        assert json.dumps(restored.history, indent=4) == written
+
     async def test_save_failure_leaves_previous_file_intact(self, tmp_path, monkeypatch):
         path = tmp_path / "signal_history.json"
         tracker = SignalTracker(storage_path=str(path))

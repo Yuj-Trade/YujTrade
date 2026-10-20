@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,21 @@ import numpy as np
 from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME
 from config.logger import logger
 from domain.signal_id import make_signal_id as _make_signal_id
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def make_signal_id(symbol: str, timeframe: str, timestamp: datetime, signal_type: str) -> str:
@@ -33,21 +50,40 @@ class SignalTracker:
         return self.storage_path.with_suffix(".rotated.json")
 
     def _load_history(self) -> dict[str, Any]:
-        if self.storage_path.exists():
-            try:
-                with open(self.storage_path) as f:
-                    return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return {}
-        return {}
+        if not self.storage_path.exists():
+            return {}
+        try:
+            with open(self.storage_path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._backup_corrupt_history(exc)
+            return {}
+        if not isinstance(payload, dict):
+            self._backup_corrupt_history(TypeError("the history root must be a mapping"))
+            return {}
+        return payload
 
-    def _save_history_sync(self):
-        with open(self.storage_path, "w") as f:
-            json.dump(self.history, f, indent=4)
+    def _backup_corrupt_history(self, exc: Exception) -> None:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        backup = self.storage_path.with_name(
+            f"{self.storage_path.stem}.corrupt-{stamp}{self.storage_path.suffix}"
+        )
+        try:
+            os.replace(self.storage_path, backup)
+        except OSError as move_error:
+            logger.error(
+                f"Signal history {self.storage_path} is unreadable ({exc}) and the backup "
+                f"failed: {move_error}"
+            )
+            return
+        logger.error(
+            f"Signal history {self.storage_path} was unreadable ({exc}); it was moved to {backup}"
+        )
 
     async def _save_history(self):
+        payload = json.dumps(self.history, indent=4)
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._save_history_sync)
+        await loop.run_in_executor(None, write_text_atomic, self.storage_path, payload)
 
     async def record(self, signal_id: str, outcome: bool | None, details: dict[str, Any]):
         async with self._lock:
