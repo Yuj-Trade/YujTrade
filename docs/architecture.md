@@ -83,3 +83,34 @@ produce the same report.
 
 Definitions, decisions and limitations: `docs/adr/ADR-0009-performance-metrics.md`.
 Worked example: `docs/performance-worked-example.md`.
+
+## Outcome notification flow
+
+```
+main.py: OutcomeWatch loop
+  -> TradingService.watch_outcomes(policy, now)
+       -> SignalTracker.open_signals(now, since)
+       -> domain.outcome.observe_signal_barrier   (closed candles only)
+       -> SignalTracker.set_outcome_event          (first event wins)
+       -> TradingService.reconcile_pending_signals (expiry resolution)
+  -> services.outcome_dispatch.dispatch_outcomes(tracker, notifier, policy, now)
+       -> SignalTracker.claim_notification / complete_notification / fail_notification
+       -> application.outcome_message.render_outcome
+       -> OutcomeNotifier.send                     (Telegram in production)
+```
+
+The flow is **notify-only**: the observation records an event and never
+writes a resolution, never touches the paper ledger and never changes the
+outcome of a signal, so the performance report stays reproducible. The
+detection uses the closed candles only, therefore the notification delay is
+the candle duration plus the watch interval. The delivery is at-least-once
+with a claim TTL and a bounded number of attempts.
+
+The policy (`application/outcome_policy.py`) decides the mode, the eligible
+kinds, the eligible timeframes, the lower bound and the delivery limits
+from the configuration. The channel is the `OutcomeNotifier` protocol
+(`application/outcome_ports.py`), so a new channel does not touch the
+domain or the loop. `app/tasks.py` is not wired to this flow and must never
+run a second stack or a second tracker over the same history.
+
+Decisions: `docs/adr/ADR-0010-signal-outcome-notifications.md`.

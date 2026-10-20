@@ -208,7 +208,66 @@ stays `false` in the committed defaults and is turned on in the local
 5. Two runs of the report script over the same data must print the same
    `data_hash`.
 
-## 11. Troubleshooting
+## 11. Signal outcome notifications
+
+### The job in the scheduler store
+
+The watch loop records its runs in `runs/scheduler.db` under the job name
+`outcome_watch`, next to the `scheduled_analysis` job. The row holds the
+scheduled, the started and the finished instant, the status (`success` or
+`failed`) and the error text. A `failed` row means the tick raised; the
+notification state of the affected signals is untouched, so the next tick
+retries them.
+
+### The notification states
+
+The state of a signal lives in `signal_history.json`, in the details of the
+signal.
+
+| State | Meaning |
+|---|---|
+| `pending` | the event is recorded and the message was not delivered yet |
+| `claimed` | a delivery is in flight; the claim expires after `outcome_claim_ttl_seconds` |
+| `sent` | the message was delivered |
+| `shadowed` | the event was recorded but the mode is `shadow`, so nothing was sent |
+| `suppressed` | the event does not match the configured kinds, timeframes or lower bound |
+| `abandoned` | the delivery failed permanently or the attempt limit was reached |
+
+A `pending` or `claimed` entry is protected: the pruning and the rotation
+never remove it. A terminal entry can be pruned after the TTL and can be
+rotated away.
+
+### Checking one signal
+
+```bash
+python -c "import json;d=json.load(open('signal_history.json'));\
+print(json.dumps(d['<signal_id>'], indent=2))"
+```
+
+The details carry `outcome_event`, `outcome_event_at`,
+`outcome_event_price`, `notification_state`, `notification_attempts` and,
+while the delivery is in flight, `notification_claimed_at`.
+
+### Rollback
+
+1. Set `outcome_notifications_mode` to `off` in `config.json`.
+2. Restart the bot: `python main.py`.
+3. The watch loop no longer starts, so no message is sent. The state stays
+   in `signal_history.json` and no migration is needed.
+4. A `pending` notification is delivered again at the next activation,
+   unless a new `outcome_notifications_since` excludes it.
+
+### Troubleshooting
+
+| Symptom | Action |
+|---|---|
+| No notification arrives | check the mode, the `outcome_notifications_since` bound and the `notification_state` of the signal; the notification delay is the candle duration plus the watch interval |
+| `Outcome notifications disabled` in the log | the configuration is invalid; the feature is off until it is fixed |
+| `outcome_watch` job is `failed` | read the error column of the row in `runs/scheduler.db` |
+| A message arrives twice | at-least-once delivery: the process died between the send and the completion, the claim TTL bounds the window |
+| A signal stays `pending` | the delivery keeps failing; the attempts counter shows the progress and the notification is abandoned at the limit |
+
+## 12. Troubleshooting
 
 | Symptom | Action |
 |---|---|

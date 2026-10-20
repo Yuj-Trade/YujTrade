@@ -29,7 +29,7 @@ Layer map:
 | `app/` | `telegram_bot.py` (TelegramBotHandler), `tasks.py`. |
 | `utils/` | `background_manager`, `circuit_breaker`, `resource_manager`, `security` (`KeyEncryptor`), `scheduler_store`. |
 | `scripts/` | Operator entry points (see Commands). |
-| `tests/` | 321 default-gate tests plus slow golden/holdout tests (`tests/golden/`). |
+| `tests/` | 725 default-gate tests plus slow golden/holdout tests (`tests/golden/`). |
 
 ## Installation
 
@@ -86,9 +86,43 @@ decrypted via `KeyEncryptor` (see `scripts/encrypt_keys.py`):
 | `metrics_enabled` / `METRICS_PORT` | `false` / `9108` | Prometheus on `127.0.0.1:9108` when enabled |
 | `scheduler_db_path` | `runs/scheduler.db` | SQLite job-run ledger |
 | `execution_dry_run` | `true` | Read via `config_manager.get("execution_dry_run", True)`; keep `true` until a separately reviewed live deployment |
+| `outcome_notifications_mode` | `"off"` | `off`, `shadow` (record without sending) or `live` (send to the admin) |
+| `outcome_notifications_since` | `""` | ISO instant with timezone; required for every mode other than `off`, only the signals created at or after it are notified |
+| `outcome_notification_kinds` | `["target", "stop", "expired"]` | The event kinds that are notified |
+| `outcome_notification_timeframes` | `[]` | The timeframes that are notified; empty means every supported timeframe |
+| `outcome_watch_interval_minutes` | `15` | How often the watch loop runs |
+| `outcome_notification_max_attempts` | `3` | Delivery attempts before the notification is abandoned |
+| `outcome_claim_ttl_seconds` | `300` | How long a claimed notification stays claimed before it can be claimed again |
+| `outcome_watch_concurrency` | `4` | How many symbol and timeframe groups are observed at the same time |
 
 Runtime overrides live in `config.json` (untracked, created at runtime).
 Indicator weights live in `indicator_weights.json` (tracked).
+
+## Signal outcome notifications
+
+The bot can tell the administrator that a signal reached its take-profit,
+its stop-loss or its expiry. The feature is **off by default**.
+
+- `outcome_notifications_mode` decides what happens: `off` disables it
+  completely, `shadow` records the events and the state transitions without
+  sending anything, `live` sends the message to the admin chat.
+- `outcome_notifications_since` is the lower bound. Every mode other than
+  `off` needs it, and it must be an ISO instant with a timezone, for
+  example `2026-10-20T00:00:00+00:00`. Only the signals created at or
+  after that instant are notified, so a fresh installation cannot replay
+  the whole history.
+- The notification delay is the duration of the candle plus the watch
+  interval: a target that is touched inside a one-hour candle is reported
+  after the candle closes, and the watch loop then picks it up within
+  `outcome_watch_interval_minutes`.
+- The notification is **notify-only**. It never changes the outcome of a
+  signal, never writes to the paper ledger and never changes the
+  performance report.
+- An invalid configuration disables the feature and is logged; it never
+  stops the bot.
+
+See `docs/runbook.md` for the daily checks and
+`docs/adr/ADR-0010-signal-outcome-notifications.md` for the decisions.
 
 ## Commands
 
