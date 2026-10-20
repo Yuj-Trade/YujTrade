@@ -18,6 +18,7 @@ from domain.outcome import resolve_outcome
 from domain.types import SignalDraft
 from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
+from strategy.prediction_trace import PredictionTraceRecorder
 from strategy.signal_generator import SignalGenerator
 from strategy.signal_ranking import SignalRanking
 from strategy.signal_tracker import SignalTracker, make_signal_id
@@ -74,10 +75,16 @@ class TradingService(ModelDataProvider):
             auto_train_on_predict=self.config_manager.get("model_auto_train_on_predict", False),
         )
 
+        self.trace_recorder = PredictionTraceRecorder(
+            directory=str(self.config_manager.get("prediction_trace_dir", "runs/feature_vectors")),
+            enabled=bool(self.config_manager.get("prediction_trace_enabled", False)),
+        )
+
         self.signal_generator = SignalGenerator(
             data_provider=self.market_data_provider,
             model_manager=self.model_manager,
             config_manager=self.config_manager,
+            trace_recorder=self.trace_recorder,
         )
 
         self.multi_tf_analyzer = MultiTimeframeAnalyzer(

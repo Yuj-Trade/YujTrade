@@ -1,6 +1,7 @@
 # Open Issues Register
 
-Status as of 2026-10-14 (v4.0 + cache/TTL phase complete, verified locally).
+Status as of 2026-10-20 (Phases 0-2 of IMPROVEMENT_REPORT.md delivered,
+Phase 3 model lifecycle in progress, verified locally).
 A `blocked` entry never guesses missing content; it records the reason and moves on.
 Resolved items live under Resolved with their evidence; nothing resolved stays
 in the open lists.
@@ -68,6 +69,41 @@ in the open lists.
 - [x] `backtrader` removed from `requirements.txt` (never imported by any
   tracked production module); enforced by
   `tests/unit/scripts/test_dead_code_guard.py::test_backtrader_neither_declared_nor_imported`.
+- [x] Phase 1 (architecture & I/O): `PaperLedger` migrated to `aiosqlite`
+  with the append-only and unique-`signal_id` contract preserved; run-scoped
+  external-data memoization collapses one upstream call per datum per cycle.
+- [x] Phase 2 (signal quality & observability): `signal_history.json` is
+  TTL-bounded and rotates, `AdaptiveThresholdManager` state survives a
+  restart, replayed cycles are idempotent, and every lifecycle transition
+  carries correlation IDs and metrics.
+- [x] Phase 3 (model lifecycle): feature-drift detection
+  (`modeling/drift.py`), warm-start retraining, guarded promotion with
+  automatic rollback (`modeling/promotion.py`), a training CLI with
+  `--dry-run`/`--warm-start`/`--data`, a versioned Monte-Carlo block in the
+  holdout report, a walk-forward validation job, and a prediction-time
+  feature trace. Rationale in `docs/adr/ADR-0008-model-lifecycle.md`.
+- [x] Training corrupted the promoted artifact. A model resolves its file
+  paths from its own `model_path`, and `ModelManager.get_model` points that
+  path at the promoted artifact directory so the model can be loaded from it.
+  `fit()` then saved the new weights *into the promoted version directory*,
+  invalidating its recorded `files_sha256` and making the promoted artifact
+  fail `verify_current` on the next load. Training now writes to a staging
+  directory and the registry copies the staged files into the new version; a
+  non-promoted candidate is also evicted from the in-memory cache so the next
+  prediction reloads the promoted artifact. Enforced by
+  `tests/unit/modeling/test_training_isolation.py` (7 tests).
+- [ ] Golden baselines are not byte-reproducible on every machine. The
+  determinism test fails on a clean checkout of `main` (verified by stashing
+  the Phase 3 work: the same test fails without it). The drift is ULP-level
+  in `confidence_score` only — 59 signals, 15 trades and every other field
+  are identical — and TensorFlow reports "oneDNN custom operations are on.
+  You may see slightly different numerical results due to floating-point
+  round-off errors from different computation orders". The committed
+  baseline was recorded on a different TensorFlow build. `TF_ENABLE_ONEDNN_OPTS=0`
+  changes the recorded values again (53 differing lines instead of 49), so it
+  is not a fix. Do not re-record the baseline from a single workstation;
+  re-record in the Linux CI image, or pin the TensorFlow build used for the
+  original recording, and keep the hash check as the gate.
 
 ## New issues for the next phase — in fix order
 
@@ -96,8 +132,11 @@ in the open lists.
 7. Sync `sqlite3` in async paths (`SchedulerStore`, `IndicatorHistoryWarehouse`,
    `PaperLedger` hold a blocking connection). Measure loop impact first,
    then migrate behind the same discipline as the asset-reference store.
-   (Warehouse + SchedulerStore are migrated; `PaperLedger` remains — see
+   (Warehouse + SchedulerStore + `PaperLedger` are migrated — see
    IMPROVEMENT_REPORT.md Phase 1.)
+8. Feature store for training reuse. The Phase 3 prediction trace records
+   what the model saw at prediction time; a store that training can consume
+   needs its own OpenSpec proposal (`add-feature-store`) before it is built.
 
 ## Legacy tracked artifacts (resolved in v3.0, still true)
 

@@ -88,6 +88,35 @@ class BaseModel:
             )
         return False
 
+    def _scaler_is_fitted(self) -> bool:
+        scaler = getattr(self.feature_engineer, "scaler", None)
+        return scaler is not None and getattr(scaler, "scale_", None) is not None
+
+    def _should_fit_scaler(self, warm_start: bool) -> bool:
+        if warm_start and self._scaler_is_fitted():
+            return False
+        return True
+
+    def _capture_weights(self, warm_start: bool) -> Any:
+        if not warm_start or not self.is_trained or self.model is None:
+            return None
+        try:
+            return self.model.get_weights()
+        except Exception as e:
+            self.logger.warning(f"Could not capture weights for warm start: {e}")
+            return None
+
+    def _restore_weights(self, weights: Any) -> None:
+        if weights is None:
+            return
+        try:
+            self.model.set_weights(weights)
+            self.logger.info("Warm start restored persisted model weights")
+        except Exception as e:
+            self.logger.warning(
+                f"Warm start could not restore weights ({e}); continuing from fresh weights"
+            )
+
     def fit(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -163,7 +192,9 @@ class LSTMModel(BaseModel):
             self.model.compile(optimizer=optimizer, loss="huber", metrics=["mae"])
             self.logger.debug(f"Created LSTM model for {self.symbol}-{self.timeframe}")
 
-    def fit(self, data: pd.DataFrame, epochs=15, batch_size=None, validation_split=0.2) -> bool:
+    def fit(
+        self, data: pd.DataFrame, epochs=15, batch_size=None, validation_split=0.2, warm_start=False
+    ) -> bool:
         self._check_if_closed()
         try:
             if data is None or data.empty or len(data) < self.sequence_length + 20:
@@ -182,7 +213,10 @@ class LSTMModel(BaseModel):
                 )
                 return False
 
-            scaled_features = self.feature_engineer.scale_features(features, fit=True)
+            previous_weights = self._capture_weights(warm_start)
+            scaled_features = self.feature_engineer.scale_features(
+                features, fit=self._should_fit_scaler(warm_start)
+            )
             if scaled_features is None or len(scaled_features) < self.sequence_length + 20:
                 self.logger.warning(
                     f"Feature scaling failed or resulted in insufficient data "
@@ -192,6 +226,7 @@ class LSTMModel(BaseModel):
 
             self.input_shape = (self.sequence_length, scaled_features.shape[1])
             self._create_model()
+            self._restore_weights(previous_weights)
 
             X, y = self.feature_engineer.create_sequences(
                 scaled_features, scaled_features[:, 0], self.sequence_length
@@ -428,7 +463,7 @@ class XGBoostModel(BaseModel):
         self.params = default_params
         self.model = xgb.XGBRegressor(**self.params)
 
-    def fit(self, data: pd.DataFrame, validation_split=0.2) -> bool:
+    def fit(self, data: pd.DataFrame, validation_split=0.2, warm_start=False) -> bool:
         self._check_if_closed()
         try:
             if data is None or data.empty or len(data) < 50:
@@ -446,7 +481,9 @@ class XGBoostModel(BaseModel):
             target = features["close"].shift(-1).dropna()
             features = features.loc[target.index]
 
-            scaled_features = self.feature_engineer.scale_features(features, fit=True)
+            scaled_features = self.feature_engineer.scale_features(
+                features, fit=self._should_fit_scaler(warm_start)
+            )
             if scaled_features is None:
                 self.logger.warning(
                     f"Feature scaling failed for XGBoost {self.symbol}-{self.timeframe}"
@@ -480,6 +517,9 @@ class XGBoostModel(BaseModel):
                 "eval_set": [(X_val.values, y_val.values)],
                 "verbose": False,
             }
+            if warm_start and self.is_trained and self.model is not None:
+                fit_kwargs["xgb_model"] = self.model
+                self.logger.info("Warm start continuing from the persisted booster")
             try:
                 self.model.fit(
                     X_train.values,

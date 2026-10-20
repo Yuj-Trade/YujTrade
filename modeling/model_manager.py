@@ -1,6 +1,7 @@
 import asyncio
 import os
 from concurrent.futures import CancelledError, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
@@ -16,6 +17,17 @@ from modeling.models import BaseModel, LSTMModel, XGBoostModel
 
 LABEL_HORIZON = 1
 OOS_FRACTION = 0.2
+
+
+@dataclass(frozen=True)
+class TrainingOutcome:
+    model_type: str
+    symbol: str
+    timeframe: str
+    version: str
+    promoted: bool
+    oos_metrics: dict[str, float]
+    artifact_path: str
 
 
 def compute_oos_metrics(model: BaseModel, data: Any) -> dict[str, float]:
@@ -204,22 +216,42 @@ class ModelManager:
             return None
 
     async def train_model(
-        self, model_type: str, symbol: str, timeframe: str, data: pd.DataFrame, **kwargs
-    ) -> bool:
+        self,
+        model_type: str,
+        symbol: str,
+        timeframe: str,
+        data: pd.DataFrame,
+        promote: bool = True,
+        warm_start: bool = False,
+        **kwargs,
+    ) -> TrainingOutcome | None:
         self._check_if_closed()
 
         if data is None or data.empty:
             self.logger.warning(f"Cannot train {model_type} for {symbol}-{timeframe}: empty data")
-            return False
+            return None
 
-        model = await self.get_model(model_type, symbol, timeframe, auto_load=False)
+        model = await self.get_model(model_type, symbol, timeframe, auto_load=bool(warm_start))
         if not model:
             self.logger.error(f"Failed to create model {model_type} for {symbol}-{timeframe}")
-            return False
+            return None
+
+        model.model_path = self.model_path / model_type
+
+        effective_warm_start = bool(warm_start) and bool(model.is_trained)
+        if warm_start and not effective_warm_start:
+            self.logger.warning(
+                f"Warm start unavailable for {model_type} on {symbol}-{timeframe}; "
+                "training from cold initialization"
+            )
 
         try:
             success = await self._run_in_executor(
-                model.fit, data, executor_type="training", **kwargs
+                model.fit,
+                data,
+                executor_type="training",
+                warm_start=effective_warm_start,
+                **kwargs,
             )
             if success:
                 model_file, scaler_file = model._get_model_paths(
@@ -240,35 +272,48 @@ class ModelManager:
                     oos_metrics,
                     source_files=[model_file, scaler_file],
                 )
-                self.artifacts.create_version(
+                version_dir = self.artifacts.create_version(
                     model_type,
                     symbol,
                     timeframe,
                     [model_file, scaler_file],
                     metadata=metadata,
+                    update_current=promote,
                 )
                 self.logger.info(
                     f"Successfully trained {model_type.upper()} model for {symbol}-{timeframe}"
                 )
                 async with self._lock:
                     key = f"{model_type}-{symbol}-{timeframe}"
-
-                    existing = self._cache.get(key)
-                    if existing is not None and existing is not model:
-                        existing.cleanup()
-                    self._cache[key] = model
-                return True
+                    if promote:
+                        existing = self._cache.get(key)
+                        if existing is not None and existing is not model:
+                            existing.cleanup()
+                        self._cache[key] = model
+                    else:
+                        self._cache.pop(key, None)
+                if not promote:
+                    model.cleanup()
+                return TrainingOutcome(
+                    model_type=model_type,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    version=version_dir.name,
+                    promoted=promote,
+                    oos_metrics={name: float(value) for name, value in dict(oos_metrics).items()},
+                    artifact_path=str(version_dir),
+                )
             else:
                 self.logger.warning(
                     f"Training failed for {model_type.upper()} model {symbol}-{timeframe}"
                 )
-                return False
+                return None
         except Exception as e:
             self.logger.error(
                 f"Error training {model_type.upper()} model for {symbol}-{timeframe}: {e}",
                 exc_info=True,
             )
-            return False
+            return None
 
     async def initialize_all_models(self):
         self._check_if_closed()
@@ -330,7 +375,8 @@ class ModelManager:
             )
             return False
 
-        return await self.train_model(model_type, symbol, timeframe, data)
+        outcome = await self.train_model(model_type, symbol, timeframe, data)
+        return outcome is not None
 
     async def predict_with_confidence(
         self, model_type: str, symbol: str, timeframe: str

@@ -35,6 +35,56 @@ git status --porcelain   # must be empty
 - Scalers persist as validated `scaler.json` (no pickle). Artifacts written
   before this change (legacy `scaler_*.pkl`) never load: retrain every model
   with `python scripts/train_models.py` before expecting predictions.
+- Training writes to a staging directory and the artifact registry copies the
+  staged files into the new version. The promoted version is never rewritten
+  in place, so its recorded hashes stay valid.
+
+### 3.1 Drift check (no training, no network)
+
+```bash
+python scripts/train_models.py --dry-run --data tests/fixtures/drift_stable_1h.csv \
+  --symbol BTC/USDT --timeframe 1h --report runs/drift_report.json
+```
+
+- Exit code `0` = no drift, `2` = drift detected, `1` = failure.
+- `--data` points the run at a local CSV; without it the check needs network
+  access. The CI job uses committed fixtures only.
+- A feature whose window holds fewer than `drift_min_window` effective
+  samples is reported as `insufficient_data` and never counted as drift.
+- The live window is timeframe-aware (`drift_live_windows` in
+  `ConfigManager`); the family-wise error rate is `drift_alpha`.
+
+### 3.2 Guarded retraining
+
+```bash
+python scripts/train_models.py --report runs/training_report.json
+python scripts/train_models.py --warm-start --only-on-drift
+```
+
+- Every retrained candidate is compared against the currently promoted model.
+  A candidate that loses directional accuracy or degrades RMSE beyond the
+  configured bound is **not** promoted; the promoted pointer and its files
+  stay exactly as they were, and the rejected version is kept for forensics.
+- `--warm-start` continues from the promoted artifact (weights and scaler).
+  The scaler is never refitted on that path, because a continued model must
+  see the feature space it was trained in.
+- `--no-rollback-guard` promotes without the comparison. Use it only for an
+  operator-driven recovery; the run logs a warning.
+- `--artifact-root` writes a separate artifact tree (useful for a rehearsal
+  that must not touch the live pointer).
+
+### 3.3 Walk-forward validation
+
+```bash
+python scripts/run_walk_forward.py tests/fixtures/walk_forward_1h.csv \
+  --symbol BTC/USDT --timeframe 1h --folds 4 --out runs/walk_forward_report.json
+```
+
+- The report carries per-fold hygiene, per-fold metrics, a `metrics_hash` for
+  run-over-run comparison and a `leakage_flags` counter that must be `0`.
+- The command exits non-zero on any leakage flag or non-finite metric.
+- Real-data walk-forward runs stay user-side; the committed fixture proves the
+  harness, not the strategy.
 
 ## 4. Golden baselines
 

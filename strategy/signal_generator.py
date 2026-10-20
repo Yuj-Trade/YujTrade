@@ -26,7 +26,27 @@ from domain.gates import normalize_confidence
 from domain.types import Candle, Reject
 from features.feature_engineering import FeatureEngineer
 from modeling.model_manager import ModelManager
-from strategy.signal_tracker import AdaptiveThresholdManager
+from strategy.prediction_trace import PredictionTraceRecorder
+from strategy.signal_tracker import AdaptiveThresholdManager, make_signal_id
+
+
+def _indicator_values(indicators: dict[str, Any]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for name, payload in indicators.items():
+        result = payload.get("result") if isinstance(payload, dict) else None
+        value = getattr(result, "value", None)
+        if value is None:
+            values[name] = None
+        elif isinstance(value, (int, float, str, bool)):
+            values[name] = value
+        elif hasattr(value, "tolist"):
+            try:
+                values[name] = value.tolist()
+            except (TypeError, ValueError):
+                values[name] = str(value)
+        else:
+            values[name] = str(value)
+    return values
 
 
 class SignalGenerator:
@@ -35,10 +55,12 @@ class SignalGenerator:
         data_provider: MarketDataProvider,
         model_manager: ModelManager,
         config_manager: ConfigManager,
+        trace_recorder: PredictionTraceRecorder | None = None,
     ):
         self.data_provider = data_provider
         self.model_manager = model_manager
         self.config_manager = config_manager
+        self.trace_recorder = trace_recorder
 
         history_path = self.config_manager.get(
             "indicator_history_path", "runs/indicator_history.db"
@@ -245,7 +267,43 @@ class SignalGenerator:
             logger.info(f"Gate rejected {symbol}-{timeframe}: {decision.reason.value}")
             return None
 
+        await self._record_prediction_trace(
+            signal,
+            symbol=symbol,
+            timeframe=timeframe,
+            indicators=last_indicator_results,
+            ml_predictions=ml_predictions,
+            score=float(abs(final_score)),
+            threshold=float(threshold),
+        )
         return signal
+
+    async def _record_prediction_trace(
+        self,
+        signal: TradingSignal,
+        symbol: str,
+        timeframe: str,
+        indicators: dict[str, Any],
+        ml_predictions: dict[str, Any],
+        score: float,
+        threshold: float,
+    ) -> None:
+        recorder = self.trace_recorder
+        if recorder is None or not recorder.enabled:
+            return
+        moment = signal.timestamp
+        signal_id = make_signal_id(symbol, timeframe, moment, signal.signal_type.value)
+        payload = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "timestamp": moment.isoformat() if hasattr(moment, "isoformat") else str(moment),
+            "feature_names": sorted(indicators.keys()),
+            "feature_values": _indicator_values(indicators),
+            "ml_predictions": ml_predictions,
+            "score": score,
+            "threshold_used": threshold,
+        }
+        await recorder.record(signal_id, payload)
 
     async def _gather_external_data(self, symbol: str) -> dict[str, Any]:
         factories = {

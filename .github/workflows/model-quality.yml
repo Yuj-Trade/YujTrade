@@ -1,0 +1,95 @@
+name: Model Quality
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: model-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Drift check on a stationary fixture
+        run: |
+          python scripts/train_models.py --dry-run \
+            --data tests/fixtures/drift_stable_1h.csv \
+            --symbol BTC/USDT --timeframe 1h \
+            --report runs/drift_stable_report.json
+      - name: Drift check on a shifted fixture must be detected
+        run: |
+          set +e
+          python scripts/train_models.py --dry-run \
+            --data tests/fixtures/drift_shifted_1h.csv \
+            --symbol BTC/USDT --timeframe 1h \
+            --report runs/drift_shifted_report.json
+          code=$?
+          set -e
+          if [ "$code" -ne 2 ]; then
+            echo "expected drift exit code 2 for the shifted fixture, got $code"
+            exit 1
+          fi
+      - name: Upload drift reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-reports
+          path: runs/drift_*_report.json
+          if-no-files-found: error
+
+  walk-forward:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Walk-forward validation on a deterministic fixture
+        run: |
+          python scripts/run_walk_forward.py \
+            --data tests/fixtures/walk_forward_1h.csv \
+            --symbol BTC/USDT --timeframe 1h \
+            --folds 4 --out runs/walk_forward_report.json
+      - name: Upload walk-forward report
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-forward-report
+          path: runs/walk_forward_report.json
+          if-no-files-found: error
+
+  model-lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Model lifecycle contracts
+        run: |
+          python -m pytest \
+            tests/unit/modeling/test_drift.py \
+            tests/unit/modeling/test_promotion.py \
+            tests/unit/scripts/test_train_models_lifecycle.py \
+            tests/unit/backtesting/test_montecarlo.py \
+            tests/unit/backtesting/test_walk_forward_runner.py \
+            tests/unit/strategy/test_prediction_trace.py \
+            -q

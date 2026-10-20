@@ -150,6 +150,53 @@ class ArtifactRegistry:
             raise FileNotFoundError(f"Artifact version does not exist: {directory}")
         return directory
 
+    def current_version(self, model_type: str, symbol: str, timeframe: str) -> str | None:
+        current = self.model_dir(model_type, symbol, timeframe) / "current.json"
+        if not current.exists():
+            return None
+        payload = json.loads(current.read_text(encoding="utf-8"))
+        version = payload.get("version")
+        return version if isinstance(version, str) else None
+
+    def list_versions(self, model_type: str, symbol: str, timeframe: str) -> list[str]:
+        model_root = self.model_dir(model_type, symbol, timeframe)
+        if not model_root.is_dir():
+            return []
+        return sorted(
+            entry.name
+            for entry in model_root.iterdir()
+            if entry.is_dir() and (entry / "metadata.json").exists()
+        )
+
+    def version_dir(self, model_type: str, symbol: str, timeframe: str, version: str) -> Path:
+        directory = self.model_dir(model_type, symbol, timeframe) / version
+        if not directory.is_dir():
+            raise FileNotFoundError(f"Artifact version does not exist: {directory}")
+        return directory
+
+    def read_metadata(
+        self, model_type: str, symbol: str, timeframe: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        if version is None:
+            directory = self.current_dir(model_type, symbol, timeframe)
+        else:
+            directory = self.version_dir(model_type, symbol, timeframe, version)
+        if directory is None:
+            return None
+        metadata_path = directory / "metadata.json"
+        if not metadata_path.exists():
+            return None
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+
+    def promote_version(self, model_type: str, symbol: str, timeframe: str, version: str) -> Path:
+        directory = self.version_dir(model_type, symbol, timeframe, version)
+        if not (directory / "metadata.json").exists():
+            raise FileNotFoundError(f"Artifact metadata missing: {directory}")
+        pointer = self.model_dir(model_type, symbol, timeframe) / "current.json"
+        pointer.write_text(json.dumps({"version": version}, indent=2), encoding="utf-8")
+        return directory
+
     def verify_current(self, model_type: str, symbol: str, timeframe: str) -> Path | None:
         directory = self.current_dir(model_type, symbol, timeframe)
         if directory is None:

@@ -1,6 +1,8 @@
+from statistics import mean, pstdev
 from typing import Any
 
 from common.constants import LONG_TERM_CONFIG
+from domain.signal_id import make_signal_id
 
 
 async def generate_historical_signals(
@@ -34,3 +36,66 @@ async def generate_historical_signals(
         else:
             signals.append(signal)
     return signals, rejected
+
+
+def candles_from_frame(frame: Any) -> list[dict]:
+    rows = []
+    for timestamp, row in frame.iterrows():
+        stamp = timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else timestamp
+        rows.append(
+            {
+                "timestamp": stamp,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+            }
+        )
+    return rows
+
+
+def simulator_inputs_from_signals(signals: list) -> list[dict]:
+    inputs = []
+    for signal in signals:
+        stamp = signal.timestamp
+        moment = stamp.to_pydatetime() if hasattr(stamp, "to_pydatetime") else stamp
+        inputs.append(
+            {
+                "signal_id": make_signal_id(
+                    signal.symbol, signal.timeframe, moment, signal.signal_type.value
+                ),
+                "side": signal.signal_type.value,
+                "timestamp": moment,
+                "stop": float(signal.stop_loss),
+                "target": float(signal.exit_price),
+            }
+        )
+    return inputs
+
+
+def trade_metrics(trades: list, equity_start: float) -> dict[str, float]:
+    pnls = [float(trade.pnl) for trade in trades]
+    wins = sum(1 for pnl in pnls if pnl > 0)
+    gross_profit = sum(pnl for pnl in pnls if pnl > 0)
+    gross_loss = -sum(pnl for pnl in pnls if pnl < 0)
+    equity = equity_start
+    peak = equity_start
+    max_drawdown = 0.0
+    for pnl in pnls:
+        equity += pnl
+        peak = max(peak, equity)
+        if peak > 0:
+            max_drawdown = max(max_drawdown, (peak - equity) / peak)
+    if len(pnls) > 1 and pstdev(pnls) > 0:
+        sharpe = float(mean(pnls) / pstdev(pnls) * (len(pnls) ** 0.5))
+    else:
+        sharpe = 0.0
+    return {
+        "trades_count": len(pnls),
+        "win_rate": (wins / len(pnls)) if pnls else 0.0,
+        "profit_factor": (gross_profit / gross_loss) if gross_loss > 0 else 0.0,
+        "max_drawdown": max_drawdown,
+        "sharpe": sharpe,
+        "final_equity": equity_start + sum(pnls),
+    }

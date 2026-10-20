@@ -5,14 +5,20 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from statistics import mean, pstdev
 
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backtesting.historical_signals import generate_historical_signals
-from backtesting.montecarlo import simulate_r_multiples
+from backtesting.historical_signals import (
+    candles_from_frame,
+    generate_historical_signals,
+    simulator_inputs_from_signals,
+)
+from backtesting.historical_signals import (
+    trade_metrics as shared_trade_metrics,
+)
+from backtesting.montecarlo import bootstrap_confidence_interval, simulate_r_multiples
 from backtesting.simulator import EventDrivenSimulator
 from backtesting.walk_forward import HoldoutGuard
 from common.constants import LONG_TERM_CONFIG
@@ -20,7 +26,6 @@ from config.settings import ConfigManager
 from data.data_validator import DataQualityChecker
 from modeling.artifacts import ArtifactRegistry
 from strategy.signal_generator import SignalGenerator
-from strategy.signal_tracker import make_signal_id
 
 EQUITY_START = 1_000_000.0
 
@@ -112,58 +117,15 @@ def _assert_no_ml_leakage(
 
 
 def _candles(frame: pd.DataFrame) -> list[dict]:
-    rows = []
-    for timestamp, row in frame.iterrows():
-        stamp = timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else timestamp
-        rows.append(
-            {
-                "timestamp": stamp,
-                "open": float(row["open"]),
-                "high": float(row["high"]),
-                "low": float(row["low"]),
-                "close": float(row["close"]),
-                "volume": float(row["volume"]),
-            }
-        )
-    return rows
+    return candles_from_frame(frame)
 
 
 def _simulator_inputs(signals: list) -> list[dict]:
-    inputs = []
-    for signal in signals:
-        stamp = signal.timestamp
-        moment = stamp.to_pydatetime() if hasattr(stamp, "to_pydatetime") else stamp
-        inputs.append(
-            {
-                "signal_id": make_signal_id(
-                    signal.symbol, signal.timeframe, moment, signal.signal_type.value
-                ),
-                "side": signal.signal_type.value,
-                "timestamp": moment,
-                "stop": float(signal.stop_loss),
-                "target": float(signal.exit_price),
-            }
-        )
-    return inputs
+    return simulator_inputs_from_signals(signals)
 
 
 def _trade_metrics(trades: list, equity_start: float) -> dict[str, float]:
-    pnls = [float(trade.pnl) for trade in trades]
-    wins = sum(1 for pnl in pnls if pnl > 0)
-    gross_profit = sum(pnl for pnl in pnls if pnl > 0)
-    gross_loss = -sum(pnl for pnl in pnls if pnl < 0)
-    equity = equity_start
-    peak = equity_start
-    max_drawdown = 0.0
-    for pnl in pnls:
-        equity += pnl
-        peak = max(peak, equity)
-        if peak > 0:
-            max_drawdown = max(max_drawdown, (peak - equity) / peak)
-    if len(pnls) > 1 and pstdev(pnls) > 0:
-        sharpe = float(mean(pnls) / pstdev(pnls) * (len(pnls) ** 0.5))
-    else:
-        sharpe = 0.0
+    metrics = shared_trade_metrics(trades, equity_start)
     simulated = simulate_r_multiples([float(trade.r_multiple) for trade in trades])
     ordered = sorted(simulated)
     if ordered:
@@ -172,15 +134,11 @@ def _trade_metrics(trades: list, equity_start: float) -> dict[str, float]:
         bootstrap_ci_95 = [float(lower), float(upper)]
     else:
         bootstrap_ci_95 = [0.0, 0.0]
-    return {
-        "trades_count": len(trades),
-        "win_rate": (wins / len(trades)) if trades else 0.0,
-        "profit_factor": (gross_profit / gross_loss) if gross_loss > 0 else 0.0,
-        "max_drawdown": max_drawdown,
-        "sharpe": sharpe,
-        "final_equity": equity_start + sum(pnls),
-        "bootstrap_ci_95": bootstrap_ci_95,
-    }
+    metrics["bootstrap_ci_95"] = bootstrap_ci_95
+    metrics["monte_carlo"] = bootstrap_confidence_interval(
+        [float(trade.r_multiple) for trade in trades]
+    )
+    return metrics
 
 
 def run_holdout(
