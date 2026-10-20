@@ -14,6 +14,7 @@ Gap 37: SignalTracker._save_history writes entire file sync (json.dump, no lock,
 
 import asyncio
 import json
+import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -525,3 +526,124 @@ class TestSignalTrackerPerformanceSummary:
         assert history[signal_id]["outcome"] is None
         assert history[signal_id]["details"]["entry"] == 100.0
         assert history[signal_id]["details"]["resolution_status"] == "expired"
+
+
+def _notification_details(**overrides):
+    base = {
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "signal_type": "buy",
+        "entry": 100.0,
+        "stop": 95.0,
+        "target": 110.0,
+        "created_at": datetime(2026, 10, 1, 10, tzinfo=UTC).isoformat(),
+    }
+    base.update(overrides)
+    return base
+
+
+class TestSignalTrackerOutcomeNotificationDefects:
+    """The defects that block a reliable outcome notification."""
+
+    @pytest.mark.xfail(strict=True, reason="D1")
+    async def test_reopened_open_signal_keeps_first_creation_and_levels(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+        first = _notification_details(notification_state="pending")
+        second = _notification_details(
+            created_at=datetime(2026, 10, 5, 10, tzinfo=UTC).isoformat(),
+            entry=200.0,
+            stop=195.0,
+            target=210.0,
+        )
+
+        await tracker.record("sig-1", None, first)
+        await tracker.record("sig-1", None, second)
+
+        details = tracker.history["sig-1"]["details"]
+        assert details["created_at"] == first["created_at"]
+        assert details["entry"] == 100.0
+        assert details["stop"] == 95.0
+        assert details["target"] == 110.0
+        assert details["notification_state"] == "pending"
+
+    @pytest.mark.xfail(strict=True, reason="D2")
+    async def test_rotation_never_drops_protected_entries(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"), max_entries=2)
+        old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+        mid = (datetime.now(UTC) - timedelta(days=5)).isoformat()
+        new = datetime.now(UTC).isoformat()
+
+        await tracker.record("old|1h|sig|BUY", None, _notification_details(created_at=old))
+        await tracker.record("mid|1h|sig|BUY", None, _notification_details(created_at=mid))
+        await tracker.record("new|1h|sig|BUY", None, _notification_details(created_at=new))
+
+        assert "old|1h|sig|BUY" in tracker.history
+        assert "new|1h|sig|BUY" in tracker.history
+
+    @pytest.mark.xfail(strict=True, reason="D3")
+    def test_corrupt_history_is_backed_up_not_overwritten(self, tmp_path):
+        path = tmp_path / "signal_history.json"
+        path.write_text("{not json", encoding="utf-8")
+
+        tracker = SignalTracker(storage_path=str(path))
+
+        assert tracker.history == {}
+        backups = sorted(tmp_path.glob("signal_history.corrupt-*.json"))
+        assert backups, "the unreadable history must be backed up"
+        assert path.read_text(encoding="utf-8") == "{not json"
+
+    @pytest.mark.xfail(strict=True, reason="D3")
+    async def test_save_failure_leaves_previous_file_intact(self, tmp_path, monkeypatch):
+        path = tmp_path / "signal_history.json"
+        tracker = SignalTracker(storage_path=str(path))
+        await tracker.record("sig-1", None, _notification_details())
+        previous = path.read_text(encoding="utf-8")
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "replace", boom)
+
+        with pytest.raises(OSError):
+            await tracker.record("sig-2", None, _notification_details())
+
+        assert path.read_text(encoding="utf-8") == previous
+
+    @pytest.mark.xfail(strict=True, reason="D6")
+    async def test_prune_keeps_resolved_entry_with_open_notification(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"), ttl_days=30)
+        old = (datetime.now(UTC) - timedelta(days=45)).isoformat()
+        details = _notification_details(resolved_at=old)
+        details["outcome_event"] = "target"
+        details["notification_state"] = "pending"
+
+        await tracker.record("old|1h|sig|BUY", True, details)
+        await tracker.record("fresh|1h|sig|BUY", None, _notification_details())
+
+        assert "old|1h|sig|BUY" in tracker.history
+
+
+class TestSignalTrackerNotificationCharacterization:
+    """The current behavior that the notification work must not break."""
+
+    async def test_the_summary_counts_the_resolved_and_the_pending_entries(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+
+        await tracker.record("sig-1", True, _notification_details())
+        await tracker.record("sig-2", False, _notification_details())
+        await tracker.record("sig-3", None, _notification_details())
+
+        summary = tracker.get_performance_summary()
+
+        assert summary["total"] == 2
+        assert summary["win_rate"] == 50.0
+        assert summary["pending"] == 1
+
+    async def test_recording_twice_keeps_one_entry_with_the_latest_details(self, tmp_path):
+        tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
+
+        await tracker.record("sig-1", None, _notification_details(entry=100.0))
+        await tracker.record("sig-1", None, _notification_details(entry=101.0))
+
+        assert list(tracker.history) == ["sig-1"]
+        assert tracker.history["sig-1"]["details"]["entry"] == 101.0
