@@ -33,9 +33,15 @@ def _focus_label() -> str:
 QUICK_TIMEFRAMES = ["1h"]
 
 
+MARKDOWN_V2_RESERVED = "_*[]()~`>#+-=|{}.!\\"
+
+
 def escape_markdown_v2(text: str) -> str:
-    escape_chars = r"_*[]()~`>#+-=|{}.!"
-    return "".join(f"\\{char}" if char in escape_chars else char for char in str(text))
+    return "".join(f"\\{char}" if char in MARKDOWN_V2_RESERVED else char for char in str(text))
+
+
+def escape_code_span(text: str) -> str:
+    return str(text).replace("\\", "\\\\").replace("`", "\\`")
 
 
 def _number(value: float | None, suffix: str = "") -> str:
@@ -140,7 +146,7 @@ class TelegramBotHandler:
             "Welcome to the Long-term Trading Signal Bot! 🤖\n\n"
             "Choose your analysis type:\n"
             "• *Quick Analyze*: Only 1h timeframe ⚡\n"
-            f"• *Full Analyze*: Long-term timeframes \\({_focus_label()}\\) 📊"
+            f"• *Full Analyze*: Long-term timeframes ({_focus_label()}) 📊"
         )
         await update.message.reply_text(
             escape_markdown_v2(welcome_text),
@@ -436,12 +442,12 @@ class TelegramBotHandler:
         header += f"*{symbol} • {timeframe}*\n"
         header += "*═══════════════════════*"
 
-        confidence_score_str = escape_markdown_v2(f"{signal.confidence_score:.2f}")
-        entry_price_str = escape_markdown_v2(f"{signal.entry_price:.8f}")
-        exit_price_str = escape_markdown_v2(f"{signal.exit_price:.8f}")
-        stop_loss_str = escape_markdown_v2(f"{signal.stop_loss:.8f}")
-        risk_reward_ratio_str = escape_markdown_v2(f"{signal.risk_reward_ratio:.2f}")
-        predicted_profit_str = escape_markdown_v2(f"{signal.predicted_profit:.2f}")
+        confidence_score_str = escape_code_span(f"{signal.confidence_score:.2f}")
+        entry_price_str = escape_code_span(f"{signal.entry_price:.8f}")
+        exit_price_str = escape_code_span(f"{signal.exit_price:.8f}")
+        stop_loss_str = escape_code_span(f"{signal.stop_loss:.8f}")
+        risk_reward_ratio_str = escape_code_span(f"{signal.risk_reward_ratio:.2f}")
+        predicted_profit_str = escape_code_span(f"{signal.predicted_profit:.2f}")
 
         main_info = (
             f"\n\n📅 *Date:* `{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}`\n"
@@ -459,7 +465,7 @@ class TelegramBotHandler:
                 ml_pct = float(ml_conf)
                 if ml_pct <= 1.0:
                     ml_pct *= 100.0
-                ml_str = escape_markdown_v2(f"{ml_pct:.1f}")
+                ml_str = escape_code_span(f"{ml_pct:.1f}")
                 main_info += f"\n🤖 *Heuristic Confidence:* `{ml_str}%`"
         except (TypeError, ValueError):
             pass
@@ -470,11 +476,11 @@ class TelegramBotHandler:
         trend = escape_markdown_v2(str(ctx.get("trend", "N/A")))
         trend_strength = escape_markdown_v2(str(ctx.get("trend_strength", "N/A")))
         condition = escape_markdown_v2(str(ctx.get("market_condition", "N/A")))
-        volatility_str = escape_markdown_v2(f"{ctx.get('volatility', 0):.2f}")
-        support_str = escape_markdown_v2(
+        volatility_str = escape_code_span(f"{ctx.get('volatility', 0):.2f}")
+        support_str = escape_code_span(
             f"{ctx.get('support_levels', [0])[0]:.8f}" if ctx.get("support_levels") else "N/A"
         )
-        resistance_str = escape_markdown_v2(
+        resistance_str = escape_code_span(
             f"{ctx.get('resistance_levels', [0])[0]:.8f}" if ctx.get("resistance_levels") else "N/A"
         )
 
@@ -489,7 +495,7 @@ class TelegramBotHandler:
 
         if signal.volume_analysis:
             vol_ratio = signal.volume_analysis.get("volume_ratio", 1.0)
-            vol_ratio_str = escape_markdown_v2(f"{vol_ratio:.2f}")
+            vol_ratio_str = escape_code_span(f"{vol_ratio:.2f}")
             vol_emoji = "📊" if vol_ratio > 1.2 else "📉"
             market_info += f"\n{vol_emoji} *Volume Ratio:* `{vol_ratio_str}x`"
 
@@ -500,29 +506,27 @@ class TelegramBotHandler:
             deriv_info = "*🔮 DERIVATIVES DATA*\n"
 
             if deriv.funding_rate is not None:
-                fr_str = escape_markdown_v2(f"{deriv.funding_rate:.6f}")
+                fr_str = escape_code_span(f"{deriv.funding_rate:.6f}")
                 fr_emoji = "🟢" if deriv.funding_rate < 0 else "🔴"
                 deriv_info += f"├ {fr_emoji} Funding Rate: `{fr_str}`\n"
 
             if deriv.open_interest is not None:
-                oi_str = escape_markdown_v2(f"{deriv.open_interest:,.0f}")
+                oi_str = escape_code_span(f"{deriv.open_interest:,.0f}")
                 deriv_info += f"├ 💼 Open Interest: `{oi_str}`\n"
 
             if deriv.taker_long_short_ratio is not None:
-                ratio_str = escape_markdown_v2(f"{deriv.taker_long_short_ratio:.2f}")
+                ratio_str = escape_code_span(f"{deriv.taker_long_short_ratio:.2f}")
                 ratio_emoji = "🟢" if deriv.taker_long_short_ratio > 1 else "🔴"
                 deriv_info += f"├ {ratio_emoji} Taker L/S Ratio: `{ratio_str}`\n"
 
             if deriv.binance_futures_data:
                 bfd = deriv.binance_futures_data
                 if bfd.top_trader_long_short_ratio_accounts is not None:
-                    tt_acc_str = escape_markdown_v2(
-                        f"{bfd.top_trader_long_short_ratio_accounts:.2f}"
-                    )
+                    tt_acc_str = escape_code_span(f"{bfd.top_trader_long_short_ratio_accounts:.2f}")
                     deriv_info += f"├ 👥 Top Trader Accounts: `{tt_acc_str}`\n"
 
                 if bfd.top_trader_long_short_ratio_positions is not None:
-                    tt_pos_str = escape_markdown_v2(
+                    tt_pos_str = escape_code_span(
                         f"{bfd.top_trader_long_short_ratio_positions:.2f}"
                     )
                     deriv_info += f"└ 📊 Top Trader Positions: `{tt_pos_str}`\n"
@@ -535,19 +539,19 @@ class TelegramBotHandler:
             fund_info = "*💎 FUNDAMENTAL DATA*\n"
 
             if fund.market_cap > 0:
-                mcap_str = escape_markdown_v2(f"{fund.market_cap:,.0f}")
+                mcap_str = escape_code_span(f"{fund.market_cap:,.0f}")
                 fund_info += f"├ 💰 Market Cap: `${mcap_str}`\n"
 
             if fund.total_volume > 0:
-                vol_str = escape_markdown_v2(f"{fund.total_volume:,.0f}")
+                vol_str = escape_code_span(f"{fund.total_volume:,.0f}")
                 fund_info += f"├ 📊 24h Volume: `${vol_str}`\n"
 
             if fund.developer_score > 0:
-                dev_str = escape_markdown_v2(f"{fund.developer_score:.1f}")
+                dev_str = escape_code_span(f"{fund.developer_score:.1f}")
                 fund_info += f"├ 👨‍💻 Developer Score: `{dev_str}`\n"
 
             if fund.community_score > 0:
-                comm_str = escape_markdown_v2(f"{fund.community_score:.0f}")
+                comm_str = escape_code_span(f"{fund.community_score:.0f}")
                 fund_info += f"└ 👥 Community Score: `{comm_str}`\n"
 
             if len(fund_info) > len("*💎 FUNDAMENTAL DATA*\n"):
@@ -558,15 +562,15 @@ class TelegramBotHandler:
             ob_info = "*📖 ORDER BOOK*\n"
 
             if ob.bid_ask_spread is not None:
-                spread_str = escape_markdown_v2(f"{ob.bid_ask_spread:.8f}")
+                spread_str = escape_code_span(f"{ob.bid_ask_spread:.8f}")
                 ob_info += f"├ 📏 Spread: `{spread_str}`\n"
 
             if ob.total_bid_volume is not None:
-                bid_vol_str = escape_markdown_v2(f"{ob.total_bid_volume:,.2f}")
+                bid_vol_str = escape_code_span(f"{ob.total_bid_volume:,.2f}")
                 ob_info += f"├ 🟢 Total Bids: `{bid_vol_str}`\n"
 
             if ob.total_ask_volume is not None:
-                ask_vol_str = escape_markdown_v2(f"{ob.total_ask_volume:,.2f}")
+                ask_vol_str = escape_code_span(f"{ob.total_ask_volume:,.2f}")
                 ob_info += f"└ 🔴 Total Asks: `{ask_vol_str}`\n"
 
             if len(ob_info) > len("*📖 ORDER BOOK*\n"):
@@ -577,23 +581,23 @@ class TelegramBotHandler:
             macro_info = "*🌍 MACRO ECONOMICS*\n"
 
             if macro.cpi is not None:
-                cpi_str = escape_markdown_v2(f"{macro.cpi:.2f}")
+                cpi_str = escape_code_span(f"{macro.cpi:.2f}")
                 macro_info += f"├ 📊 CPI: `{cpi_str}%`\n"
 
             if macro.fed_rate is not None:
-                fed_str = escape_markdown_v2(f"{macro.fed_rate:.2f}")
+                fed_str = escape_code_span(f"{macro.fed_rate:.2f}")
                 macro_info += f"├ 🏦 Fed Rate: `{fed_str}%`\n"
 
             if macro.treasury_yield_10y is not None:
-                treasury_str = escape_markdown_v2(f"{macro.treasury_yield_10y:.2f}")
+                treasury_str = escape_code_span(f"{macro.treasury_yield_10y:.2f}")
                 macro_info += f"├ 💵 10Y Treasury: `{treasury_str}%`\n"
 
             if macro.gdp is not None:
-                gdp_str = escape_markdown_v2(f"{macro.gdp:.2f}")
+                gdp_str = escape_code_span(f"{macro.gdp:.2f}")
                 macro_info += f"├ 📈 GDP: `{gdp_str}%`\n"
 
             if macro.unemployment is not None:
-                unemp_str = escape_markdown_v2(f"{macro.unemployment:.2f}")
+                unemp_str = escape_code_span(f"{macro.unemployment:.2f}")
                 macro_info += f"└ 👔 Unemployment: `{unemp_str}%`\n"
 
             if len(macro_info) > len("*🌍 MACRO ECONOMICS*\n"):
@@ -601,20 +605,20 @@ class TelegramBotHandler:
 
         if signal.trending_data and signal.trending_data.coingecko_trending:
             trending_coins = signal.trending_data.coingecko_trending[:5]
-            trending_str = ", ".join([escape_markdown_v2(c) for c in trending_coins])
+            trending_str = ", ".join([escape_code_span(c) for c in trending_coins])
             trending_info = f"*🔥 TRENDING COINS*\n`{trending_str}`"
             messages.append(trending_info)
 
         if signal.dynamic_levels:
             levels = signal.dynamic_levels
 
-            prim_entry = escape_markdown_v2(f"{levels.get('primary_entry', 0):.8f}")
-            sec_entry = escape_markdown_v2(f"{levels.get('secondary_entry', 0):.8f}")
-            prim_exit = escape_markdown_v2(f"{levels.get('primary_exit', 0):.8f}")
-            sec_exit = escape_markdown_v2(f"{levels.get('secondary_exit', 0):.8f}")
-            t_stop = escape_markdown_v2(f"{levels.get('tight_stop', 0):.8f}")
-            w_stop = escape_markdown_v2(f"{levels.get('wide_stop', 0):.8f}")
-            breakeven = escape_markdown_v2(f"{levels.get('breakeven_point', 0):.8f}")
+            prim_entry = escape_code_span(f"{levels.get('primary_entry', 0):.8f}")
+            sec_entry = escape_code_span(f"{levels.get('secondary_entry', 0):.8f}")
+            prim_exit = escape_code_span(f"{levels.get('primary_exit', 0):.8f}")
+            sec_exit = escape_code_span(f"{levels.get('secondary_exit', 0):.8f}")
+            t_stop = escape_code_span(f"{levels.get('tight_stop', 0):.8f}")
+            w_stop = escape_code_span(f"{levels.get('wide_stop', 0):.8f}")
+            breakeven = escape_code_span(f"{levels.get('breakeven_point', 0):.8f}")
             levels_info = (
                 f"*🎯 DYNAMIC LEVELS*\n"
                 f"├ 🟢 Primary Entry: `{prim_entry}`\n"

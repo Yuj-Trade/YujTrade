@@ -37,6 +37,28 @@ data raises `InsufficientDataError` (analysis failure), never `None`.
 `main.py` holds the single composition root: one place builds the config,
 resources, data provider and trading service. No parallel wiring graphs.
 
+## Telegram MarkdownV2 contract
+
+Every Telegram message that is sent with `parse_mode=MarkdownV2` must be
+valid MarkdownV2, otherwise the Bot API rejects it with "Can't parse
+entities" and the command answers nothing. The rules are:
+
+- A message that is escaped as a whole goes through
+  `escape_markdown_v2`, which escapes every reserved character **and** the
+  backslash. The text must not be escaped a second time in the source: a
+  pre-escaped `\(` becomes `\\(` after the second pass, Telegram reads the
+  double backslash as a literal backslash and then finds an unescaped `(`.
+- A value that is embedded in a code span (between backticks) goes through
+  `escape_code_span`, which escapes only the backtick and the backslash.
+  Inside a code span the backslash escapes are not processed, so escaping
+  the text level would show a stray backslash in front of every dot.
+- A message that mixes formatting markers (bold, code spans) with dynamic
+  values escapes the values only, never the whole message.
+
+`tests/unit/app/test_markdown_escaping.py` validates every message the bot
+can send against a local MarkdownV2 validator, so a reserved character can
+never reach the API unescaped.
+
 ## Layering
 
 `domain` <- `application` <- everything else. `domain` imports only the
