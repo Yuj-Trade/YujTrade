@@ -108,6 +108,7 @@ class ConfigManager:
         "paper_fee_rate": 0.001,
         "paper_slippage_rate": 0.0005,
         "performance_rf_annual": 0,
+        "coingecko_api_tier": "demo",
         "performance_periods_per_year": 365,
         "performance_min_trades_for_ratios": 30,
         "risk_per_trade_pct": 1.0,

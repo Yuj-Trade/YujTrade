@@ -4,7 +4,12 @@ import pandas as pd
 
 from common.cache import CacheCategory, CacheKeyBuilder
 from common.core import FundamentalAnalysis
-from common.exceptions import APIRateLimitError, InvalidSymbolError, NetworkError
+from common.exceptions import (
+    APIRateLimitError,
+    ConfigurationError,
+    InvalidSymbolError,
+    NetworkError,
+)
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
@@ -18,6 +23,11 @@ class CoinGeckoFetcher(BaseFetcher):
         self.api_key = api_key
         self.base_url = "https://api.coingecko.com/api/v3"
         self.pro_base_url = "https://pro-api.coingecko.com/api/v3"
+        self.api_tier = self.config_manager.get("coingecko_api_tier", "demo")
+        if self.api_tier not in ("demo", "pro"):
+            raise ConfigurationError(
+                f"coingecko_api_tier must be 'demo' or 'pro', got {self.api_tier!r}"
+            )
         self._coin_list: list[dict] | None = None
         self._coin_map: dict[str, str] | None = None
         self.source_name = "coingecko"
@@ -63,16 +73,20 @@ class CoinGeckoFetcher(BaseFetcher):
         request_params = params.copy() if params else {}
         request_headers = headers.copy() if headers else {"accept": "application/json"}
 
-        effective_url = url
-        if self.api_key:
-            effective_url = effective_url.replace(self.base_url, self.pro_base_url)
-            if "pro-api" in effective_url:
-                request_headers["x-cg-pro-api-key"] = self.api_key
-            else:
-                request_params["x_cg_demo_api_key"] = self.api_key
+        if url.startswith(self.base_url):
+            path = url[len(self.base_url) :]
+        elif url.startswith(self.pro_base_url):
+            path = url[len(self.pro_base_url) :]
         else:
-            if "pro-api" in url:
-                effective_url = url.replace(self.pro_base_url, self.base_url)
+            path = url
+
+        target = self.pro_base_url if (self.api_key and self.api_tier == "pro") else self.base_url
+        effective_url = target + path
+
+        if self.api_key and self.api_tier == "pro":
+            request_headers["x-cg-pro-api-key"] = self.api_key
+        elif self.api_key and self.api_tier == "demo":
+            request_params["x_cg_demo_api_key"] = self.api_key
 
         async def _do_fetch():
             session = await self._get_session()
