@@ -41,3 +41,19 @@ def test_file_sink_writes_traceback_to_disk(tmp_path):
     contents = target.read_text(encoding="utf-8")
     assert "Traceback" in contents
     assert "RuntimeError: boom" in contents
+
+
+def test_traceback_starts_on_its_own_line(tmp_path):
+    target = tmp_path / "sep.log"
+    handler_id = logger.add(str(target), **FILE_SINK_OPTIONS)
+    try:
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError as exc:
+            logger.opt(exception=exc).error("MESSAGE_MARKER")
+    finally:
+        logger.remove(handler_id)
+
+    contents = target.read_text(encoding="utf-8")
+    assert "MESSAGE_MARKER\nTraceback" in contents
+    assert "MESSAGE_MARKERTraceback" not in contents
