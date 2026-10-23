@@ -4,7 +4,12 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any
 
-from common.exceptions import APIRateLimitError, NetworkError, TradingBotException
+from common.exceptions import (
+    APIRateLimitError,
+    NetworkError,
+    TradingBotException,
+    UpstreamUnavailableError,
+)
 
 
 class CircuitBreakerError(TradingBotException):
@@ -36,6 +41,7 @@ class CircuitBreaker:
         self.failure_exceptions = failure_exceptions or {
             APIRateLimitError,
             NetworkError,
+            UpstreamUnavailableError,
         }
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:

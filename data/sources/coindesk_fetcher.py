@@ -6,7 +6,12 @@ import pandas as pd
 import redis
 
 from common.cache import CacheCategory, CacheKeyBuilder
-from common.exceptions import APIRateLimitError, InvalidSymbolError, NetworkError
+from common.exceptions import (
+    APIRateLimitError,
+    InvalidSymbolError,
+    NetworkError,
+    UpstreamUnavailableError,
+)
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
@@ -41,18 +46,23 @@ class CoinDeskFetcher(BaseFetcher):
 
         async def _do_fetch():
             session = await self._get_session()
-            async with session.get(url, params=params, headers=headers) as response:
-                if response.status == 429:
-                    raise APIRateLimitError("CoinDesk rate limit exceeded")
-                if response.status >= 400:
-                    text = await response.text()
-                    if "not found" in text.lower() or response.status == 404:
-                        raise InvalidSymbolError(
-                            f"Invalid symbol for CoinDesk: "
-                            f"{params.get('symbol') if params else endpoint}"
-                        )
-                    raise NetworkError(f"HTTP Error {response.status} for {url}: {text}")
-                return await response.json()
+            try:
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status == 403:
+                        raise UpstreamUnavailableError(f"Upstream blocked access for {url}")
+                    if response.status == 429:
+                        raise APIRateLimitError("CoinDesk rate limit exceeded")
+                    if response.status >= 400:
+                        text = await response.text()
+                        if "not found" in text.lower() or response.status == 404:
+                            raise InvalidSymbolError(
+                                f"Invalid symbol for CoinDesk: "
+                                f"{params.get('symbol') if params else endpoint}"
+                            )
+                        raise NetworkError(f"HTTP Error {response.status} for {url}: {text}")
+                    return await response.json()
+            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+                raise UpstreamUnavailableError(f"Upstream unavailable for {url}") from exc
 
         return await self.circuit_breaker.call(_do_fetch)
 

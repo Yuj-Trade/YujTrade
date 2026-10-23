@@ -8,6 +8,7 @@ from common.exceptions import (
     InvalidSymbolError,
     NetworkError,
     ObjectClosedError,
+    UpstreamUnavailableError,
 )
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
@@ -70,24 +71,31 @@ class BaseFetcher:
 
         async def _do_fetch():
             session = await self._get_session()
-            async with session.get(url, params=params, headers=headers) as response:
-                if response.status == 429:
-                    raise APIRateLimitError(f"Rate limit exceeded for {url}")
-                if response.status >= 400:
-                    try:
-                        error_text = await response.text()
-                    except Exception as e:
-                        logger.debug(f"Error body unreadable: {e}", exc_info=True)
-                        error_text = "Could not read response body."
+            try:
+                response_cm = session.get(url, params=params, headers=headers)
+                async with response_cm as response:
+                    if response.status == 403:
+                        raise UpstreamUnavailableError(f"Upstream blocked access for {url}")
+                    if response.status == 429:
+                        raise APIRateLimitError(f"Rate limit exceeded for {url}")
+                    if response.status >= 400:
+                        try:
+                            error_text = await response.text()
+                        except Exception as e:
+                            logger.debug(f"Error body unreadable: {e}", exc_info=True)
+                            error_text = "Could not read response body."
 
-                    if "Invalid symbol" in error_text:
-                        raise InvalidSymbolError(f"Invalid symbol for {url}")
+                        if "Invalid symbol" in error_text:
+                            raise InvalidSymbolError(f"Invalid symbol for {url}")
 
-                    normalized = " ".join(_TAG_PATTERN.sub(" ", error_text).split())[:200]
-                    logger.error(
-                        f"Error fetching from {url}: Status {response.status}, Body: {normalized}"
-                    )
-                    response.raise_for_status()
-                return await response.json()
+                        normalized = " ".join(_TAG_PATTERN.sub(" ", error_text).split())[:200]
+                        logger.error(
+                            f"Error fetching from {url}: Status {response.status}, "
+                            f"Body: {normalized}"
+                        )
+                        response.raise_for_status()
+                    return await response.json()
+            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+                raise UpstreamUnavailableError(f"Upstream unavailable for {url}") from exc
 
         return await self.circuit_breaker.call(_do_fetch)

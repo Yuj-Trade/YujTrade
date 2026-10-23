@@ -6,7 +6,13 @@ import redis
 
 from common.cache import CacheCategory, CacheKeyBuilder
 from common.core import OnChainAnalysis
-from common.exceptions import APIRateLimitError, DataError, NetworkError
+from common.exceptions import (
+    APIRateLimitError,
+    DataError,
+    InvalidSymbolError,
+    NetworkError,
+    UpstreamUnavailableError,
+)
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
 from config.settings import ConfigManager
@@ -38,16 +44,23 @@ class MessariFetcher(BaseFetcher):
 
         async def _do_fetch():
             session = await self._get_session()
-            async with session.get(url, params=params, headers=headers) as response:
-                if response.status == 429:
-                    raise APIRateLimitError("Messari rate limit exceeded")
-                response.raise_for_status()
-                return await response.json()
+            try:
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status == 403:
+                        raise UpstreamUnavailableError("Upstream blocked access for Messari")
+                    if response.status == 429:
+                        raise APIRateLimitError("Messari rate limit exceeded")
+                    response.raise_for_status()
+                    return await response.json()
+            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+                raise UpstreamUnavailableError(f"Upstream unavailable for {url}") from exc
 
         try:
             return await self.circuit_breaker.call(_do_fetch)
         except Exception as e:
-            if isinstance(e, (NetworkError, APIRateLimitError)):
+            if isinstance(
+                e, (NetworkError, APIRateLimitError, UpstreamUnavailableError, InvalidSymbolError)
+            ):
                 raise
             logger.error(f"Error in Messari _fetch for {url}: {e}", exc_info=True)
             raise DataError(f"Failed to fetch data from Messari API: {url}") from e

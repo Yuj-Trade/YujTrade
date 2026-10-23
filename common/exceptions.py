@@ -42,5 +42,9 @@ class ObjectClosedError(TradingBotException):
     pass
 
 
+class UpstreamUnavailableError(TradingBotException):
+    pass
+
+
 class ArtifactIntegrityError(ModelError):
     pass

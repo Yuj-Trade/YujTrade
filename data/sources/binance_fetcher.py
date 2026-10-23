@@ -13,6 +13,7 @@ from common.exceptions import (
     DataError,
     InvalidSymbolError,
     NetworkError,
+    UpstreamUnavailableError,
 )
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
@@ -49,29 +50,34 @@ class BinanceFetcher(BaseFetcher):
 
         async def _do_fetch():
             session = await self._get_session()
-            async with session.get(full_url, params=params) as response:
-                if response.status == 429:
-                    raise APIRateLimitError(f"Rate limit exceeded for {endpoint}")
-                if response.status == 418:
-                    logger.warning(f"IP banned by Binance for {endpoint}. Sleeping for 120s.")
-                    await asyncio.sleep(120)
-                    raise APIRateLimitError(f"IP banned, retrying for {endpoint}")
-                if response.status >= 400:
-                    try:
-                        error_data = await response.json()
-                        if error_data.get("code") == -1121 or "Invalid symbol" in error_data.get(
-                            "msg", ""
-                        ):
-                            raise InvalidSymbolError(
-                                f"Invalid symbol for Binance: "
-                                f"{params.get('symbol') if params else 'N/A'}"
-                            )
-                    except (aiohttp.ContentTypeError, json.JSONDecodeError):
-                        pass
+            try:
+                async with session.get(full_url, params=params) as response:
+                    if response.status == 403:
+                        raise UpstreamUnavailableError(f"Upstream blocked access for {endpoint}")
+                    if response.status == 429:
+                        raise APIRateLimitError(f"Rate limit exceeded for {endpoint}")
+                    if response.status == 418:
+                        logger.warning(f"IP banned by Binance for {endpoint}. Sleeping for 120s.")
+                        await asyncio.sleep(120)
+                        raise APIRateLimitError(f"IP banned, retrying for {endpoint}")
+                    if response.status >= 400:
+                        try:
+                            error_data = await response.json()
+                            if error_data.get(
+                                "code"
+                            ) == -1121 or "Invalid symbol" in error_data.get("msg", ""):
+                                raise InvalidSymbolError(
+                                    f"Invalid symbol for Binance: "
+                                    f"{params.get('symbol') if params else 'N/A'}"
+                                )
+                        except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                            pass
 
-                    response.raise_for_status()
+                        response.raise_for_status()
 
-                return await response.json()
+                    return await response.json()
+            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+                raise UpstreamUnavailableError(f"Upstream unavailable for {full_url}") from exc
 
         try:
             return await self.circuit_breaker.call(_do_fetch)
@@ -82,7 +88,9 @@ class BinanceFetcher(BaseFetcher):
                 ) from e
             raise NetworkError(f"HTTP Error {e.status} for {full_url}") from e
         except Exception as e:
-            if isinstance(e, (NetworkError, APIRateLimitError, InvalidSymbolError)):
+            if isinstance(
+                e, (NetworkError, APIRateLimitError, InvalidSymbolError, UpstreamUnavailableError)
+            ):
                 raise
             logger.error(f"Error in _fetch for {full_url}: {e}", exc_info=True)
             raise DataError(f"Failed to fetch data from {full_url}") from e

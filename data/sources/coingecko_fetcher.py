@@ -1,5 +1,6 @@
 import json
 
+import aiohttp
 import pandas as pd
 
 from common.cache import CacheCategory, CacheKeyBuilder
@@ -9,6 +10,7 @@ from common.exceptions import (
     ConfigurationError,
     InvalidSymbolError,
     NetworkError,
+    UpstreamUnavailableError,
 )
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
@@ -90,18 +92,29 @@ class CoinGeckoFetcher(BaseFetcher):
 
         async def _do_fetch():
             session = await self._get_session()
-            async with session.get(
-                effective_url, params=request_params, headers=request_headers
-            ) as response:
-                if response.status == 429:
-                    raise APIRateLimitError(f"Rate limit exceeded for {effective_url}")
-                if response.status != 200:
-                    text = await response.text()
-                    if "invalid vs_currency" in text or "coin not found" in text:
-                        raise InvalidSymbolError(f"Invalid symbol or currency for CoinGecko: {url}")
-                    logger.error(f"Error fetching from {effective_url}: {response.status} {text}")
-                    raise NetworkError(f"HTTP Error {response.status} for {effective_url}")
-                return await response.json()
+            try:
+                async with session.get(
+                    effective_url, params=request_params, headers=request_headers
+                ) as response:
+                    if response.status == 403:
+                        raise UpstreamUnavailableError(
+                            f"Upstream blocked access for {effective_url}"
+                        )
+                    if response.status == 429:
+                        raise APIRateLimitError(f"Rate limit exceeded for {effective_url}")
+                    if response.status != 200:
+                        text = await response.text()
+                        if "invalid vs_currency" in text or "coin not found" in text:
+                            raise InvalidSymbolError(
+                                f"Invalid symbol or currency for CoinGecko: {url}"
+                            )
+                        logger.error(
+                            f"Error fetching from {effective_url}: {response.status} {text}"
+                        )
+                        raise NetworkError(f"HTTP Error {response.status} for {effective_url}")
+                    return await response.json()
+            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+                raise UpstreamUnavailableError(f"Upstream unavailable for {effective_url}") from exc
 
         return await self.circuit_breaker.call(_do_fetch)
 
