@@ -92,7 +92,7 @@ class BinanceFetcher(BaseFetcher):
                 e, (NetworkError, APIRateLimitError, InvalidSymbolError, UpstreamUnavailableError)
             ):
                 raise
-            logger.error(f"Error in _fetch for {full_url}: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"Error in _fetch for {full_url}: {e}")
             raise DataError(f"Failed to fetch data from {full_url}") from e
 
     async def get_historical_ohlc(
@@ -155,7 +155,7 @@ class BinanceFetcher(BaseFetcher):
                 if cached:
                     return float(cached)
         except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
+            logger.opt(exception=True).warning(f"Redis GET failed for {cache_key}: {e}")
 
         try:
             params = {"symbol": binance_symbol}
@@ -166,7 +166,7 @@ class BinanceFetcher(BaseFetcher):
                     if self.redis:
                         await self.redis.set(cache_key, open_interest, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
+                    logger.opt(exception=True).warning(f"Redis SET failed for {cache_key}: {e}")
                 return open_interest
             return None
         except InvalidSymbolError:
@@ -190,7 +190,7 @@ class BinanceFetcher(BaseFetcher):
                 if cached:
                     return float(cached)
         except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
+            logger.opt(exception=True).warning(f"Redis GET failed for {cache_key}: {e}")
 
         try:
             params = {"symbol": binance_symbol, "period": "5m", "limit": 1}
@@ -201,7 +201,7 @@ class BinanceFetcher(BaseFetcher):
                     if self.redis:
                         await self.redis.set(cache_key, ratio, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
+                    logger.opt(exception=True).warning(f"Redis SET failed for {cache_key}: {e}")
                 return ratio
             return None
         except InvalidSymbolError:
@@ -376,7 +376,7 @@ class BinanceFetcher(BaseFetcher):
                 if cached:
                     return float(cached)
         except Exception as e:
-            logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
+            logger.opt(exception=True).warning(f"Redis GET failed for {cache_key}: {e}")
 
         try:
             params = {"symbol": binance_symbol, "limit": 1}
@@ -387,7 +387,7 @@ class BinanceFetcher(BaseFetcher):
                     if self.redis:
                         await self.redis.set(cache_key, funding_rate, ex=cache_ttl)
                 except Exception as e:
-                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
+                    logger.opt(exception=True).warning(f"Redis SET failed for {cache_key}: {e}")
                 return funding_rate
             return None
         except InvalidSymbolError:

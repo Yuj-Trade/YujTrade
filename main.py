@@ -66,7 +66,7 @@ class MainApp:
                 await self.scheduler_store.record(
                     "scheduled_analysis", now, started, datetime.now(UTC), "failed", str(e)
                 )
-                logger.error(f"Scheduled analysis failed: {e}", exc_info=True)
+                logger.opt(exception=True).error(f"Scheduled analysis failed: {e}")
             else:
                 await self.scheduler_store.record(
                     "scheduled_analysis",
@@ -82,7 +82,7 @@ class MainApp:
         except PolicyError as exc:
             logger.error(f"Outcome notifications disabled: {exc}")
         except Exception as exc:
-            logger.error(f"Outcome notifications disabled: {exc}", exc_info=True)
+            logger.opt(exception=True).error(f"Outcome notifications disabled: {exc}")
         return build_policy({"outcome_notifications_mode": "off"}, frozenset(TIME_FRAMES))
 
     async def _outcome_watch_loop(self, policy: NotificationPolicy) -> None:
@@ -111,7 +111,7 @@ class MainApp:
                 )
             except Exception as exc:
                 status, error = "failed", str(exc)
-                logger.error(f"Outcome watch tick failed: {exc}", exc_info=True)
+                logger.opt(exception=True).error(f"Outcome watch tick failed: {exc}")
             await self.scheduler_store.record(
                 "outcome_watch", started, started, datetime.now(UTC), status, error
             )
@@ -196,9 +196,9 @@ class MainApp:
             await self.shutdown_event.wait()
 
         except TimeoutError as e:
-            logger.error(f"A component timed out during initialization: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"A component timed out during initialization: {e}")
         except Exception as e:
-            logger.error(f"Error during application run: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"Error during application run: {e}")
         finally:
             logger.info("Shutdown event set. Cleaning up resources...")
 

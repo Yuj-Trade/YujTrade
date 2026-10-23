@@ -242,7 +242,7 @@ class MarketDataProvider:
                     else:
                         return df
             except Exception as e:
-                logger.warning(f"Redis GET failed for {cache_key}: {e}", exc_info=True)
+                logger.opt(exception=True).warning(f"Redis GET failed for {cache_key}: {e}")
 
         fetch_sources = [
             (
@@ -309,7 +309,7 @@ class MarketDataProvider:
                         cache_key, df_to_cache.to_json(orient="split"), ex=cache_ttl
                     )
                 except Exception as e:
-                    logger.warning(f"Redis SET failed for {cache_key}: {e}", exc_info=True)
+                    logger.opt(exception=True).warning(f"Redis SET failed for {cache_key}: {e}")
             return best_df
 
         raise InsufficientDataError(

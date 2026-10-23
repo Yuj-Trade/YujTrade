@@ -245,9 +245,8 @@ class ModelTrainer:
                 )
             return entry
         except Exception as e:
-            logger.error(
+            logger.opt(exception=True).error(
                 f"Error during training for {symbol}-{timeframe} ({model_type}): {e}",
-                exc_info=True,
             )
             entry["status"] = "error"
             entry["reason"] = str(e)
@@ -473,7 +472,7 @@ def main() -> None:
         logger.info("Training process interrupted by user.")
         exit_code = 0
     except Exception as e:
-        logger.error(f"Fatal error in training script: {e}", exc_info=True)
+        logger.opt(exception=True).error(f"Fatal error in training script: {e}")
         exit_code = 1
     raise SystemExit(exit_code)
 

@@ -84,7 +84,7 @@ async def deliver_task_signals(
         try:
             await bot.shutdown()
         except Exception as e:
-            logger.debug(f"Bot shutdown skipped: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Bot shutdown skipped: {e}")
 
 
 async def run_full_analysis_task(chat_id: int, message_id: int):
@@ -106,7 +106,7 @@ async def run_full_analysis_task(chat_id: int, message_id: int):
         )
         return signals
     except Exception as e:
-        logger.error(f"Error in run_full_analysis_task: {e}", exc_info=True)
+        logger.opt(exception=True).error(f"Error in run_full_analysis_task: {e}")
         return []
 
 
@@ -130,5 +130,5 @@ async def run_quick_scan_task(chat_id: int, message_id: int):
         )
         return signals
     except Exception as e:
-        logger.error(f"Error in run_quick_scan_task: {e}", exc_info=True)
+        logger.opt(exception=True).error(f"Error in run_quick_scan_task: {e}")
         return []

@@ -125,7 +125,7 @@ class HyperparameterOptimizer:
                     raise self.optuna.exceptions.TrialPruned()
             return purged_objective_score(sharpes)
         except Exception as e:
-            logger.error(f"Trial {trial.number} failed: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"Trial {trial.number} failed: {e}")
             return -2.0
 
     @staticmethod

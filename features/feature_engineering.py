@@ -30,9 +30,8 @@ class FeatureEngineer:
         except (IndicatorError, InsufficientDataError) as e:
             logger.debug(f"Could not calculate indicator '{indicator_name}': {e}")
         except Exception as e:
-            logger.error(
+            logger.opt(exception=True).error(
                 f"Unexpected error with indicator '{indicator_name}': {e}",
-                exc_info=True,
             )
         return None
 

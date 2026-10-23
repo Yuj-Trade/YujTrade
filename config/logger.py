@@ -29,7 +29,9 @@ console_format = (
 logger.add(sys.stdout, level="INFO", format=console_format, colorize=True)
 
 FILE_SINK_OPTIONS = dict(
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+    format=(
+        "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}{exception}"
+    ),
     level="DEBUG",
     rotation="10 MB",
     retention="7 days",

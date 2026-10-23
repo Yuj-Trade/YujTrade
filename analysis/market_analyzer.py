@@ -69,7 +69,7 @@ class MarketConditionAnalyzer:
                     d for d in divergences if d not in candle_patterns
                 ]
         except Exception as e:
-            logger.debug(f"Divergence detection skipped: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Divergence detection skipped: {e}")
 
         return MarketAnalysis(
             trend=trend,
@@ -331,7 +331,7 @@ class PatternAnalyzer:
                     pattern_scores[pattern_name] = context_score
 
             except Exception as e:
-                logger.debug(f"Pattern scoring skipped for {pattern_name}: {e}", exc_info=True)
+                logger.opt(exception=True).debug(f"Pattern scoring skipped for {pattern_name}: {e}")
                 continue
 
         sorted_patterns = sorted(pattern_scores.items(), key=lambda x: x[1], reverse=True)

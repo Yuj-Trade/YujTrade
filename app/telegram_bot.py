@@ -241,7 +241,7 @@ class TelegramBotHandler:
                 [timeframe] if timeframe else ["1h"]
             )
         except Exception as e:
-            logger.debug(f"Quick analysis unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Quick analysis unavailable: {e}")
             signals = []
         if not signals:
             await update.message.reply_text(
@@ -259,7 +259,7 @@ class TelegramBotHandler:
         try:
             signals = await self.trading_service.run_quick_analysis([timeframe])
         except Exception as e:
-            logger.debug(f"Quick analysis unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Quick analysis unavailable: {e}")
             signals = []
         if not signals:
             await update.message.reply_text(
@@ -281,7 +281,7 @@ class TelegramBotHandler:
         try:
             summary = self.trading_service.signal_tracker.get_performance_summary()
         except Exception as e:
-            logger.debug(f"Performance summary unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Performance summary unavailable: {e}")
             summary = {}
         text = (
             f"Total: {summary.get('total', 0)} | "
@@ -292,7 +292,7 @@ class TelegramBotHandler:
         try:
             report = await self.trading_service.build_performance_report(datetime.now(UTC))
         except Exception as e:
-            logger.debug(f"Performance report unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Performance report unavailable: {e}")
         if report is not None:
             text = f"{text}\n{_performance_report_lines(report)}"
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
@@ -308,7 +308,7 @@ class TelegramBotHandler:
                 f"Max positions: {cfg.max_concurrent_positions}"
             )
         except Exception as e:
-            logger.debug(f"Risk config unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Risk config unavailable: {e}")
             text = "Risk config unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -326,7 +326,7 @@ class TelegramBotHandler:
                 f"Realized: {snap.get('realized_pnl', 0):.2f}"
             )
         except Exception as e:
-            logger.debug(f"Portfolio snapshot unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Portfolio snapshot unavailable: {e}")
             text = "Portfolio unavailable."
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -339,7 +339,7 @@ class TelegramBotHandler:
             n_ok = sum(1 for v in sources.values() if v.get("ok"))
             src_text = f"Sources: {n_ok}/{len(sources)} healthy"
         except Exception as e:
-            logger.debug(f"Source health unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Source health unavailable: {e}")
             src_text = "Sources: n/a"
         try:
             snap = await self.trading_service.portfolio_snapshot()
@@ -349,7 +349,7 @@ class TelegramBotHandler:
                 f"Open: {snap.get('open_positions', 0)}"
             )
         except Exception as e:
-            logger.debug(f"Portfolio snapshot unavailable: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Portfolio snapshot unavailable: {e}")
             pf_text = "Portfolio: n/a"
         text = f"Health OK. Last errors: {errors} | {src_text} | {pf_text}"
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
@@ -653,7 +653,7 @@ class TelegramBotHandler:
                 else:
                     reasons_list.append(f"• {escape_markdown_v2(r)}")
             except Exception as e:
-                logger.debug(f"Reason formatting skipped: {e}", exc_info=True)
+                logger.opt(exception=True).debug(f"Reason formatting skipped: {e}")
                 reasons_list.append(f"• {escape_markdown_v2(r)}")
 
         reasons_text = "\n*🧠 KEY ANALYSIS FACTORS*\n" + "\n".join(reasons_list)

@@ -15,7 +15,7 @@ class BackgroundTaskManager:
         except asyncio.CancelledError:
             logger.debug(f"Task {task.get_name()} was cancelled.")
         except Exception as e:
-            logger.error(f"Task {task.get_name()} failed with an exception:", exc_info=e)
+            logger.opt(exception=e).error(f"Task {task.get_name()} failed with an exception:")
         else:
             logger.info(
                 f"Task {task.get_name()} completed successfully. "

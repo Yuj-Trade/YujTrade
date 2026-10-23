@@ -62,7 +62,7 @@ class MessariFetcher(BaseFetcher):
                 e, (NetworkError, APIRateLimitError, UpstreamUnavailableError, InvalidSymbolError)
             ):
                 raise
-            logger.error(f"Error in Messari _fetch for {url}: {e}", exc_info=True)
+            logger.opt(exception=True).error(f"Error in Messari _fetch for {url}: {e}")
             raise DataError(f"Failed to fetch data from Messari API: {url}") from e
 
     async def get_asset_metrics(self, symbol: str) -> dict[str, Any] | None:

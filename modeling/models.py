@@ -310,9 +310,8 @@ class LSTMModel(BaseModel):
                 self.is_trained = False
                 return False
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Error during LSTM training for {self.symbol}-{self.timeframe}: {e}",
-                exc_info=True,
             )
             self.is_trained = False
             return False
@@ -369,9 +368,8 @@ class LSTMModel(BaseModel):
 
             return prediction, float(uncertainty)
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Error during LSTM prediction for {self.symbol}-{self.timeframe}: {e}",
-                exc_info=True,
             )
             return None
 
@@ -553,9 +551,8 @@ class XGBoostModel(BaseModel):
 
             return True
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Error during XGBoost training for {self.symbol}-{self.timeframe}: {e}",
-                exc_info=True,
             )
             self.is_trained = False
             return False
@@ -601,14 +598,13 @@ class XGBoostModel(BaseModel):
                 )
                 uncertainty = min(max(uncertainty * 0.1, 0.05), 0.5)
             except Exception as e:
-                logger.debug(f"Uncertainty fallback used: {e}", exc_info=True)
+                logger.opt(exception=True).debug(f"Uncertainty fallback used: {e}")
                 uncertainty = 0.15
 
             return prediction, float(uncertainty)
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Error during XGBoost prediction for {self.symbol}-{self.timeframe}: {e}",
-                exc_info=True,
             )
             return None
 

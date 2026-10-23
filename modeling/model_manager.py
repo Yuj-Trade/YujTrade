@@ -209,9 +209,8 @@ class ModelManager:
                     return self._cache[key]
             return model
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Could not get or create {model_type.upper()} model for {key}: {e}",
-                exc_info=True,
             )
             return None
 
@@ -309,9 +308,8 @@ class ModelManager:
                 )
                 return None
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Error training {model_type.upper()} model for {symbol}-{timeframe}: {e}",
-                exc_info=True,
             )
             return None
 
@@ -361,7 +359,7 @@ class ModelManager:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for res in results:
             if isinstance(res, Exception):
-                self.logger.error(f"Error during model initialization: {res}", exc_info=res)
+                self.logger.opt(exception=res).error(f"Error during model initialization: {res}")
         self.logger.info(f"Model initialization finished. Loaded/Created {len(tasks)} models.")
 
     async def train_and_save_model(self, model_type: str, symbol: str, timeframe: str) -> bool:
@@ -483,9 +481,8 @@ class ModelManager:
             )
             return None
         except Exception as e:
-            self.logger.error(
+            self.logger.opt(exception=True).error(
                 f"Prediction failed for {model_type} on {symbol}-{timeframe}: {e}",
-                exc_info=True,
             )
             return None
 

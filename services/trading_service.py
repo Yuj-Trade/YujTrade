@@ -229,7 +229,7 @@ class TradingService(ModelDataProvider):
         try:
             redis_client = await self.resource_manager.get_redis_client()
         except Exception as e:
-            logger.debug(f"Redis unavailable, continuing without cache: {e}", exc_info=True)
+            logger.opt(exception=True).debug(f"Redis unavailable, continuing without cache: {e}")
             redis_client = None
         self._redis_client = redis_client
         self.model_manager.redis_client = redis_client
@@ -343,7 +343,7 @@ class TradingService(ModelDataProvider):
         errors = [res for res in results if isinstance(res, Exception)]
         self.last_errors = len(errors)
         for err in errors:
-            self._log().error(f"Signal generation failed: {err}", exc_info=err)
+            self._log().opt(exception=err).error(f"Signal generation failed: {err}")
         return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:

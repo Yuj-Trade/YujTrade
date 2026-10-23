@@ -62,8 +62,8 @@ class KeyEncryptor:
         try:
             return self.fernet.decrypt(encrypted_data.encode()).decode()
         except Exception:
-            logger.error(
-                "Decryption failed for data. It might be invalid or corrupted.", exc_info=True
+            logger.opt(exception=True).error(
+                "Decryption failed for data. It might be invalid or corrupted."
             )
             return ""
 
