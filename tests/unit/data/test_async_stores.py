@@ -59,3 +59,25 @@ def test_warehouse_and_schedulerExpose_coroutines():
     assert inspect.iscoroutinefunction(IndicatorHistoryWarehouse.write_many)
     assert inspect.iscoroutinefunction(SchedulerStore.is_due)
     assert inspect.iscoroutinefunction(SchedulerStore.record)
+
+
+async def test_warehouse_concurrent_writes_and_reads_do_not_lock(tmp_path):
+    import asyncio
+
+    store = IndicatorHistoryWarehouse(tmp_path / "history.db")
+
+    async def _write(idx: int):
+        rows = [
+            (f"conc{idx}", f"2025-01-01T00:00:{row:02d}+00:00", float(row)) for row in range(50)
+        ]
+        await store.write_many(rows)
+
+    async def _read(idx: int):
+        return await store.read([f"conc{idx}"], 500)
+
+    tasks = [_write(i) for i in range(200)] + [_read(i) for i in range(200)]
+    await asyncio.gather(*tasks)
+
+    for idx in range(200):
+        history = await store.read([f"conc{idx}"], 500)
+        assert len(history[f"conc{idx}"]) == 50
