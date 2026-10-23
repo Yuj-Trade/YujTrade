@@ -37,3 +37,42 @@ async def test_unsupported_symbol_does_not_call_coindesk():
     assert result is None
     assert calls == []
     assert not any("Source coindesk failed" in m for m in messages)
+
+
+async def test_not_found_response_logs_warning_with_status():
+    from contextlib import asynccontextmanager
+
+    class _Session:
+        closed = False
+
+        def get(self, url, params=None, headers=None, **kwargs):
+            @asynccontextmanager
+            async def _ctx():
+                class _Response:
+                    status = 404
+
+                    async def text(self):
+                        return "  not   found  "
+
+                    async def json(self):
+                        return {}
+
+                yield _Response()
+
+            return _ctx()
+
+    fetcher = CoinDeskFetcher(api_key="FAKE_TOKEN_123", session=_Session())
+
+    messages: list[str] = []
+
+    def sink(message):
+        messages.append(message.record["message"])
+
+    handler_id = logger.add(sink, format="{message}", level="DEBUG")
+    try:
+        result = await fetcher.get_historical_ohlc("BTC/USDT", "1h", 100)
+    finally:
+        logger.remove(handler_id)
+
+    assert result is None
+    assert any("404" in m for m in messages)

@@ -57,6 +57,11 @@ class CoinDeskFetcher(BaseFetcher):
                     if response.status >= 400:
                         text = await response.text()
                         if "not found" in text.lower() or response.status == 404:
+                            normalized = " ".join(text.split())[:200]
+                            logger.warning(
+                                f"CoinDesk not found for {url}: Status {response.status}, "
+                                f"Body: {normalized}"
+                            )
                             raise InvalidSymbolError(
                                 f"Invalid symbol for CoinDesk: "
                                 f"{params.get('symbol') if params else endpoint}"
