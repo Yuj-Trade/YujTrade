@@ -14,7 +14,7 @@ class DeFiLlamaFetcher(BaseFetcher):
         self.source_name = "defillama"
 
     async def get_total_tvl_for_chains(self) -> list:
-        url = f"{self.base_url}/tvl/chains"
+        url = f"{self.base_url}/v2/chains"
         data = await self._fetch_json(url, limiter=defillama_rate_limiter)
         return data if isinstance(data, list) else []
 
