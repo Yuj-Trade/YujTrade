@@ -142,7 +142,11 @@ class MarketDataProvider:
             self.news_fetcher = NewsFetcher(
                 cryptopanic_fetcher=cryptopanic_fetcher,
                 alternativeme_fetcher=alternativeme_fetcher,
-                coindesk_fetcher=self.coindesk_fetcher,
+                coindesk_fetcher=(
+                    self.coindesk_fetcher
+                    if self.config_manager.get("coindesk_news_enabled", False)
+                    else None
+                ),
                 messari_fetcher=self.messari_fetcher,
                 redis_client=self.redis,
                 config_manager=self.config_manager,
