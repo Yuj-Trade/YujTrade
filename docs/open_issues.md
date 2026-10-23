@@ -204,3 +204,65 @@ in the open lists.
 - [ ] Organization secret manager adoption (future work).
 - [ ] Live execution enablement (future work, requires `execution_dry_run` review).
 - [ ] `docker-compose.yml` stays absent; compose-based deployment is user-side.
+
+## app.log remediation 2026-10-22 - resolved
+
+Evidence: `docs/remediation/app-log-2026-10-22.md`. Baseline tag
+`pre-applog-remediation`.
+
+- [x] E01 CryptoPanic `auth_token` printed in plain text: redacted by a loguru
+  patcher in `config/logger.py`. `113b299`.
+- [x] E16 Full Cloudflare HTML logged: error bodies are tag-stripped and capped
+  at 200 characters. `6cb8261`.
+- [x] E14 (config part) `diagnose=True` would print locals: file sink options
+  moved to `FILE_SINK_OPTIONS` with `diagnose=False`. `e85e7ff`.
+- [x] E04 `database is locked`: WAL, 30 s busy timeout, per-instance lock in
+  `IndicatorHistoryWarehouse`. Reproduced at 200 concurrent tasks before the
+  fix. `6bf4842`.
+- [x] E02 CoinGecko 10011: endpoint and credential now selected by
+  `coingecko_api_tier`. `a7ba02b`.
+- [x] E03 CoinGecko circuit breaker: consequence of E02, no separate change.
+- [x] E05, E07, E12 Upstream timeouts and 403s now raise
+  `UpstreamUnavailableError` and count toward the breaker. `00a67f0`.
+- [x] E08 DeFiLlama `Protocol not found`: `/v2/chains` verified live (HTTP 200,
+  421 chains). `1daec0c`.
+- [x] E11 `Source coindesk failed` for unsupported symbols: CoinDesk is only
+  added for BTC and ETH. `cf3f3cf`.
+- [x] E10 CoinDesk not-found swallowed at DEBUG: now a WARNING with status and
+  body. `facfd17`.
+- [x] E09 `api.coindesk.com` DNS failures: CoinDesk news gated behind
+  `coindesk_news_enabled`, default off. Host confirmed non-resolving. `df5eb2e`.
+- [x] E14 tracebacks absent: 49 `exc_info` sites converted to
+  `logger.opt(exception=...)`, and the file sink format now includes
+  `{exception}`. `0a896be`, `1803d52`.
+- [x] E15 Analysis failure without symbol or timeframe: `analyze_symbol` now
+  logs both and re-raises. `ee16a14`.
+
+## app.log remediation 2026-10-22 - open
+
+- [ ] U1 Rotate the CryptoPanic key. It was printed in `logs/app.log`. Rotate at
+  the provider, re-encrypt with `python scripts/encrypt_keys.py`, and delete old
+  log copies. User-side.
+- [ ] U2 Redis host. `getaddrinfo failed` (code 11001) means the configured host
+  does not resolve. Copy the current host and password from the Redis Cloud
+  dashboard into `.env`. User-side.
+- [ ] U3 Binance futures reachability. `fapi.binance.com` timed out for every
+  symbol while spot succeeded. Test from the runtime machine; if it fails,
+  derivatives data is unavailable on this network. User-side.
+- [ ] U5 CoinDesk host. `api.coindesk.com` does not resolve (verified
+  2026-10-23). CoinDesk news stays disabled until it does.
+- [ ] U6 CryptoPanic access. Cloudflare returned 403 for every request. Confirm
+  the provider account allows API access from this network.
+- [ ] E06 Messari 404s: BLOCKED, not fixed. On 2026-10-23 `data.messari.io`
+  returned 404 for the API root and for every candidate slug including
+  `bitcoin`, so the ticker-to-slug theory could not be verified and no mapping
+  was written. Needs confirmation that a Messari plan is active and what the
+  current base URL is.
+- [ ] `messari_asset_slugs` config key is declared but unpopulated, pending E06.
+- [ ] CoinDesk OHLCV endpoint (`spot/v1/historical/ohlcv`) could not be verified
+  because the host does not resolve. Path and parameters are unchanged and
+  unverified.
+- [ ] `get_latest_news` and `get_bitcoin_price_index` in
+  `data/sources/coindesk_fetcher.py` are unreferenced by runtime code.
+- [ ] `PaperLedger` and `SchedulerStore` still open a connection per call and do
+  not use WAL. Same class of risk as E04, not yet fixed.

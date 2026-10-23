@@ -22,6 +22,17 @@ git status --porcelain   # must be empty
      the mounted secret and `.env` values disagree.
 - Denylist (never commit): `.env`, `secret.salt`, `*.db`, `*.pkl`, `*.keras`,
   `calibration.json`, `signal_history.json`, `runs/`, `artifacts/`, `models/`.
+- Provider behavior keys added by the 2026-10-22 app.log remediation. All three
+  live in `ConfigManager.DEFAULT_CONFIG` and are overridden in the untracked
+  `config.json`:
+  - `coingecko_api_tier` (default `"demo"`): `demo` uses the public host
+    `api.coingecko.com` with the key sent as the `x_cg_demo_api_key` query
+    parameter; `pro` uses `pro-api.coingecko.com` with the `x-cg-pro-api-key`
+    header. Any other value raises `ConfigurationError` at construction.
+  - `messari_asset_slugs` (default absent): ticker-to-Messari-slug map. Not
+    populated because no slug could be verified (see open issues).
+  - `coindesk_news_enabled` (default `False`): CoinDesk news is skipped entirely
+    unless this is `true`. `api.coindesk.com` does not resolve.
 
 ## 3. Training and prediction contract
 
@@ -279,3 +290,11 @@ while the delivery is in flight, `notification_claimed_at`.
 | Scheduler silent after restart | Check `runs/scheduler.db` readability; verify `/health` |
 | Golden mismatch after re-record | Expected only when fixture data changed; otherwise investigate before committing |
 | Podman TLS timeouts on pull/build | MTU blackhole in the podman-machine network: `podman machine ssh -- "sudo -n ip link set eth0 mtu 1280"` (runtime-only, repeat after machine restart) |
+| CoinGecko `error_code":10011` ("use api.coingecko.com for Demo key") | Set `coingecko_api_tier` to `demo` (public host, `x_cg_demo_api_key` param) or `pro` (pro host, `x-cg-pro-api-key` header) in `config.json`; default is `demo` |
+| Cloudflare 403 from CryptoPanic | The network is blocked by Cloudflare. `UpstreamUnavailableError` now counts toward the circuit breaker, so repeated calls stop instead of retrying every cycle. Confirm provider access from this network (U6) |
+| `Connection timeout` to `fapi.binance.com` | Network or regional reachability to Binance futures. Spot on `api.binance.com` is unaffected. Test with `Invoke-WebRequest https://fapi.binance.com/fapi/v1/ping -TimeoutSec 10` (U3) |
+| `getaddrinfo failed` for Redis | The configured `REDIS_HOST` does not resolve. Check the host in `.env` against the Redis Cloud dashboard (U2). Caching stays disabled until it resolves |
+| `database is locked` | Should not recur: `IndicatorHistoryWarehouse` now uses WAL, a 30 s busy timeout, and a per-instance `asyncio.Lock`. If it returns, check for another process holding `runs/indicator_history.db` |
+| `getaddrinfo failed` for `api.coindesk.com` | The host does not resolve (verified 2026-10-23). CoinDesk news is off by default via `coindesk_news_enabled`; leave it off unless the host resolves |
+| `Protocol not found` from `api.llama.fi` | The chain TVL endpoint is `/v2/chains`, not `/tvl/chains` |
+| Messari 404 on every asset | `data.messari.io` returned 404 for the API root as well as every asset slug on 2026-10-23. Treat as an unavailable provider, not a slug bug |
