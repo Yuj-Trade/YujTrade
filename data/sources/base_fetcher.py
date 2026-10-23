@@ -1,3 +1,5 @@
+import re
+
 import aiohttp
 import redis.asyncio as redis
 
@@ -11,6 +13,8 @@ from common.utils import RateLimiter, async_retry
 from config.logger import logger
 from config.settings import ConfigManager
 from utils.circuit_breaker import CircuitBreaker
+
+_TAG_PATTERN = re.compile(r"<[^>]*>")
 
 
 class BaseFetcher:
@@ -79,8 +83,9 @@ class BaseFetcher:
                     if "Invalid symbol" in error_text:
                         raise InvalidSymbolError(f"Invalid symbol for {url}")
 
+                    normalized = " ".join(_TAG_PATTERN.sub(" ", error_text).split())[:200]
                     logger.error(
-                        f"Error fetching from {url}: Status {response.status}, Body: {error_text}"
+                        f"Error fetching from {url}: Status {response.status}, Body: {normalized}"
                     )
                     response.raise_for_status()
                 return await response.json()
