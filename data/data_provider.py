@@ -248,7 +248,7 @@ class MarketDataProvider:
             ),
             (
                 (self.coindesk_fetcher.get_historical_ohlc, "coindesk")
-                if self.coindesk_fetcher
+                if self.coindesk_fetcher and self.coindesk_fetcher.supports_ohlcv(symbol)
                 else None
             ),
         ]

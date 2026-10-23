@@ -18,6 +18,8 @@ from data.sources.base_fetcher import BaseFetcher
 
 coindesk_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
+OHLCV_SUPPORTED_BASES = frozenset({"BTC", "ETH"})
+
 
 class CoinDeskFetcher(BaseFetcher):
     def __init__(
@@ -66,6 +68,10 @@ class CoinDeskFetcher(BaseFetcher):
 
         return await self.circuit_breaker.call(_do_fetch)
 
+    def supports_ohlcv(self, symbol: str) -> bool:
+        asset_id = symbol.upper().replace("/USDT", "").replace("/", "")
+        return asset_id in OHLCV_SUPPORTED_BASES
+
     async def get_historical_ohlc(
         self, symbol: str, timeframe: str, limit: int
     ) -> pd.DataFrame | None:
@@ -75,7 +81,7 @@ class CoinDeskFetcher(BaseFetcher):
             original_symbol = symbol
             asset_id = symbol.upper().replace("/USDT", "").replace("/", "")
 
-            if asset_id not in ["BTC", "ETH"]:
+            if not self.supports_ohlcv(symbol):
                 logger.debug(f"CoinDesk does not support symbol: {original_symbol}")
                 raise InvalidSymbolError(f"CoinDesk does not support: {original_symbol}")
 
