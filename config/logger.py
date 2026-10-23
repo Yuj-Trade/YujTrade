@@ -28,16 +28,17 @@ console_format = (
 
 logger.add(sys.stdout, level="INFO", format=console_format, colorize=True)
 
-logger.add(
-    log_file,
-    level="DEBUG",
+FILE_SINK_OPTIONS = dict(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+    level="DEBUG",
     rotation="10 MB",
     retention="7 days",
     encoding="utf-8",
     enqueue=True,
     backtrace=True,
-    diagnose=True,
+    diagnose=False,
 )
+
+logger.add(log_file, **FILE_SINK_OPTIONS)
 
 logger.info("Logger initialized.")
