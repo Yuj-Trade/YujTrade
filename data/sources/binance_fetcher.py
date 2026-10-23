@@ -18,6 +18,7 @@ from common.exceptions import (
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
+from utils.circuit_breaker import CircuitBreaker
 
 binance_rate_limiter = RateLimiter(max_requests=1200, time_window=60)
 
@@ -36,6 +37,7 @@ class BinanceFetcher(BaseFetcher):
         self.fapi_url = "https://fapi.binance.com/fapi/v1"
         self.futures_data_url = "https://fapi.binance.com/futures/data"
         self.source_name = "binance"
+        self.futures_circuit_breaker = CircuitBreaker()
 
     @async_retry(
         attempts=3,
@@ -80,7 +82,12 @@ class BinanceFetcher(BaseFetcher):
                 raise UpstreamUnavailableError(f"Upstream unavailable for {full_url}") from exc
 
         try:
-            return await self.circuit_breaker.call(_do_fetch)
+            breaker = (
+                self.futures_circuit_breaker
+                if "fapi.binance.com" in full_url
+                else self.circuit_breaker
+            )
+            return await breaker.call(_do_fetch)
         except aiohttp.ClientResponseError as e:
             if e.status == 400:
                 raise InvalidSymbolError(
