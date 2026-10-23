@@ -100,3 +100,44 @@ async def test_a_new_signal_is_recorded_once(tmp_path):
 
     assert list(tracker.history) == [signal_id]
     assert tracker.history[signal_id]["outcome"] is None
+
+
+async def test_analyze_symbol_logs_symbol_and_timeframe_on_failure():
+    import pandas as pd
+    import pytest
+    from loguru import logger
+
+    import services.trading_service as ts
+
+    class _Provider:
+        async def fetch_ohlcv_data(self, symbol, timeframe, limit=600):
+            return pd.DataFrame(
+                {"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0], "volume": [1.0]}
+            )
+
+    class _Gen:
+        async def generate_signal(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    service = ts.TradingService.__new__(ts.TradingService)
+    service.invalid_symbols = set()
+    service.last_errors = 0
+    service._cycle_log = logger
+    service.market_data_provider = _Provider()
+    service.signal_generator = _Gen()
+
+    errors: list[str] = []
+
+    def sink(message):
+        if message.record["level"].name == "ERROR":
+            errors.append(message.record["message"])
+
+    handler_id = logger.add(sink, format="{message}", level="DEBUG")
+    try:
+        with pytest.raises(RuntimeError):
+            await service.analyze_symbol("BTC/USDT", "1h")
+    finally:
+        logger.remove(handler_id)
+
+    assert errors, "expected an ERROR record for the failed analysis"
+    assert any("BTC/USDT" in m and "1h" in m for m in errors)

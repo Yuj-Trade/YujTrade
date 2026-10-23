@@ -337,6 +337,11 @@ class TradingService(ModelDataProvider):
             self._log().warning(f"Symbol {symbol} is invalid. Adding to ignore list.")
             self.invalid_symbols.add(symbol)
             return None
+        except Exception as e:
+            self._log().bind(symbol=symbol, timeframe=timeframe).opt(exception=e).error(
+                f"Signal analysis failed for {symbol} on {timeframe}: {e}"
+            )
+            raise
 
     def _partition_results(self, results) -> list[TradingSignal]:
         signals = [res for res in results if isinstance(res, TradingSignal)]
