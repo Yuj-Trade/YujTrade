@@ -266,3 +266,33 @@ Evidence: `docs/remediation/app-log-2026-10-22.md`. Baseline tag
   `data/sources/coindesk_fetcher.py` are unreferenced by runtime code.
 - [ ] `PaperLedger` and `SchedulerStore` still open a connection per call and do
   not use WAL. Same class of risk as E04, not yet fixed.
+
+## Post-run verification 2026-10-23 - resolved
+
+- [x] Binance futures breaker no longer blocks spot: separate
+  `futures_circuit_breaker`. `a03cc85`.
+- [x] Tracebacks start on their own line in the file sink. `dd076f0`.
+- [x] CoinDesk OHLCV endpoint corrected to `spot/v1/historical/{days|hours}`,
+  verified live with HTTP 200 and real candles for BTC 1h and ETH 1d. `5050bce`.
+- [x] `decorrelation_disabled` logged at DEBUG; the warehouse was verified
+  healthy (45,794 rows). `f0a5091`.
+- [x] Messari gated behind `messari_enabled` (default off). `34f999c`.
+
+## Post-run verification 2026-10-23 - open
+
+- [ ] E06 Messari: root cause is now known and is not a code bug.
+  `api.messari.io/metrics/v1` returns HTTP 401 "A Messari Enterprise membership
+  is required" with the configured key. `data.messari.io/api/v1` is retired
+  (404). To restore on-chain metrics, an Enterprise plan is required; then set
+  `messari_enabled` to true and update `base_url` to
+  `https://api.messari.io/metrics/v1`. The ticker-to-slug mapping was never the
+  problem and no slug map is needed for the metrics path.
+- [ ] `messari_asset_slugs` config key remains declared but unused; it may be
+  removable once the Messari path is settled.
+- [ ] CoinDesk `hours` endpoint returned HTTP 429 (rate limit exceeded) during
+  probing while `days` succeeded. The 1h path works through the same endpoint
+  family but the account tier may cap hourly history. Watch for 429 on
+  `historical/hours` in the next run.
+- [ ] `modeling/models.py` constructs `FeatureEngineer()` without a history
+  provider, so decorrelation is always disabled on the ML path. Not a bug, but
+  the ML features never get correlation weighting.
