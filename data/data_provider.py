@@ -147,7 +147,11 @@ class MarketDataProvider:
                     if self.config_manager.get("coindesk_news_enabled", False)
                     else None
                 ),
-                messari_fetcher=self.messari_fetcher,
+                messari_fetcher=(
+                    self.messari_fetcher
+                    if self.config_manager.get("messari_enabled", False)
+                    else None
+                ),
                 redis_client=self.redis,
                 config_manager=self.config_manager,
             )

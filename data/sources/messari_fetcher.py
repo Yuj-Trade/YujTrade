@@ -35,6 +35,9 @@ class MessariFetcher(BaseFetcher):
         self.base_url_v2 = "https://data.messari.io/api/v2"
         self.source_name = "messari"
 
+    def _enabled(self) -> bool:
+        return bool(self.config_manager.get("messari_enabled", False))
+
     @async_retry(attempts=3, delay=5, exceptions=(NetworkError, APIRateLimitError))
     async def _fetch(self, endpoint: str, params: dict | None = None):
         self._check_if_closed()
@@ -67,6 +70,8 @@ class MessariFetcher(BaseFetcher):
 
     async def get_asset_metrics(self, symbol: str) -> dict[str, Any] | None:
         self._check_if_closed()
+        if not self._enabled():
+            return None
         cache_key = CacheKeyBuilder.build(
             CacheCategory.METRICS, self.source_name, ["asset"], symbol
         )
@@ -143,6 +148,8 @@ class MessariFetcher(BaseFetcher):
 
     async def get_news(self, symbol: str) -> list[dict]:
         self._check_if_closed()
+        if not self._enabled():
+            return []
         cache_key = CacheKeyBuilder.build(CacheCategory.NEWS, self.source_name, ["news"], symbol)
         try:
             if self.redis:

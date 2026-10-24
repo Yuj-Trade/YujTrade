@@ -110,6 +110,7 @@ class ConfigManager:
         "performance_rf_annual": 0,
         "coingecko_api_tier": "demo",
         "coindesk_news_enabled": False,
+        "messari_enabled": False,
         "performance_periods_per_year": 365,
         "performance_min_trades_for_ratios": 30,
         "risk_per_trade_pct": 1.0,
