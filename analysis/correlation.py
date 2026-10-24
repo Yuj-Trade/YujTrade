@@ -18,7 +18,7 @@ class IndicatorCorrelationManager:
         self.correlation_matrix = None
 
         if not history:
-            logger.warning(
+            logger.debug(
                 "decorrelation_disabled: historical indicator series unavailable; "
                 "neutral weights applied."
             )
