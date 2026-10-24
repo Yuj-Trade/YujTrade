@@ -91,36 +91,46 @@ class CoinDeskFetcher(BaseFetcher):
                 raise InvalidSymbolError(f"CoinDesk does not support: {original_symbol}")
 
             if "d" in timeframe_lower or "w" in timeframe_lower or "m" in timeframe_lower:
-                endpoint = f"spot/v1/historical/ohlcv/{asset_id}/d"
-                params = {"limit": limit}
+                endpoint = "spot/v1/historical/days"
+                aggregate = 1
             else:
-                endpoint = f"spot/v1/historical/ohlcv/{asset_id}/h"
-                params = {"time_frame": timeframe, "limit": limit}
+                endpoint = "spot/v1/historical/hours"
+                aggregate = 1
+
+            params = {
+                "market": "coinbase",
+                "instrument": f"{asset_id}-USD",
+                "limit": limit,
+                "aggregate": aggregate,
+                "fill": "true",
+                "apply_mapping": "true",
+                "response_format": "JSON",
+            }
 
             data = await self._fetch(endpoint, params)
 
-            if not data or "data" not in data or not data["data"]:
+            if not data or "Data" not in data or not data["Data"]:
                 return None
 
-            ohlc_data = data["data"]
+            ohlc_data = data["Data"]
             if not ohlc_data:
                 return None
 
             df = pd.DataFrame(ohlc_data)
             df.rename(
                 columns={
-                    "ts": "timestamp",
-                    "o": "open",
-                    "h": "high",
-                    "l": "low",
-                    "c": "close",
-                    "v": "volume",
+                    "TIMESTAMP": "timestamp",
+                    "OPEN": "open",
+                    "HIGH": "high",
+                    "LOW": "low",
+                    "CLOSE": "close",
+                    "VOLUME": "volume",
                 },
                 inplace=True,
             )
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
             df.set_index("timestamp", inplace=True)
-            df = df.astype(float).sort_index()
+            df = df[["open", "high", "low", "close", "volume"]].astype(float).sort_index()
 
             return df.tail(limit)
         except InvalidSymbolError:
