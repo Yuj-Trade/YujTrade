@@ -348,7 +348,7 @@ Evidence: `docs/remediation/app-log-2026-10-24.md`.
   milliseconds, so every hit returned 1970 dates and was refetched. `99d8bb1`.
 - [x] Per-symbol continuous learning runs after each cycle, warm-starts from
   the promoted artifact and promotes only through `evaluate_promotion`.
-  `model_auto_train_on_predict` stays false. `f1d6b31`.
+  `model_auto_train_on_predict` stays false. `f015340`.
 
 ## Rate limit, candle cache and continuous learning 2026-10-25 - open
 
