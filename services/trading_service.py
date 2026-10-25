@@ -28,6 +28,7 @@ from domain.outcome import (
 )
 from domain.performance import RESOLVER_VERSION, ResolutionRecord
 from domain.types import SignalDraft
+from modeling.learner import ModelLearner
 from modeling.model_manager import ModelDataProvider, ModelManager
 from strategy.multi_timeframe import MultiTimeframeAnalyzer
 from strategy.prediction_trace import PredictionTraceRecorder
@@ -182,6 +183,12 @@ class TradingService(ModelDataProvider):
             redis_client=self._redis_client,
             model_path=self.config_manager.get("model_path", "models"),
             auto_train_on_predict=self.config_manager.get("model_auto_train_on_predict", False),
+        )
+
+        self.learner = ModelLearner(
+            model_manager=self.model_manager,
+            data_provider=self,
+            config_manager=self.config_manager,
         )
 
         self.trace_recorder = PredictionTraceRecorder(
@@ -415,9 +422,23 @@ class TradingService(ModelDataProvider):
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
         await self.signal_generator.begin_run_cycle()
         try:
-            return await self._run_analysis_cycle_all()
+            signals = await self._run_analysis_cycle_all()
         finally:
             await self.signal_generator.end_run_cycle()
+        self._schedule_learning(self._analysis_timeframes())
+        return signals
+
+    def _analysis_timeframes(self) -> list[str]:
+        focus_timeframes = LONG_TERM_CONFIG.get("focus_timeframes", ["1d", "1w", "1M"])
+        all_timeframes = self.config_manager.get("timeframes", [])
+        return [tf for tf in all_timeframes if tf in focus_timeframes] or all_timeframes
+
+    def _schedule_learning(self, timeframes: list[str]) -> None:
+        if self.learner is None:
+            return
+        for symbol in self.config_manager.get("symbols", []):
+            for timeframe in timeframes:
+                self.learner.request(symbol, timeframe)
 
     async def _run_analysis_cycle_all(self) -> list[TradingSignal]:
         try:
@@ -426,12 +447,7 @@ class TradingService(ModelDataProvider):
             logger.debug(f"Pending-signal reconciliation skipped: {e}")
 
         symbols = self.config_manager.get("symbols", [])
-        focus_timeframes = LONG_TERM_CONFIG.get("focus_timeframes", ["1d", "1w", "1M"])
-        all_timeframes = self.config_manager.get("timeframes", [])
-
-        timeframes_to_use = [
-            tf for tf in all_timeframes if tf in focus_timeframes
-        ] or all_timeframes
+        timeframes_to_use = self._analysis_timeframes()
 
         tasks = [self.analyze_symbol(s, tf) for s in symbols for tf in timeframes_to_use]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -487,9 +503,11 @@ class TradingService(ModelDataProvider):
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
         await self.signal_generator.begin_run_cycle()
         try:
-            return await self._run_quick_analysis_cycle(timeframes)
+            signals = await self._run_quick_analysis_cycle(timeframes)
         finally:
             await self.signal_generator.end_run_cycle()
+        self._schedule_learning(timeframes or ["1h"])
+        return signals
 
     async def _run_quick_analysis_cycle(self, timeframes: list[str] | None) -> list[TradingSignal]:
         try:
@@ -776,5 +794,7 @@ class TradingService(ModelDataProvider):
 
     async def cleanup(self):
         logger.info("Cleaning up TradingService resources.")
+        if self.learner:
+            await self.learner.shutdown()
         if self.model_manager:
             await self.model_manager.shutdown()

@@ -333,3 +333,32 @@ Evidence: `docs/remediation/app-log-2026-10-24.md`.
 - [ ] `fapi.binance.com` and `api.coingecko.com` do not resolve on this network.
   Still user-side (U3); the code now degrades without per-symbol error spam.
 
+
+## Rate limit, candle cache and continuous learning 2026-10-25 - resolved
+
+- [x] Rate limits are configured per provider and shared through
+  `common/rate_limit.py`; `MarketIndicesFetcher` no longer bypasses the
+  CoinGecko budget, and a 429 parks the provider for its `Retry-After`.
+  `9576e7c`.
+- [x] Candles are stored as one canonical series per symbol/timeframe in
+  `runs/ohlcv.db`, so a Redis outage no longer forces a refetch and the cache
+  key no longer embeds the requested limit (closes open issue 5 for the
+  analysis path). `99d8bb1`.
+- [x] The Redis OHLCV payload wrote epoch seconds while the reader parsed
+  milliseconds, so every hit returned 1970 dates and was refetched. `99d8bb1`.
+- [x] Per-symbol continuous learning runs after each cycle, warm-starts from
+  the promoted artifact and promotes only through `evaluate_promotion`.
+  `model_auto_train_on_predict` stays false. `f1d6b31`.
+
+## Rate limit, candle cache and continuous learning 2026-10-25 - open
+
+- [ ] `model_learning.enabled` defaults to false. Enable it in `config.json`
+  after reviewing the first artifacts in `artifacts/`.
+- [ ] The learner fetches its data through `get_data_for_model`, which caps the
+  window with `model_data_limits`; a longer history for drift detection would
+  need a separate limit.
+- [ ] `OhlcvStore` keeps one SQLite connection per provider instance. A
+  multi-process deployment would need WAL-aware coordination.
+- [ ] `get_macro_economic_data` is still reached from both the `macro` and
+  `market_indices` memo scopes; the AlphaVantage limiter now caps the damage at
+  one provider-wide budget, but the duplicate fetch remains.

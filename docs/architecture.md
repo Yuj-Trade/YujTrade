@@ -136,3 +136,55 @@ domain or the loop. `app/tasks.py` is not wired to this flow and must never
 run a second stack or a second tracker over the same history.
 
 Decisions: `docs/adr/ADR-0010-signal-outcome-notifications.md`.
+
+## Rate limit governance
+
+```
+common/rate_limit.py: RateLimitRegistry
+  -> one RateLimiter per provider, created lazily from rate_limits config
+  -> BaseFetcher._wait_for_slot / _penalize_provider
+       -> data/sources/*_fetcher.py  (no module-level limiters)
+```
+
+`scope` is `endpoint` by default; `alphavantage` is `provider` because its
+free tier budget is five requests per minute in total. A 429 or a Binance 418
+parks the provider for the announced `Retry-After` (default 60 s) and the
+cooldown blocks every endpoint of that provider, not just the one that was
+throttled. `RateLimitRegistry.snapshot()` reports the counters.
+
+## OHLCV cache tiers
+
+```
+MarketDataProvider.fetch_ohlcv_data(symbol, timeframe, limit)
+  1. Redis      cache:ohlcv:unified:<symbol>:<timeframe>   (hot, TTL per timeframe)
+  2. OhlcvStore runs/ohlcv.db                              (durable, one series)
+  3. network    binance, coindesk
+  -> a network result backfills tier 2 and tier 1
+```
+
+The store holds one row per `(symbol, timeframe, timestamp)`, so overlapping
+requests merge instead of duplicating. A tier is only served when it holds at
+least `limit` rows and its last candle is within
+`ohlcv_store_max_staleness_candles` of now; otherwise the request falls
+through. Store failures are logged once and never propagate.
+`prewarm_ohlcv_store()` fills the configured symbol x timeframe matrix.
+
+## Continuous model learning
+
+```
+TradingService.run_analysis_for_all_symbols / run_quick_analysis
+  -> learner.request(symbol, timeframe)        (returns immediately)
+       -> ModelLearner._learn                  (bounded by max_concurrency)
+            -> get_data_for_model              (tier 2 above, usually no network)
+            -> ModelManager.train_model(promote=False, warm_start=True)
+            -> evaluate_promotion(baseline_oos, candidate_oos)
+            -> ArtifactRegistry.promote_version  (only when the guard passes)
+```
+
+`predict_with_confidence` never trains: `model_auto_train_on_predict` stays
+false. Learning is a separate service gated by `model_learning.enabled`
+(default false), one in-flight job per key, a minimum interval that doubles
+per rejection, and a minimum number of new candles. A rejected candidate is
+versioned but never becomes `current.json`.
+
+Decisions: `openspec/changes/add-continuous-model-learning/design.md`.
