@@ -296,3 +296,37 @@ Evidence: `docs/remediation/app-log-2026-10-22.md`. Baseline tag
 - [ ] `modeling/models.py` constructs `FeatureEngineer()` without a history
   provider, so decorrelation is always disabled on the ML path. Not a bug, but
   the ML features never get correlation weighting.
+
+## app.log remediation 2026-10-24 - resolved
+
+Evidence: `docs/remediation/app-log-2026-10-24.md`.
+
+- [x] 17 of 98 indicators could never return a value: talib/pandas_ta results
+  indexed with `[-1]` after being handed a Series, single-output results treated
+  as DataFrames, multi-column long/short frames rejected by a row-wide NaN
+  guard, `dpo` forward-shifted, and `rmi`/`tii`/`vw_rsi` calling functions that
+  pandas_ta 0.4.71b0 does not expose. `2ad7773`.
+- [x] `CircuitBreakerError` is now an `UpstreamUnavailableError` and the breaker
+  announces its transitions once, so an open breaker no longer produces a
+  traceback per rejected call. `c8186f7`.
+- [x] `RateLimiter` no longer sleeps while holding its lock, so a saturated
+  endpoint cannot freeze its siblings. `354b8a0`.
+- [x] Enrichment handlers and the news aggregator report an unreachable source
+  once per outage instead of once per symbol. `ada137d`.
+- [x] `ResourceManager` attempts a failed Redis connection once instead of on
+  every call. `c8186f7`.
+
+## app.log remediation 2026-10-24 - open
+
+- [ ] Golden baselines must be re-recorded in the Linux CI image. The indicator
+  fix restores `supertrend`, `psar` and `ichimoku`, which carry weights 15/10/18
+  and were previously dropped from the technical score, so
+  `signals_baseline.json` and `backtest_baseline.json` no longer match. Not
+  re-recorded here per the standing rule against recording from one workstation.
+- [ ] `get_macro_economic_data` is reached from both the `macro` and
+  `market_indices` memo scopes, so one analysis cycle issues two sets of five
+  AlphaVantage requests against a 5/minute budget. Collapsing them changes fetch
+  timing and needs a proposal (see open issue 6).
+- [ ] `fapi.binance.com` and `api.coingecko.com` do not resolve on this network.
+  Still user-side (U3); the code now degrades without per-symbol error spam.
+
