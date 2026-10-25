@@ -320,9 +320,12 @@ Evidence: `docs/remediation/app-log-2026-10-24.md`.
 
 - [ ] Golden baselines must be re-recorded in the Linux CI image. The indicator
   fix restores `supertrend`, `psar` and `ichimoku`, which carry weights 15/10/18
-  and were previously dropped from the technical score, so
-  `signals_baseline.json` and `backtest_baseline.json` no longer match. Not
-  re-recorded here per the standing rule against recording from one workstation.
+  and were previously dropped from the technical score. Re-recording
+  `tests/golden/record_signals.py` on the committed fixtures yields 51 signals
+  where the baseline holds 59, and every one of the 51 differs (the first moves
+  `confidence_score` 13.8765 -> 13.4723 with an unchanged entry, stop and
+  target). Not re-recorded here per the standing rule against recording from one
+  workstation.
 - [ ] `get_macro_economic_data` is reached from both the `macro` and
   `market_indices` memo scopes, so one analysis cycle issues two sets of five
   AlphaVantage requests against a 5/minute budget. Collapsing them changes fetch
