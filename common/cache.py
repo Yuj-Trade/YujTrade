@@ -38,8 +38,8 @@ class CacheKeyBuilder:
         return ":".join(key_parts)
 
     @staticmethod
-    def ohlcv_key(source: str, symbol: str, timeframe: str, limit: int) -> str:
-        return CacheKeyBuilder.build(CacheCategory.OHLCV, source, [timeframe, str(limit)], symbol)
+    def ohlcv_key(source: str, symbol: str, timeframe: str) -> str:
+        return CacheKeyBuilder.build(CacheCategory.OHLCV, source, [timeframe], symbol)
 
     @staticmethod
     def generic_key(source: str, identifier: str, symbol: str | None = None) -> str:

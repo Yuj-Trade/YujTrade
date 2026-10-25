@@ -138,6 +138,15 @@ async def create_trading_stack(
     )
     await market_data_provider.initialize()
 
+    if config_manager.get("ohlcv_prewarm_enabled", False):
+        from common.constants import SYMBOLS, TIME_FRAMES
+
+        await market_data_provider.prewarm_ohlcv_store(
+            SYMBOLS,
+            TIME_FRAMES,
+            limit=int(config_manager.get("ohlcv_prewarm_limit", 1000)),
+        )
+
     trading_service = TradingService(
         market_data_provider=market_data_provider,
         config_manager=config_manager,
