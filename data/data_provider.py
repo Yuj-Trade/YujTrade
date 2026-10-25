@@ -20,6 +20,7 @@ from common.exceptions import (
     InsufficientDataError,
     NetworkError,
     ObjectClosedError,
+    UpstreamUnavailableError,
 )
 from common.utils import async_retry
 from config.logger import logger
@@ -37,6 +38,13 @@ from data.sources.messari_fetcher import MessariFetcher
 from data.sources.news_fetcher import NewsFetcher
 from data.sources.yfinance_fetcher import YFinanceFetcher
 from utils.resource_manager import ResourceManager
+
+
+def _report_enrichment_failure(message: str, exc: Exception) -> None:
+    if isinstance(exc, UpstreamUnavailableError):
+        logger.debug(f"{message}: {exc}")
+    else:
+        logger.error(f"{message}: {exc}")
 
 
 class MarketDataProvider:
@@ -355,7 +363,7 @@ class MarketDataProvider:
                 binance_futures_data=binance_data,
             )
         except Exception as e:
-            logger.error(f"Error fetching derivatives data for {symbol}: {e}")
+            _report_enrichment_failure(f"Error fetching derivatives data for {symbol}", e)
             return None
 
     async def get_fundamental_data(self, symbol: str) -> FundamentalAnalysis | None:
@@ -363,7 +371,7 @@ class MarketDataProvider:
             try:
                 return await self.coingecko_fetcher.get_fundamental_data(symbol)
             except Exception as e:
-                logger.error(f"Error fetching fundamental data for {symbol}: {e}")
+                _report_enrichment_failure(f"Error fetching fundamental data for {symbol}", e)
         return None
 
     async def get_onchain_data(self, symbol: str) -> OnChainAnalysis | None:
@@ -371,7 +379,7 @@ class MarketDataProvider:
             try:
                 return await self.messari_fetcher.get_on_chain_data(symbol)
             except Exception as e:
-                logger.error(f"Error fetching on-chain data for {symbol}: {e}")
+                _report_enrichment_failure(f"Error fetching on-chain data for {symbol}", e)
         return None
 
     async def get_order_book(self, symbol: str) -> OrderBook | None:
@@ -379,7 +387,7 @@ class MarketDataProvider:
             try:
                 return await self.binance_fetcher.get_order_book_depth(symbol)
             except Exception as e:
-                logger.error(f"Error fetching order book for {symbol}: {e}")
+                _report_enrichment_failure(f"Error fetching order book for {symbol}", e)
         return None
 
     async def get_macro_data(self) -> MacroEconomicData | None:
@@ -395,7 +403,7 @@ class MarketDataProvider:
                         unemployment=data.get("UNEMPLOYMENT"),
                     )
             except Exception as e:
-                logger.error(f"Error fetching macro data: {e}")
+                _report_enrichment_failure("Error fetching macro data", e)
         return None
 
     async def get_trending_data(self) -> TrendingData | None:
@@ -405,7 +413,7 @@ class MarketDataProvider:
                 if trending:
                     return TrendingData(coingecko_trending=trending)
             except Exception as e:
-                logger.error(f"Error fetching trending data: {e}")
+                _report_enrichment_failure("Error fetching trending data", e)
         return None
 
     async def get_news_sentiment(
@@ -417,7 +425,7 @@ class MarketDataProvider:
             try:
                 return await self.news_fetcher.fetch_sentiment_analysis(currencies)
             except Exception as e:
-                logger.error(f"Error fetching news sentiment: {e}")
+                _report_enrichment_failure("Error fetching news sentiment", e)
         return None
 
     async def get_market_indices(self) -> dict[str, Any] | None:
@@ -425,7 +433,7 @@ class MarketDataProvider:
             try:
                 return await self.market_indices_fetcher.get_crypto_indices()
             except Exception as e:
-                logger.error(f"Error fetching market indices: {e}")
+                _report_enrichment_failure("Error fetching market indices", e)
         return None
 
     async def get_all_indices(self) -> dict[str, Any] | None:
@@ -433,5 +441,5 @@ class MarketDataProvider:
             try:
                 return await self.market_indices_fetcher.get_all_indices()
             except Exception as e:
-                logger.error(f"Error fetching all indices: {e}")
+                _report_enrichment_failure("Error fetching all indices", e)
         return None

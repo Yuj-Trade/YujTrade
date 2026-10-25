@@ -5,12 +5,20 @@ from typing import Any
 import redis
 
 from common.cache import CacheCategory, CacheKeyBuilder
+from common.exceptions import UpstreamUnavailableError
 from config.logger import logger
 from config.settings import ConfigManager
 from data.sources.alternativeme_fetcher import AlternativeMeFetcher
 from data.sources.coindesk_fetcher import CoinDeskFetcher
 from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
 from data.sources.messari_fetcher import MessariFetcher
+
+
+def _report_news_failure(exc: Exception) -> None:
+    if isinstance(exc, UpstreamUnavailableError):
+        logger.debug(f"News fetch skipped, upstream unavailable: {exc}")
+    else:
+        logger.warning(f"News fetch failed: {exc}")
 
 
 class NewsFetcher:
@@ -85,7 +93,7 @@ class NewsFetcher:
             if isinstance(res, list):
                 all_news.extend(res)
             elif isinstance(res, Exception):
-                logger.warning(f"News fetch failed: {res}")
+                _report_news_failure(res)
 
         unique_news = list(
             {item.get("id") or item.get("title"): item for item in all_news}.values()
