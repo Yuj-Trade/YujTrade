@@ -21,24 +21,23 @@ class RateLimiter:
         self._lock = asyncio.Lock()
 
     async def wait_if_needed(self, endpoint: str):
-        async with self._lock:
-            now = time.time()
-            reqs = self.requests.setdefault(endpoint, [])
-
-            reqs = [t for t in reqs if now - t < self.time_window]
-            self.requests[endpoint] = reqs
-
-            if len(reqs) >= self.max_requests:
-                oldest_request_time = reqs[0]
-                sleep_time = self.time_window - (now - oldest_request_time)
-                if sleep_time > 0:
-                    logger.debug(f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s")
-                    await asyncio.sleep(sleep_time)
-
+        while True:
+            async with self._lock:
                 now = time.time()
-                self.requests[endpoint] = [t for t in reqs if now - t < self.time_window]
+                reqs = [t for t in self.requests.get(endpoint, []) if now - t < self.time_window]
+                self.requests[endpoint] = reqs
 
-            self.requests[endpoint].append(time.time())
+                if len(reqs) < self.max_requests:
+                    reqs.append(now)
+                    return
+
+                sleep_time = self.time_window - (now - reqs[0])
+
+            if sleep_time <= 0:
+                continue
+
+            logger.debug(f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s")
+            await asyncio.sleep(sleep_time)
 
 
 class IndicatorNormalizer:
