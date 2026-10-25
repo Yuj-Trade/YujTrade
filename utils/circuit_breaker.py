@@ -7,12 +7,12 @@ from typing import Any
 from common.exceptions import (
     APIRateLimitError,
     NetworkError,
-    TradingBotException,
     UpstreamUnavailableError,
 )
+from config.logger import logger
 
 
-class CircuitBreakerError(TradingBotException):
+class CircuitBreakerError(UpstreamUnavailableError):
     pass
 
 
@@ -71,6 +71,7 @@ class CircuitBreaker:
                     self.state = CircuitState.CLOSED
                     self.failure_count = 0
                     self.last_failure_time = None
+                    logger.info("Circuit breaker closed after a successful probe.")
             elif self.state == CircuitState.CLOSED:
                 self.failure_count = 0
                 self.last_failure_time = None
@@ -84,7 +85,15 @@ class CircuitBreaker:
             if self.state == CircuitState.HALF_OPEN:
                 self.state = CircuitState.OPEN
                 self.failure_count = self.failure_threshold
+                logger.warning(
+                    f"Circuit breaker reopened after a failed probe: {exc}. "
+                    f"Upstream calls are skipped for {self.timeout}s."
+                )
             elif self.state == CircuitState.CLOSED:
                 self.failure_count += 1
                 if self.failure_count >= self.failure_threshold:
                     self.state = CircuitState.OPEN
+                    logger.warning(
+                        f"Circuit breaker opened after {self.failure_count} consecutive "
+                        f"failures: {exc}. Upstream calls are skipped for {self.timeout}s."
+                    )

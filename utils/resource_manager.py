@@ -15,6 +15,7 @@ class ResourceManager:
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
         self._redis_client: redis.Redis | None = None
+        self._redis_unavailable = False
         self._lock = asyncio.Lock()
 
     async def get_session(self) -> aiohttp.ClientSession:
@@ -27,6 +28,9 @@ class ResourceManager:
 
     async def get_redis_client(self) -> redis.Redis | None:
         async with self._lock:
+            if self._redis_unavailable:
+                return None
+
             if self._redis_client is None:
                 host = SecretsManager.REDIS_HOST
                 port = SecretsManager.REDIS_PORT
@@ -34,6 +38,7 @@ class ResourceManager:
 
                 if not all([host, port, password]):
                     logger.warning("Redis not fully configured. Caching will be disabled.")
+                    self._redis_unavailable = True
                     return None
 
                 redis_url = f"rediss://default:{password}@{host}:{port}"
@@ -90,6 +95,8 @@ class ResourceManager:
                             logger.error(f"Error closing failed redis client: {close_e}")
                     self._redis_client = None
 
+            if self._redis_client is None:
+                self._redis_unavailable = True
             return self._redis_client
 
     async def cleanup(self):
@@ -111,6 +118,7 @@ class ResourceManager:
 
             self._session = None
             self._redis_client = None
+            self._redis_unavailable = False
 
         logger.info("ResourceManager cleaned up successfully.")
 
