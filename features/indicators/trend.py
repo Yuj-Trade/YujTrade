@@ -7,7 +7,7 @@ from pandas_ta.trend import adx, aroon, dpo, psar
 
 from common.core import IndicatorResult
 from common.exceptions import IndicatorError, InsufficientDataError
-from features.indicators.base import TechnicalIndicator
+from features.indicators.base import TechnicalIndicator, finite_column, last_finite_value
 
 
 class MovingAverageIndicator(TechnicalIndicator):
@@ -41,11 +41,11 @@ class MovingAverageIndicator(TechnicalIndicator):
         except Exception as e:
             raise IndicatorError(f"Error calculating {self.ma_type}: {e}") from e
 
-        if ma_series is None or ma_series.size == 0 or pd.isna(ma_series[-1]):
+        current_ma = last_finite_value(ma_series)
+        if current_ma is None:
             raise InsufficientDataError(f"{self.ma_type} calculation resulted in NaN.")
 
         current_price = data["close"].iloc[-1]
-        current_ma = ma_series[-1]
 
         signal_strength = (
             abs((current_price - current_ma) / current_ma) * 100 if current_ma != 0 else 0
@@ -105,12 +105,16 @@ class IchimokuIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 52:
             raise InsufficientDataError("IchimokuIndicator requires at least 52 data points.")
-        ichimoku_df = ichimoku(high=data["high"], low=data["low"], close=data["close"])
-        if ichimoku_df is None or ichimoku_df[0].empty or ichimoku_df[0].iloc[-1].isna().any():
+        ichimoku_result = ichimoku(high=data["high"], low=data["low"], close=data["close"])
+        if ichimoku_result is None:
             raise InsufficientDataError("Ichimoku calculation resulted in NaN.")
 
-        span_a = float(ichimoku_df[0].iloc[-1, 0])
-        span_b = float(ichimoku_df[0].iloc[-1, 1])
+        cloud = ichimoku_result[0]
+        span_a = finite_column(cloud, 0)
+        span_b = finite_column(cloud, 1)
+        if span_a is None or span_b is None:
+            raise InsufficientDataError("Ichimoku calculation resulted in NaN.")
+
         current_price = data["close"].iloc[-1]
         is_bullish_cloud = span_a > span_b
 
@@ -132,12 +136,12 @@ class SuperTrendIndicator(TechnicalIndicator):
         if len(data) < 10:
             raise InsufficientDataError("SuperTrendIndicator requires at least 10 data points.")
         st = supertrend(high=data["high"], low=data["low"], close=data["close"])
-        if st is None or st.empty or st.iloc[-1].isna().any():
+        value = last_finite_value(st)
+        if value is None:
             raise InsufficientDataError("SuperTrend calculation resulted in NaN.")
 
-        value = float(st.iloc[-1, 0])
-        direction = float(st.iloc[-1, 1])
-        strength = abs(data["close"].iloc[-1] - value) / value * 100
+        direction = finite_column(st, 1)
+        strength = abs(data["close"].iloc[-1] - value) / value * 100 if value != 0 else 0.0
         interpretation = "uptrend" if direction == 1 else "downtrend"
 
         return IndicatorResult("SuperTrend", value, min(strength, 100.0), interpretation)
@@ -172,12 +176,12 @@ class ParabolicSARIndicator(TechnicalIndicator):
         if len(data) < 2:
             raise InsufficientDataError("ParabolicSARIndicator requires at least 2 data points.")
         psar_val = psar(high=data["high"], low=data["low"])
-        if psar_val is None or psar_val.empty or psar_val.iloc[-1].isna().any():
+        value = last_finite_value(psar_val)
+        if value is None:
             raise InsufficientDataError("PSAR calculation resulted in NaN.")
 
-        value = float(psar_val.iloc[-1, 0])
         current_price = data["close"].iloc[-1]
-        strength = abs(current_price - value) / value * 100
+        strength = abs(current_price - value) / value * 100 if value != 0 else 0.0
         interpretation = "bullish" if current_price > value else "bearish"
 
         return IndicatorResult("PSAR", value, min(strength, 100.0), interpretation)
@@ -215,10 +219,10 @@ class DetrendedPriceOscillatorIndicator(TechnicalIndicator):
                 f"DPOIndicator requires at least {self.period + 10} data points."
             )
         dpo_val = dpo(close=data["close"], length=self.period)
-        if dpo_val is None or dpo_val.empty or pd.isna(dpo_val.iloc[-1]):
+        value = last_finite_value(dpo_val)
+        if value is None:
             raise InsufficientDataError("DPO calculation resulted in NaN.")
 
-        value = float(dpo_val.iloc[-1])
         strength = abs(value / data["close"].iloc[-1]) * 1000 if data["close"].iloc[-1] > 0 else 0
         interpretation = "above_zero" if value > 0 else "below_zero"
 
@@ -319,10 +323,10 @@ class GannHiLoActivatorIndicator(TechnicalIndicator):
         if len(data) < 13:
             raise InsufficientDataError("GannHiLo requires at least 13 data points.")
         gann = ta.hilo(high=data["high"], low=data["low"], close=data["close"])
-        if gann is None or gann.empty or gann.iloc[-1].isna().any():
+        value = last_finite_value(gann)
+        if value is None:
             raise InsufficientDataError("Gann HiLo calculation resulted in NaN.")
 
-        value = float(gann.iloc[-1, 0])
         current_price = data["close"].iloc[-1]
         strength = abs(current_price - value) / value * 100 if value > 0 else 0
         interpretation = "above_activator" if current_price > value else "below_activator"
@@ -334,8 +338,9 @@ class MovingAverageRibbonIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 60:
             raise InsufficientDataError("MARibbon requires at least 60 data points.")
-        emas = [talib.EMA(data["close"], timeperiod=p) for p in [10, 20, 30, 40, 50, 60]]
-        if any(e is None or pd.isna(e[-1]) for e in emas):
+        close_np = data["close"].to_numpy(dtype=np.float64)
+        emas = [talib.EMA(close_np, timeperiod=p) for p in [10, 20, 30, 40, 50, 60]]
+        if any(e is None or e.size == 0 or pd.isna(e[-1]) for e in emas):
             raise InsufficientDataError("MA Ribbon EMA calculation failed.")
 
         is_bullish = all(emas[i][-1] > emas[i + 1][-1] for i in range(len(emas) - 1))
@@ -441,11 +446,16 @@ class TrendIntensityIndexIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period * 2:
             raise InsufficientDataError(f"TII requires at least {self.period * 2} data points.")
-        tii = ta.tii(close=data["close"], length=self.period)
-        if tii is None or tii.empty or pd.isna(tii.iloc[-1]):
-            raise InsufficientDataError("TII calculation failed.")
+        close = data["close"]
+        deviation = close - close.rolling(self.period).mean()
+        upside = deviation.clip(lower=0).rolling(self.period).sum()
+        downside = (-deviation.clip(upper=0)).rolling(self.period).sum()
+        total = upside + downside
+        tii = (100.0 * upside / total.where(total != 0)).replace([np.inf, -np.inf], np.nan)
 
-        value = float(tii.iloc[-1])
+        value = last_finite_value(tii)
+        if value is None:
+            raise InsufficientDataError("TII calculation failed.")
         if value > 80:
             interpretation = "strong_uptrend"
             strength = 100.0

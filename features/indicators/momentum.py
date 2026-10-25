@@ -6,7 +6,7 @@ from pandas_ta.momentum import cmo, squeeze, stochrsi, trix
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError
-from features.indicators.base import TechnicalIndicator
+from features.indicators.base import TechnicalIndicator, finite_column, last_finite_value
 
 
 class RSIIndicator(TechnicalIndicator):
@@ -371,13 +371,16 @@ class RelativeVigorIndexIndicator(TechnicalIndicator):
         if len(data) < 14:
             raise InsufficientDataError("RVIIndicator requires at least 14 data points.")
         rvi = ta.rvi(close=data["close"], high=data["high"], low=data["low"], open=data["open"])
-        if rvi is None or rvi.empty or rvi.iloc[-1].isna().any():
+        value = last_finite_value(rvi)
+        if value is None:
             raise InsufficientDataError("RVI calculation resulted in NaN.")
 
-        value = float(rvi.iloc[-1, 0])
-        signal = float(rvi.iloc[-1, 1])
-        strength = abs(value - signal) * 100
-        interpretation = "bullish" if value > signal else "bearish"
+        signal = finite_column(rvi, 1)
+        if signal is None:
+            series = rvi.iloc[:, 0] if isinstance(rvi, pd.DataFrame) else rvi
+            signal = last_finite_value(series.rolling(4).mean())
+        strength = abs(value - signal) * 100 if signal is not None else 50.0
+        interpretation = "bullish" if signal is None or value > signal else "bearish"
 
         return IndicatorResult("RVI", value, min(strength, 100.0), interpretation)
 
@@ -450,13 +453,13 @@ class QQEIndicator(TechnicalIndicator):
         if len(data) < 20:
             raise InsufficientDataError("QQE requires at least 20 data points.")
         qqe = ta.qqe(close=data["close"])
-        if qqe is None or qqe.empty or qqe.iloc[-1].isna().any():
+        value = last_finite_value(qqe)
+        if value is None:
             raise InsufficientDataError("QQE calculation resulted in NaN.")
 
-        value = float(qqe.iloc[-1, 0])
-        signal = float(qqe.iloc[-1, 1])
+        signal = finite_column(qqe, 1)
         strength = abs(value - 50) * 2
-        interpretation = "bullish" if value > signal else "bearish"
+        interpretation = "bullish" if signal is None or value > signal else "bearish"
 
         return IndicatorResult("QQE", value, min(strength, 100.0), interpretation)
 
@@ -522,11 +525,11 @@ class RMIIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < self.period + 5:
             raise InsufficientDataError(f"RMI requires at least {self.period + 5} data points.")
-        rmi = ta.rmi(close=data["close"], length=self.period)
-        if rmi is None or rmi.empty or pd.isna(rmi.iloc[-1]):
+        momentum = data["close"].diff(self.period)
+        rmi = talib.RSI(momentum.to_numpy(dtype=np.float64), timeperiod=self.period)
+        value = last_finite_value(rmi)
+        if value is None:
             raise InsufficientDataError("RMI calculation resulted in NaN.")
-
-        value = float(rmi.iloc[-1])
         if value > 70:
             interpretation = "overbought"
             strength = (value - 70) * 100 / 30

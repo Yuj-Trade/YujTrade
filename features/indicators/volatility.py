@@ -344,11 +344,15 @@ class ATRBandsIndicator(TechnicalIndicator):
             raise InsufficientDataError(
                 f"ATRBandsIndicator requires at least {self.period} data points."
             )
-        atr = talib.ATR(data["high"], data["low"], data["close"], timeperiod=self.period)
+        high = data["high"].to_numpy(dtype=np.float64)
+        low = data["low"].to_numpy(dtype=np.float64)
+        close = data["close"].to_numpy(dtype=np.float64)
+
+        atr = talib.ATR(high, low, close, timeperiod=self.period)
         if atr.size == 0 or pd.isna(atr[-1]):
             raise InsufficientDataError("ATR Bands calculation failed on ATR.")
 
-        sma = talib.SMA(data["close"], timeperiod=self.period)
+        sma = talib.SMA(close, timeperiod=self.period)
         if sma.size == 0 or pd.isna(sma[-1]):
             raise InsufficientDataError("ATR Bands calculation failed on SMA.")
 

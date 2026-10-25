@@ -6,7 +6,7 @@ from pandas_ta.volume import ad, cmf, efi, eom, kvo, nvi, obv, pvi, pvo, pvt
 
 from common.core import IndicatorResult
 from common.exceptions import InsufficientDataError
-from features.indicators.base import TechnicalIndicator
+from features.indicators.base import TechnicalIndicator, last_finite_value
 
 
 class VolumeIndicator(TechnicalIndicator):
@@ -188,10 +188,10 @@ class EaseOfMovementIndicator(TechnicalIndicator):
             volume=data["volume"],
             length=self.period,
         )
-        if eom_val is None or eom_val.empty or eom_val.iloc[-1].isna().any():
+        value = last_finite_value(eom_val)
+        if value is None:
             raise InsufficientDataError("EOM calculation resulted in NaN.")
 
-        value = float(eom_val.iloc[-1, 0])
         strength = abs(value)
         interpretation = "easy_move_up" if value > 0 else "easy_move_down"
 
@@ -326,12 +326,15 @@ class PVIIndicator(TechnicalIndicator):
         if len(data) < 2:
             raise InsufficientDataError("PVI requires at least 2 data points.")
         pvi_val = pvi(close=data["close"], volume=data["volume"])
-        if pvi_val is None or pvi_val.empty or pd.isna(pvi_val.iloc[-1]):
+        series = pvi_val.iloc[:, 0] if isinstance(pvi_val, pd.DataFrame) else pvi_val
+        clean = series.dropna() if hasattr(series, "dropna") else None
+        if clean is None or clean.empty:
             raise InsufficientDataError("PVI calculation resulted in NaN.")
 
-        value = float(pvi_val.iloc[-1])
+        value = float(clean.iloc[-1])
+        previous = float(clean.iloc[-2]) if len(clean) > 1 else value
         strength = 50.0
-        interpretation = "crowd_is_bullish" if value > pvi_val.iloc[-2] else "crowd_is_bearish"
+        interpretation = "crowd_is_bullish" if value > previous else "crowd_is_bearish"
 
         return IndicatorResult("PVI", value, strength, interpretation)
 
@@ -357,11 +360,22 @@ class VolumeWeightedRSIIndicator(TechnicalIndicator):
             raise InsufficientDataError(
                 f"VolumeWeightedRSI requires at least {self.period} data points."
             )
-        vw_rsi = ta.vw_rsi(close=data["close"], volume=data["volume"], length=self.period)
-        if vw_rsi is None or vw_rsi.empty or pd.isna(vw_rsi.iloc[-1]):
-            raise InsufficientDataError("VW_RSI calculation resulted in NaN.")
+        close = data["close"].to_numpy(dtype=np.float64)
+        volume = data["volume"].to_numpy(dtype=np.float64)
+        delta = np.diff(close, prepend=close[0])
+        weighted_gain = pd.Series(np.where(delta > 0, delta * volume, 0.0))
+        weighted_loss = pd.Series(np.where(delta < 0, -delta * volume, 0.0))
+        alpha = 1.0 / self.period
+        avg_gain = weighted_gain.ewm(alpha=alpha, adjust=False).mean()
+        avg_loss = weighted_loss.ewm(alpha=alpha, adjust=False).mean()
+        relative_strength = avg_gain / avg_loss.replace(0.0, np.nan)
+        vw_rsi = (100.0 - (100.0 / (1.0 + relative_strength))).fillna(
+            pd.Series(np.where(avg_gain > 0, 100.0, 50.0))
+        )
 
-        value = float(vw_rsi.iloc[-1])
+        value = last_finite_value(vw_rsi)
+        if value is None:
+            raise InsufficientDataError("VW_RSI calculation resulted in NaN.")
         if value > 70:
             interpretation = "overbought"
             strength = (value - 70) * 100 / 30
@@ -379,13 +393,19 @@ class AccumulationDistributionIndexIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
         if len(data) < 2:
             raise InsufficientDataError("ADI requires at least 2 data points.")
-        adi = talib.AD(data["high"], data["low"], data["close"], data["volume"])
-        if adi.size == 0 or pd.isna(adi[-1]):
+        adi = talib.AD(
+            data["high"].to_numpy(dtype=np.float64),
+            data["low"].to_numpy(dtype=np.float64),
+            data["close"].to_numpy(dtype=np.float64),
+            data["volume"].to_numpy(dtype=np.float64),
+        )
+        value = last_finite_value(adi)
+        if value is None or adi.size < 2:
             raise InsufficientDataError("ADI calculation failed.")
 
-        value = float(adi[-1])
+        previous = float(adi[-2]) if not pd.isna(adi[-2]) else value
         strength = 50.0
-        interpretation = "accumulation" if value > adi[-2] else "distribution"
+        interpretation = "accumulation" if value > previous else "distribution"
 
         return IndicatorResult("ADI", value, strength, interpretation)
 
