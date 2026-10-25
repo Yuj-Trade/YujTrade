@@ -101,12 +101,13 @@ class DeFiLlamaFetcher(BaseFetcher):
         url = f"{self.base_url}/pools"
         data = await self._fetch_json(url, endpoint_name="yields")
 
-        if data and "data" in data and self.redis:
-            yield_data = data["data"]
+        if not data or "data" not in data:
+            return []
+        yield_data = data["data"]
+        if self.redis:
             await self.redis.set(
                 cache_key,
                 json.dumps(yield_data),
                 ex=self.config_manager.get_cache_ttl("defillama"),
             )
-            return yield_data
-        return []
+        return yield_data
