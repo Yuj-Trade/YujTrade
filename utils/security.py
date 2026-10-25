@@ -81,7 +81,7 @@ def verify_hashed_data(stored_hash: str, provided_data: str) -> bool:
             "sha256", provided_data.encode(), salt.encode(), 480000
         ).hex()
         return hmac.compare_digest(h, candidate)
-    except (ValueError, TypeError):
+    except (AttributeError, ValueError, TypeError):
         return False
 
 

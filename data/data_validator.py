@@ -260,6 +260,9 @@ class DataQualityChecker:
         except (ValueError, TypeError):
             expected_interval = time_diffs.median()
 
+        if pd.isna(expected_interval) or expected_interval <= pd.Timedelta(0):
+            expected_interval = time_diffs.median()
+
         if expected_interval <= pd.Timedelta(0):
             return False, 0.0
 
