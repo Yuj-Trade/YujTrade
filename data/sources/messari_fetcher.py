@@ -174,3 +174,4 @@ class MessariFetcher(BaseFetcher):
         except Exception as e:
             logger.error(f"Error fetching news from Messari for {symbol}: {e}")
             return []
+            return []
