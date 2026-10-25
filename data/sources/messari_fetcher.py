@@ -13,12 +13,10 @@ from common.exceptions import (
     NetworkError,
     UpstreamUnavailableError,
 )
-from common.utils import RateLimiter, async_retry
+from common.utils import async_retry
 from config.logger import logger
 from config.settings import ConfigManager
-from data.sources.base_fetcher import BaseFetcher
-
-messari_rate_limiter = RateLimiter(max_requests=20, time_window=60)
+from data.sources.base_fetcher import BaseFetcher, retry_after_seconds
 
 
 class MessariFetcher(BaseFetcher):
@@ -43,7 +41,7 @@ class MessariFetcher(BaseFetcher):
         self._check_if_closed()
         headers = {"x-messari-api-key": self.api_key}
         url = f"{self.base_url}/{endpoint}"
-        await messari_rate_limiter.wait_if_needed(endpoint)
+        await self._wait_for_slot(endpoint)
 
         async def _do_fetch():
             session = await self._get_session()
@@ -52,6 +50,7 @@ class MessariFetcher(BaseFetcher):
                     if response.status == 403:
                         raise UpstreamUnavailableError("Upstream blocked access for Messari")
                     if response.status == 429:
+                        await self._penalize_provider(retry_after_seconds(response))
                         raise APIRateLimitError("Messari rate limit exceeded")
                     response.raise_for_status()
                     return await response.json()

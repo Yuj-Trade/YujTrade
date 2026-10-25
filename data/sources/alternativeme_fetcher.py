@@ -2,10 +2,7 @@ import json
 from typing import Any
 
 from common.cache import CacheCategory, CacheKeyBuilder
-from common.utils import RateLimiter
 from data.sources.base_fetcher import BaseFetcher
-
-alternative_me_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
 
 class AlternativeMeFetcher(BaseFetcher):
@@ -21,7 +18,7 @@ class AlternativeMeFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"https://api.alternative.me/fng/?limit={limit}"
-        data = await self._fetch_json(url, limiter=alternative_me_rate_limiter, endpoint_name="fng")
+        data = await self._fetch_json(url, endpoint_name="fng")
 
         results = data.get("data", [])
         if results and self.redis:

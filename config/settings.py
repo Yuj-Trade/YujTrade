@@ -126,6 +126,17 @@ class ConfigManager:
     }
 
     DEFAULT_WEIGHTS_CONFIG = {
+        "rate_limits": {
+            "default": {"max_requests": 60, "time_window": 60, "scope": "endpoint"},
+            "binance": {"max_requests": 1200, "time_window": 60, "scope": "endpoint"},
+            "coingecko": {"max_requests": 8, "time_window": 60, "scope": "endpoint"},
+            "coindesk": {"max_requests": 20, "time_window": 60, "scope": "endpoint"},
+            "alphavantage": {"max_requests": 5, "time_window": 60, "scope": "provider"},
+            "cryptopanic": {"max_requests": 20, "time_window": 60, "scope": "endpoint"},
+            "defillama": {"max_requests": 30, "time_window": 60, "scope": "endpoint"},
+            "messari": {"max_requests": 20, "time_window": 60, "scope": "endpoint"},
+            "alternativeme": {"max_requests": 20, "time_window": 60, "scope": "endpoint"},
+        },
         "cache_config": {
             "default_ttl": 3600,
             "ohlcv": {"1h": 300, "4h": 900, "1d": 1800, "1w": 3600, "1M": 7200},
@@ -141,7 +152,7 @@ class ConfigManager:
             "defillama": 3600,
             "onchain": 3600,
             "sentiment": 1800,
-        }
+        },
     }
 
     def __init__(
@@ -221,6 +232,9 @@ class ConfigManager:
 
     def get_cache_config(self) -> dict[str, Any]:
         return self.weights_config.get("cache_config", self.DEFAULT_WEIGHTS_CONFIG["cache_config"])
+
+    def get_rate_limits(self) -> dict[str, dict[str, Any]]:
+        return self.weights_config.get("rate_limits", self.DEFAULT_WEIGHTS_CONFIG["rate_limits"])
 
     def get_cache_ttl(self, category: str, sub_category: str | None = None) -> int:
         cache_config = self.get_cache_config()

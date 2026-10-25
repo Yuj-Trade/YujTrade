@@ -14,30 +14,79 @@ from config.logger import logger
 
 
 class RateLimiter:
-    def __init__(self, max_requests: int, time_window: int):
+    def __init__(
+        self,
+        max_requests: int,
+        time_window: int,
+        scope: str = "endpoint",
+        provider: str = "default",
+    ):
+        if scope not in ("endpoint", "provider"):
+            raise ValueError(f"scope must be 'endpoint' or 'provider', got {scope!r}")
         self.max_requests = max_requests
         self.time_window = time_window
+        self.scope = scope
+        self.provider = provider
         self.requests: dict[str, list] = {}
+        self.throttle_count = 0
+        self.cooldown_count = 0
+        self._cooldown_until = 0.0
         self._lock = asyncio.Lock()
 
+    def _bucket(self, endpoint: str) -> str:
+        return "" if self.scope == "provider" else endpoint
+
     async def wait_if_needed(self, endpoint: str):
+        bucket = self._bucket(endpoint)
         while True:
+            throttled = False
             async with self._lock:
                 now = time.time()
-                reqs = [t for t in self.requests.get(endpoint, []) if now - t < self.time_window]
-                self.requests[endpoint] = reqs
 
-                if len(reqs) < self.max_requests:
-                    reqs.append(now)
-                    return
+                if now < self._cooldown_until:
+                    sleep_time = self._cooldown_until - now
+                else:
+                    reqs = [t for t in self.requests.get(bucket, []) if now - t < self.time_window]
+                    self.requests[bucket] = reqs
 
-                sleep_time = self.time_window - (now - reqs[0])
+                    if len(reqs) < self.max_requests:
+                        reqs.append(now)
+                        return
+
+                    sleep_time = self.time_window - (now - reqs[0])
+                    throttled = True
 
             if sleep_time <= 0:
                 continue
 
-            logger.debug(f"Rate limit hit for {endpoint}. Sleeping for {sleep_time:.2f}s")
+            if throttled:
+                self.throttle_count += 1
+            logger.debug(
+                f"Rate limit hit for {bucket or self.provider}. Sleeping for {sleep_time:.2f}s"
+            )
             await asyncio.sleep(sleep_time)
+
+    async def penalize(self, seconds: float) -> None:
+        async with self._lock:
+            self.cooldown_count += 1
+            deadline = time.time() + max(0.0, float(seconds))
+            if deadline > self._cooldown_until:
+                self._cooldown_until = deadline
+
+    def snapshot(self) -> dict[str, Any]:
+        now = time.time()
+        return {
+            "provider": self.provider,
+            "scope": self.scope,
+            "max_requests": self.max_requests,
+            "time_window": self.time_window,
+            "requests_in_window": sum(
+                1 for bucket in self.requests.values() for t in bucket if now - t < self.time_window
+            ),
+            "throttle_count": self.throttle_count,
+            "cooldown_count": self.cooldown_count,
+            "cooldown_remaining": max(0.0, self._cooldown_until - now),
+        }
 
 
 class IndicatorNormalizer:

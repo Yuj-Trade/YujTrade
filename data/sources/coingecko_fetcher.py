@@ -14,9 +14,7 @@ from common.exceptions import (
 )
 from common.utils import RateLimiter, async_retry
 from config.logger import logger
-from data.sources.base_fetcher import BaseFetcher
-
-coingecko_rate_limiter = RateLimiter(max_requests=8, time_window=60)
+from data.sources.base_fetcher import BaseFetcher, retry_after_seconds
 
 
 class CoinGeckoFetcher(BaseFetcher):
@@ -69,8 +67,9 @@ class CoinGeckoFetcher(BaseFetcher):
         endpoint_name: str = "default",
     ):
         self._check_if_closed()
-        if limiter:
-            await limiter.wait_if_needed(endpoint_name)
+        if limiter is None:
+            limiter = await self._limiter()
+        await limiter.wait_if_needed(endpoint_name)
 
         request_params = params.copy() if params else {}
         request_headers = headers.copy() if headers else {"accept": "application/json"}
@@ -101,6 +100,7 @@ class CoinGeckoFetcher(BaseFetcher):
                             f"Upstream blocked access for {effective_url}"
                         )
                     if response.status == 429:
+                        await self._penalize_provider(retry_after_seconds(response))
                         raise APIRateLimitError(f"Rate limit exceeded for {effective_url}")
                     if response.status != 200:
                         text = await response.text()
@@ -128,7 +128,6 @@ class CoinGeckoFetcher(BaseFetcher):
         data = await self._fetch_json(
             url,
             params,
-            limiter=coingecko_rate_limiter,
             endpoint_name=f"coins_ohlc_{coin_id}",
         )
 
@@ -170,7 +169,6 @@ class CoinGeckoFetcher(BaseFetcher):
             data = await self._fetch_json(
                 url,
                 params,
-                limiter=coingecko_rate_limiter,
                 endpoint_name=f"coins_{coin_id}_full",
             )
 
@@ -208,9 +206,7 @@ class CoinGeckoFetcher(BaseFetcher):
 
         url = f"{self.base_url}/coins/list"
         params = {"include_platform": "false"}
-        data = await self._fetch_json(
-            url, params, limiter=coingecko_rate_limiter, endpoint_name="coins_list"
-        )
+        data = await self._fetch_json(url, params, endpoint_name="coins_list")
 
         if data and self.redis:
             await self.redis.set(cache_key, json.dumps(data), ex=cache_ttl)
@@ -226,7 +222,7 @@ class CoinGeckoFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/search/trending"
-        data = await self._fetch_json(url, limiter=coingecko_rate_limiter, endpoint_name="trending")
+        data = await self._fetch_json(url, endpoint_name="trending")
 
         if data and "coins" in data:
             trending_symbols = [coin["item"]["symbol"] for coin in data["coins"]]

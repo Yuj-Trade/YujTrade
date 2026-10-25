@@ -1,10 +1,7 @@
 import json
 
 from common.cache import CacheCategory, CacheKeyBuilder
-from common.utils import RateLimiter
 from data.sources.base_fetcher import BaseFetcher
-
-cryptopanic_rate_limiter = RateLimiter(max_requests=20, time_window=60)
 
 
 class CryptoPanicFetcher(BaseFetcher):
@@ -24,9 +21,7 @@ class CryptoPanicFetcher(BaseFetcher):
         if kind:
             params["kind"] = kind
 
-        data = await self._fetch_json(
-            url, params, limiter=cryptopanic_rate_limiter, endpoint_name="posts"
-        )
+        data = await self._fetch_json(url, params, endpoint_name="posts")
         return data.get("results", [])
 
     async def fetch_media(self) -> list[dict]:
@@ -39,9 +34,7 @@ class CryptoPanicFetcher(BaseFetcher):
         url = f"{self.base_url}/media/"
         params = {"auth_token": self.api_key}
 
-        data = await self._fetch_json(
-            url, params, limiter=cryptopanic_rate_limiter, endpoint_name="media"
-        )
+        data = await self._fetch_json(url, params, endpoint_name="media")
         media_list = data.get("results", [])
         if self.redis and media_list:
             await self.redis.set(

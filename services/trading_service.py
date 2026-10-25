@@ -15,6 +15,7 @@ from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
 from common.core import TradingSignal
 from common.exceptions import InvalidSymbolError
+from common.rate_limit import configure_rate_limits
 from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
@@ -129,6 +130,8 @@ async def create_trading_stack(
 ) -> tuple[ConfigManager, ResourceManager, MarketDataProvider, "TradingService"]:
     config_manager = config_manager or ConfigManager()
     resource_manager = resource_manager or ResourceManager()
+
+    configure_rate_limits(config_manager.get_rate_limits())
 
     market_data_provider = MarketDataProvider(
         resource_manager=resource_manager, config_manager=config_manager

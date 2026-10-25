@@ -234,20 +234,67 @@
         "sentiment": 1800
     },
     "external_data_weights": {
-    "fear_greed": 40,
-    "btc_dominance": 25,
-    "dxy": 20,
-    "funding_rate": 15
+        "fear_greed": 40,
+        "btc_dominance": 25,
+        "dxy": 20,
+        "funding_rate": 15
     },
     "ml_model_weights": {
-    "lstm": 45,
-    "xgboost": 40,
-    "multi_tf_analysis": 15
+        "lstm": 45,
+        "xgboost": 40,
+        "multi_tf_analysis": 15
     },
     "analysis_weights": {
         "trend_strength": 30,
         "divergence_detection": 25,
         "pattern_recognition": 25,
         "macro_analysis": 20
+    },
+    "rate_limits": {
+        "default": {
+            "max_requests": 60,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "binance": {
+            "max_requests": 1200,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "coingecko": {
+            "max_requests": 8,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "coindesk": {
+            "max_requests": 20,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "alphavantage": {
+            "max_requests": 5,
+            "time_window": 60,
+            "scope": "provider"
+        },
+        "cryptopanic": {
+            "max_requests": 20,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "defillama": {
+            "max_requests": 30,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "messari": {
+            "max_requests": 20,
+            "time_window": 60,
+            "scope": "endpoint"
+        },
+        "alternativeme": {
+            "max_requests": 20,
+            "time_window": 60,
+            "scope": "endpoint"
+        }
     }
 }

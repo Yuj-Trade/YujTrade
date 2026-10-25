@@ -3,11 +3,8 @@ import json
 from typing import Any
 
 from common.cache import CacheKeyBuilder
-from common.utils import RateLimiter
 from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
-
-alpha_vantage_rate_limiter = RateLimiter(max_requests=5, time_window=60)
 
 
 class AlphaVantageFetcher(BaseFetcher):
@@ -37,7 +34,6 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "monthly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="cpi",
             ),
             "fed_rate": self._fetch_json(
@@ -47,7 +43,6 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "monthly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="fed_rate",
             ),
             "gdp": self._fetch_json(
@@ -57,13 +52,11 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "quarterly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="gdp",
             ),
             "unemployment": self._fetch_json(
                 self.base_url,
                 params={"function": "UNEMPLOYMENT", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="unemployment",
             ),
             "treasury_yield": self._fetch_json(
@@ -74,25 +67,21 @@ class AlphaVantageFetcher(BaseFetcher):
                     "maturity": "10year",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="treasury_yield",
             ),
             "inflation": self._fetch_json(
                 self.base_url,
                 params={"function": "INFLATION", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="inflation",
             ),
             "consumer_sentiment": self._fetch_json(
                 self.base_url,
                 params={"function": "CONSUMER_SENTIMENT", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="consumer_sentiment",
             ),
             "retail_sales": self._fetch_json(
                 self.base_url,
                 params={"function": "RETAIL_SALES", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="retail_sales",
             ),
         }
@@ -196,7 +185,6 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "monthly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="cpi",
             ),
             "fed_rate": self._fetch_json(
@@ -206,7 +194,6 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "monthly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="fed_rate",
             ),
             "gdp": self._fetch_json(
@@ -216,13 +203,11 @@ class AlphaVantageFetcher(BaseFetcher):
                     "interval": "quarterly",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="gdp",
             ),
             "unemployment": self._fetch_json(
                 self.base_url,
                 params={"function": "UNEMPLOYMENT", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="unemployment",
             ),
             "treasury_yield": self._fetch_json(
@@ -233,25 +218,21 @@ class AlphaVantageFetcher(BaseFetcher):
                     "maturity": "10year",
                     "apikey": self.api_key,
                 },
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="treasury_yield",
             ),
             "inflation": self._fetch_json(
                 self.base_url,
                 params={"function": "INFLATION", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="inflation",
             ),
             "consumer_sentiment": self._fetch_json(
                 self.base_url,
                 params={"function": "CONSUMER_SENTIMENT", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="consumer_sentiment",
             ),
             "retail_sales": self._fetch_json(
                 self.base_url,
                 params={"function": "RETAIL_SALES", "apikey": self.api_key},
-                limiter=alpha_vantage_rate_limiter,
                 endpoint_name="retail_sales",
             ),
         }

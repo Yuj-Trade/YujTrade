@@ -1,10 +1,7 @@
 import json
 
 from common.cache import CacheCategory, CacheKeyBuilder
-from common.utils import RateLimiter
 from data.sources.base_fetcher import BaseFetcher
-
-defillama_rate_limiter = RateLimiter(max_requests=30, time_window=60)
 
 
 class DeFiLlamaFetcher(BaseFetcher):
@@ -15,7 +12,7 @@ class DeFiLlamaFetcher(BaseFetcher):
 
     async def get_total_tvl_for_chains(self) -> list:
         url = f"{self.base_url}/v2/chains"
-        data = await self._fetch_json(url, limiter=defillama_rate_limiter)
+        data = await self._fetch_json(url)
         return data if isinstance(data, list) else []
 
     async def get_protocol_chart(self, protocol: str) -> dict | None:
@@ -28,9 +25,7 @@ class DeFiLlamaFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/protocol/{protocol}"
-        data = await self._fetch_json(
-            url, limiter=defillama_rate_limiter, endpoint_name=f"protocol_{protocol}"
-        )
+        data = await self._fetch_json(url, endpoint_name=f"protocol_{protocol}")
 
         if data and self.redis:
             await self.redis.set(
@@ -48,9 +43,7 @@ class DeFiLlamaFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/protocols"
-        data = await self._fetch_json(
-            url, limiter=defillama_rate_limiter, endpoint_name="protocols"
-        )
+        data = await self._fetch_json(url, endpoint_name="protocols")
 
         if data and self.redis:
             await self.redis.set(
@@ -70,9 +63,7 @@ class DeFiLlamaFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/v2/historicalChainTvl/{chain}"
-        data = await self._fetch_json(
-            url, limiter=defillama_rate_limiter, endpoint_name=f"chain_tvl_{chain}"
-        )
+        data = await self._fetch_json(url, endpoint_name=f"chain_tvl_{chain}")
 
         if data and self.redis:
             await self.redis.set(
@@ -90,9 +81,7 @@ class DeFiLlamaFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/stablecoins?includePrices=true"
-        data = await self._fetch_json(
-            url, limiter=defillama_rate_limiter, endpoint_name="stablecoins"
-        )
+        data = await self._fetch_json(url, endpoint_name="stablecoins")
 
         if data and self.redis:
             await self.redis.set(
@@ -110,7 +99,7 @@ class DeFiLlamaFetcher(BaseFetcher):
                 return json.loads(cached)
 
         url = f"{self.base_url}/pools"
-        data = await self._fetch_json(url, limiter=defillama_rate_limiter, endpoint_name="yields")
+        data = await self._fetch_json(url, endpoint_name="yields")
 
         if data and "data" in data and self.redis:
             yield_data = data["data"]

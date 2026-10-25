@@ -1,4 +1,3 @@
-import asyncio
 import json
 from typing import Any
 
@@ -15,12 +14,10 @@ from common.exceptions import (
     NetworkError,
     UpstreamUnavailableError,
 )
-from common.utils import RateLimiter, async_retry
+from common.utils import async_retry
 from config.logger import logger
-from data.sources.base_fetcher import BaseFetcher
+from data.sources.base_fetcher import BaseFetcher, retry_after_seconds
 from utils.circuit_breaker import CircuitBreaker
-
-binance_rate_limiter = RateLimiter(max_requests=1200, time_window=60)
 
 
 def _report_fetch_failure(message: str, exc: Exception) -> None:
@@ -55,7 +52,7 @@ class BinanceFetcher(BaseFetcher):
     async def _fetch(self, url: str, endpoint: str, params: dict | None = None):
         self._check_if_closed()
         full_url = f"{url}/{endpoint}"
-        await binance_rate_limiter.wait_if_needed(endpoint)
+        await self._wait_for_slot(endpoint)
 
         async def _do_fetch():
             session = await self._get_session()
@@ -64,11 +61,11 @@ class BinanceFetcher(BaseFetcher):
                     if response.status == 403:
                         raise UpstreamUnavailableError(f"Upstream blocked access for {endpoint}")
                     if response.status == 429:
+                        await self._penalize_provider(retry_after_seconds(response))
                         raise APIRateLimitError(f"Rate limit exceeded for {endpoint}")
                     if response.status == 418:
-                        logger.warning(f"IP banned by Binance for {endpoint}. Sleeping for 120s.")
-                        await asyncio.sleep(120)
-                        raise APIRateLimitError(f"IP banned, retrying for {endpoint}")
+                        await self._penalize_provider(120.0)
+                        raise APIRateLimitError(f"IP banned by Binance for {endpoint}")
                     if response.status >= 400:
                         try:
                             error_data = await response.json()

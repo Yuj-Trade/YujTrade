@@ -12,11 +12,9 @@ from common.exceptions import (
     NetworkError,
     UpstreamUnavailableError,
 )
-from common.utils import RateLimiter, async_retry
+from common.utils import async_retry
 from config.logger import logger
-from data.sources.base_fetcher import BaseFetcher
-
-coindesk_rate_limiter = RateLimiter(max_requests=20, time_window=60)
+from data.sources.base_fetcher import BaseFetcher, retry_after_seconds
 
 OHLCV_SUPPORTED_BASES = frozenset({"BTC", "ETH"})
 
@@ -44,7 +42,7 @@ class CoinDeskFetcher(BaseFetcher):
         self._check_if_closed()
         headers = {"x-api-key": self.api_key}
         url = f"{self.base_url}/{endpoint}"
-        await coindesk_rate_limiter.wait_if_needed(endpoint)
+        await self._wait_for_slot(endpoint)
 
         async def _do_fetch():
             session = await self._get_session()
@@ -53,6 +51,7 @@ class CoinDeskFetcher(BaseFetcher):
                     if response.status == 403:
                         raise UpstreamUnavailableError(f"Upstream blocked access for {url}")
                     if response.status == 429:
+                        await self._penalize_provider(retry_after_seconds(response))
                         raise APIRateLimitError("CoinDesk rate limit exceeded")
                     if response.status >= 400:
                         text = await response.text()
