@@ -359,6 +359,43 @@ Evidence: `docs/remediation/app-log-2026-10-24.md`.
   need a separate limit.
 - [ ] `OhlcvStore` keeps one SQLite connection per provider instance. A
   multi-process deployment would need WAL-aware coordination.
-- [ ] `get_macro_economic_data` is still reached from both the `macro` and
+- [x] `get_macro_economic_data` is still reached from both the `macro` and
   `market_indices` memo scopes; the AlphaVantage limiter now caps the damage at
-  one provider-wide budget, but the duplicate fetch remains.
+  one provider-wide budget, but the duplicate fetch remains. Resolved
+  2026-10-26: the indices path no longer fetches macro at all and the two
+  implementations collapsed into one. `a0a3a1d`.
+
+## app.log 2026-10-26 remediation - resolved
+
+- [x] Redis could not be reached at all: the host did not resolve and the scheme
+  was hardcoded to `rediss://`. `REDIS_URL`, `REDIS_USERNAME` and `REDIS_SSL`
+  are now configurable and `.env` points at the live endpoint with
+  `REDIS_SSL=false`. `bed47d0`.
+- [x] One analysis cycle issued sixteen AlphaVantage requests against a
+  five-per-minute budget, from two duplicate implementations and a per-symbol
+  fan-out, which is why the logged run never finished. One implementation, five
+  series, single-flight, and task-based cycle memoisation. `a0a3a1d`. This
+  closes the duplicate-fetch item recorded on 2026-10-25.
+- [x] `aiohttp.ServerDisconnectedError` and peers escaped as raw exceptions and
+  were logged at ERROR by every enrichment handler. All transport failures now
+  map to `UpstreamUnavailableError`; `report_fetch_failure` is one function.
+  `de3648e`.
+- [x] With the cache finally enabled, the 50-connection pool exceeded the
+  server's client limit and redis-py raised instead of waiting. The pool is
+  bounded and blocking, and `ResilientRedis` turns cache failures into misses.
+  `4efcff0`.
+
+## app.log 2026-10-26 remediation - open
+
+- [ ] No model is trained for the configured symbol/timeframe pairs, so every
+  cycle logs `model_unavailable` for lstm and xgboost and the ML score
+  contributes nothing. Run `scripts/train_models.py` and review the artifacts.
+- [ ] `fapi.binance.com` and `api.coingecko.com` remain unreachable from this
+  network (U3, U4); `cryptopanic.com` returns a Cloudflare 403 (U6). The code
+  degrades quietly, but futures context, CoinGecko fundamentals and news are
+  absent until the network allows them.
+- [ ] The Redis endpoint is ~200 ms away, so a cache read costs a fifth of a
+  second. `REDIS_MAX_CONNECTIONS` and `REDIS_POOL_TIMEOUT` are the knobs if the
+  pool saturates again; a closer region would be the real fix.
+- [ ] `logs/app.log` is appended to by every pytest run, which makes the file
+  hard to read as evidence. Consider a separate log file for tests.

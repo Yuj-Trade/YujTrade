@@ -188,3 +188,35 @@ per rejection, and a minimum number of new candles. A rejected candidate is
 versioned but never becomes `current.json`.
 
 Decisions: `openspec/changes/add-continuous-model-learning/design.md`.
+
+## Redis cache client
+
+```
+ResourceManager.get_redis_client()
+  -> build_redis_url()        REDIS_URL, or REDIS_SSL/REDIS_USERNAME/REDIS_HOST/PORT
+  -> BlockingConnectionPool   max_connections=REDIS_MAX_CONNECTIONS, timeout=REDIS_POOL_TIMEOUT
+  -> ResilientRedis           get/set/ping/aclose never raise
+```
+
+Caching is best effort. `ResilientRedis` turns a `redis.RedisError` into a cache
+miss or a no-op and reports once per five minutes with a suppressed count, so an
+unreachable or saturated Redis degrades latency, not correctness. The pool
+blocks for a free connection instead of raising, which matters for endpoints
+that are far away: a saturated pool must queue, not fail a fetch.
+
+## External data fetch scope
+
+```
+TradingService.run_analysis_for_all_symbols
+  -> SignalGenerator.begin_run_cycle()          memo = {}
+  -> analyze_symbol(symbol, timeframe) x N      concurrently
+       -> _gather_external_data(symbol)
+            memo key = (source, symbol | base_asset | None)
+            the memo stores asyncio.Task, so concurrent callers await one fetch
+  -> end_run_cycle()                            cancels pending tasks
+```
+
+Cycle-wide sources (`macro`, `trending`, `market_indices`) are keyed by `None`
+and fetched once per cycle no matter how many symbols or timeframes run.
+Per-symbol sources are keyed by symbol; news is keyed by base asset. A failed
+source is logged once per cycle, not once per caller.
