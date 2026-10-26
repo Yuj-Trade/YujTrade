@@ -68,6 +68,7 @@ decrypted via `KeyEncryptor` (see `scripts/encrypt_keys.py`):
 | `SECRET_ENCRYPTION_PASSWORD` | Password for `ENCRYPTED_*` values; also read from `/run/secrets/SECRET_ENCRYPTION_PASSWORD` in Docker |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_TOKEN` | Redis cache; unset token disables caching gracefully |
 | `REDIS_SSL` / `REDIS_USERNAME` | `REDIS_SSL=true` selects `rediss://` (TLS); Redis Cloud ports that terminate plain RESP must use `false`. `REDIS_USERNAME` defaults to `default` |
+| `REDIS_MAX_CONNECTIONS` / `REDIS_POOL_TIMEOUT` | Bounded pool size (default 10) and how long a cache operation waits for a free connection (default 10 s). Cache operations never raise |
 | `REDIS_URL` | Full connection URL that overrides the assembled parts above |
 | `CRYPTOPANIC_KEY`, `ALPHA_VANTAGE_KEY`, `COINGECKO_KEY`, `COINDESK_API_KEY`, `MESSARI_API_KEY` | Optional provider keys (features degrade without them) |
 | `SENTRY_DSN` | Optional error reporting |

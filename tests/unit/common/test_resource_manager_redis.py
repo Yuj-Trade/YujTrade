@@ -25,7 +25,7 @@ def failing_redis(monkeypatch):
     monkeypatch.setattr(SecretsManager, "REDIS_HOST", "redis.example")
     monkeypatch.setattr(SecretsManager, "REDIS_PORT", "6379")
     monkeypatch.setattr(SecretsManager, "REDIS_PASSWORD", "secret")
-    monkeypatch.setattr(redis, "from_url", lambda *args, **kwargs: client)
+    _patch_pool(monkeypatch, client)
     return client
 
 
@@ -56,6 +56,50 @@ async def test_cleanup_resets_the_unavailable_flag(failing_redis):
 
     await manager.cleanup()
     assert manager._redis_unavailable is False
+
+
+class _FakeClient:
+    def __init__(
+        self, *, ping_result=True, ping_error=None, get_result=None, get_error=None, set_error=None
+    ):
+        self._ping_result = ping_result
+        self._ping_error = ping_error
+        self._get_result = get_result
+        self._get_error = get_error
+        self._set_error = set_error
+        self.closed = False
+
+    async def ping(self):
+        if self._ping_error is not None:
+            raise self._ping_error
+        return self._ping_result
+
+    async def get(self, key):
+        if self._get_error is not None:
+            raise self._get_error
+        return self._get_result
+
+    async def set(self, key, value, ex=None, **kwargs):
+        if self._set_error is not None:
+            raise self._set_error
+        return True
+
+    async def aclose(self):
+        self.closed = True
+
+
+def _patch_pool(monkeypatch, client, captured=None):
+    def fake_pool_from_url(url, **kwargs):
+        if captured is not None:
+            captured["url"] = url
+            captured["kwargs"] = kwargs
+        return object()
+
+    def fake_redis(connection_pool=None):
+        return client
+
+    monkeypatch.setattr(redis.BlockingConnectionPool, "from_url", fake_pool_from_url)
+    monkeypatch.setattr(redis, "Redis", fake_redis)
 
 
 def _configure(monkeypatch, *, url="", ssl=False, username="default"):
@@ -124,21 +168,10 @@ def test_redaction_keeps_a_url_without_credentials_readable():
 
 async def test_tls_options_are_only_passed_when_tls_is_enabled(monkeypatch):
     captured: dict[str, object] = {}
-
-    class _Client:
-        async def ping(self):
-            return True
-
-        async def aclose(self):
-            return None
-
-    def fake_from_url(url, **kwargs):
-        captured["url"] = url
-        captured["kwargs"] = kwargs
-        return _Client()
+    client = _FakeClient()
 
     _configure(monkeypatch, ssl=False)
-    monkeypatch.setattr(redis, "from_url", fake_from_url)
+    _patch_pool(monkeypatch, client, captured)
     manager = ResourceManager()
 
     assert await manager.get_redis_client() is not None
@@ -157,15 +190,8 @@ async def test_tls_options_are_only_passed_when_tls_is_enabled(monkeypatch):
 async def test_successful_connection_is_logged_without_the_password(monkeypatch):
     messages: list[str] = []
 
-    class _Client:
-        async def ping(self):
-            return True
-
-        async def aclose(self):
-            return None
-
     _configure(monkeypatch, ssl=True)
-    monkeypatch.setattr(redis, "from_url", lambda *a, **k: _Client())
+    _patch_pool(monkeypatch, _FakeClient())
     manager = ResourceManager()
 
     handler_id = configured_logger.add(
@@ -176,5 +202,33 @@ async def test_successful_connection_is_logged_without_the_password(monkeypatch)
     finally:
         configured_logger.remove(handler_id)
 
-    assert any("Connected to Redis successfully (TLS)" in m for m in messages)
+    assert any("Connected to Redis successfully (TLS, pool=10)" in m for m in messages)
     assert not any("secret" in m for m in messages)
+
+
+async def test_the_returned_client_absorbs_redis_errors(monkeypatch):
+    client = _FakeClient(
+        get_error=redis.ResponseError("Too many connections"),
+        set_error=redis.ResponseError("Too many connections"),
+    )
+
+    _configure(monkeypatch)
+    _patch_pool(monkeypatch, client)
+    manager = ResourceManager()
+
+    client = await manager.get_redis_client()
+
+    assert await client.get("key") is None
+    assert await client.set("key", "value", ex=60) is None
+
+
+async def test_the_pool_size_comes_from_configuration(monkeypatch):
+    captured: dict[str, object] = {}
+
+    _configure(monkeypatch)
+    monkeypatch.setattr(SecretsManager, "REDIS_MAX_CONNECTIONS", 7)
+    _patch_pool(monkeypatch, _FakeClient(), captured)
+    manager = ResourceManager()
+
+    assert await manager.get_redis_client() is not None
+    assert captured["kwargs"]["max_connections"] == 7

@@ -9,12 +9,13 @@ import tensorflow as tf
 
 from config.logger import logger
 from config.settings import SecretsManager
+from utils.resilient_redis import ResilientRedis
 
 
 class ResourceManager:
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
-        self._redis_client: redis.Redis | None = None
+        self._redis_client: ResilientRedis | None = None
         self._redis_unavailable = False
         self._lock = asyncio.Lock()
 
@@ -58,7 +59,7 @@ class ResourceManager:
         except Exception as close_e:
             logger.debug(f"Error closing failed redis client: {close_e}")
 
-    async def get_redis_client(self) -> redis.Redis | None:
+    async def get_redis_client(self) -> ResilientRedis | None:
         async with self._lock:
             if self._redis_unavailable:
                 return None
@@ -75,10 +76,11 @@ class ResourceManager:
                 tls_options = {"ssl_cert_reqs": None} if use_tls else {}
 
                 try:
-                    self._redis_client = redis.from_url(
+                    pool = redis.BlockingConnectionPool.from_url(
                         redis_url,
                         decode_responses=True,
-                        max_connections=50,
+                        max_connections=SecretsManager.REDIS_MAX_CONNECTIONS,
+                        timeout=SecretsManager.REDIS_POOL_TIMEOUT,
                         socket_connect_timeout=10,
                         socket_timeout=10,
                         socket_keepalive=True,
@@ -87,10 +89,13 @@ class ResourceManager:
                         retry_on_error=[redis.ConnectionError, redis.TimeoutError],
                         **tls_options,
                     )
+                    raw_client = redis.Redis(connection_pool=pool)
 
-                    await asyncio.wait_for(self._redis_client.ping(), timeout=10.0)
+                    await asyncio.wait_for(raw_client.ping(), timeout=10.0)
+                    self._redis_client = ResilientRedis(raw_client)
                     logger.info(
-                        f"Connected to Redis successfully ({'TLS' if use_tls else 'plain'})."
+                        f"Connected to Redis successfully ({'TLS' if use_tls else 'plain'}, "
+                        f"pool={SecretsManager.REDIS_MAX_CONNECTIONS})."
                     )
                 except TimeoutError as e:
                     logger.warning(f"Redis connection timed out: {e}. Caching will be disabled.")

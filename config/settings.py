@@ -61,6 +61,8 @@ class SecretsManager:
     REDIS_PORT = decouple_config("REDIS_PORT", default=6379, cast=int)
     REDIS_USERNAME = decouple_config("REDIS_USERNAME", default="default")
     REDIS_SSL = decouple_config("REDIS_SSL", default=False, cast=bool)
+    REDIS_MAX_CONNECTIONS = decouple_config("REDIS_MAX_CONNECTIONS", default=10, cast=int)
+    REDIS_POOL_TIMEOUT = decouple_config("REDIS_POOL_TIMEOUT", default=10.0, cast=float)
     REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="")
     if not REDIS_PASSWORD:
         logger.warning(
