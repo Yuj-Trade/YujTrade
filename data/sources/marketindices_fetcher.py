@@ -7,7 +7,6 @@ import redis
 from common.cache import CacheCategory, CacheKeyBuilder
 from config.logger import logger
 from config.settings import ConfigManager
-from data.sources.alphavantage_fetcher import AlphaVantageFetcher
 from data.sources.base_fetcher import BaseFetcher
 from data.sources.coingecko_fetcher import CoinGeckoFetcher
 from data.sources.defillama_fetcher import DeFiLlamaFetcher
@@ -20,7 +19,6 @@ class MarketIndicesFetcher(BaseFetcher):
         coingecko_fetcher: CoinGeckoFetcher | None = None,
         defillama_fetcher: DeFiLlamaFetcher | None = None,
         yfinance_fetcher: YFinanceFetcher | None = None,
-        alphavantage_fetcher: AlphaVantageFetcher | None = None,
         redis_client: redis.Redis | None = None,
         session: aiohttp.ClientSession | None = None,
         config_manager: ConfigManager | None = None,
@@ -37,7 +35,6 @@ class MarketIndicesFetcher(BaseFetcher):
         self.coingecko = coingecko_fetcher or CoinGeckoFetcher(**common_args)
         self.defillama = defillama_fetcher or DeFiLlamaFetcher(**common_args)
         self.yfinance = yfinance_fetcher or YFinanceFetcher(**common_args)
-        self.alphavantage = alphavantage_fetcher
 
     def _check_if_closed(self):
         if self._is_closed:
@@ -125,9 +122,6 @@ class MarketIndicesFetcher(BaseFetcher):
             "crypto": self.get_crypto_indices(),
             "traditional": self.yfinance.get_traditional_indices(),
         }
-
-        if self.alphavantage:
-            tasks["macro"] = self.alphavantage.get_macro_economic_data()
 
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 

@@ -74,12 +74,18 @@ class SignalGenerator:
 
         self.threshold_manager = AdaptiveThresholdManager()
         self._cycle_memo: dict[tuple[str, str | None], Any] | None = None
+        self._cycle_reported: set[tuple[str, str | None]] | None = None
 
     async def begin_run_cycle(self) -> None:
         self._cycle_memo = {}
+        self._cycle_reported = set()
 
     async def end_run_cycle(self) -> None:
-        self._cycle_memo = None
+        memo, self._cycle_memo = self._cycle_memo, None
+        self._cycle_reported = None
+        for task in (memo or {}).values():
+            if isinstance(task, asyncio.Task) and not task.done():
+                task.cancel()
 
     @staticmethod
     def _hurst_range(hurst) -> str:
@@ -306,6 +312,7 @@ class SignalGenerator:
         await recorder.record(signal_id, payload)
 
     async def _gather_external_data(self, symbol: str) -> dict[str, Any]:
+        base_asset = symbol.split("/")[0]
         factories = {
             "derivatives": lambda: self.data_provider.get_derivatives_data(symbol),
             "fundamental": lambda: self.data_provider.get_fundamental_data(symbol),
@@ -314,44 +321,55 @@ class SignalGenerator:
             "macro": lambda: self.data_provider.get_macro_data(),
             "trending": lambda: self.data_provider.get_trending_data(),
             "market_indices": lambda: self.data_provider.get_all_indices(),
+            "news": lambda: self.data_provider.get_news_sentiment([base_asset]),
         }
         memo_scope = {
+            "derivatives": symbol,
             "fundamental": symbol,
             "onchain": symbol,
+            "order_book": symbol,
             "macro": None,
             "trending": None,
             "market_indices": None,
+            "news": base_asset,
         }
 
-        external_data: dict[str, Any] = {}
         memo = self._cycle_memo
-        pending: dict[str, Any] = {}
+        tasks: dict[str, asyncio.Task] = {}
         for key, factory in factories.items():
-            if key in memo_scope and memo is not None and (key, memo_scope[key]) in memo:
-                external_data[key] = memo[(key, memo_scope[key])]
-            else:
-                pending[key] = factory()
+            memo_key = (key, memo_scope[key])
+            existing = memo.get(memo_key) if memo is not None else None
+            if existing is not None:
+                tasks[key] = existing
+                continue
+            task = asyncio.ensure_future(factory())
+            if memo is not None:
+                memo[memo_key] = task
+            tasks[key] = task
 
-        results = await asyncio.gather(*pending.values(), return_exceptions=True) if pending else []
-        for key, result in zip(pending.keys(), results, strict=False):
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+        external_data: dict[str, Any] = {}
+        for key, result in zip(tasks.keys(), results, strict=False):
             if isinstance(result, Exception):
-                logger.warning(f"Failed to fetch {key} for {symbol}: {result}")
                 external_data[key] = None
+                self._report_external_failure(key, memo_scope[key], symbol, result)
             else:
                 external_data[key] = result
-                if memo is not None and key in memo_scope:
-                    memo[(key, memo_scope[key])] = result
-
-        try:
-            base_currency = symbol.split("/")[0]
-            news_sentiment = await self.data_provider.get_news_sentiment([base_currency])
-
-            external_data["news"] = news_sentiment
-        except Exception as e:
-            logger.warning(f"Failed to fetch news sentiment for {symbol}: {e}")
-            external_data["news"] = None
 
         return external_data
+
+    def _report_external_failure(
+        self, key: str, scope: str | None, symbol: str, error: BaseException
+    ) -> None:
+        report_key = (key, scope)
+        reported = self._cycle_reported
+        if reported is not None:
+            if report_key in reported:
+                logger.debug(f"External source {key} already reported this cycle ({symbol})")
+                return
+            reported.add(report_key)
+        logger.warning(f"Failed to fetch {key} for {symbol}: {error}")
 
     async def get_ml_predictions(self, symbol: str, timeframe: str) -> dict[str, dict]:
         predictions = {}

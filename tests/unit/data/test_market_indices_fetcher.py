@@ -23,14 +23,11 @@ def _fetcher(redis_client=None):
     )
     yfinance = MagicMock()
     yfinance.get_traditional_indices = AsyncMock(return_value={"SPX": 5000.0})
-    alphavantage = MagicMock()
-    alphavantage.get_macro_economic_data = AsyncMock(return_value={"CPI": 3.2})
 
     fetcher = MarketIndicesFetcher(
         coingecko_fetcher=coingecko,
         defillama_fetcher=defillama,
         yfinance_fetcher=yfinance,
-        alphavantage_fetcher=alphavantage,
         redis_client=redis_client,
     )
     fetcher.config_manager.get_cache_ttl = lambda *args, **kwargs: 600
@@ -99,27 +96,21 @@ class TestAllIndices:
 
         assert indices["BTC.D"] == 50.0
         assert indices["SPX"] == 5000.0
-        assert indices["CPI"] == 3.2
+
+    async def test_macro_is_not_fetched_through_the_indices_path(self):
+        indices = await _fetcher().get_all_indices()
+
+        assert "CPI" not in indices
+        assert "FED_RATE" not in indices
 
     async def test_failing_sources_are_skipped(self):
         fetcher = _fetcher()
         fetcher.yfinance.get_traditional_indices = AsyncMock(side_effect=RuntimeError("down"))
-        fetcher.alphavantage.get_macro_economic_data = AsyncMock(return_value={})
 
         indices = await fetcher.get_all_indices()
 
         assert "SPX" not in indices
-        assert "CPI" not in indices
         assert indices["BTC.D"] == 50.0
-
-    async def test_macro_is_optional(self):
-        fetcher = _fetcher()
-        fetcher.alphavantage = None
-
-        indices = await fetcher.get_all_indices()
-
-        assert "CPI" not in indices
-        assert indices["SPX"] == 5000.0
 
 
 async def test_closed_fetcher_is_rejected():

@@ -1,7 +1,11 @@
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
-from data.sources.alphavantage_fetcher import AlphaVantageFetcher
+import pytest
+
+from common.exceptions import ObjectClosedError
+from data.sources.alphavantage_fetcher import MACRO_SERIES, AlphaVantageFetcher
 
 
 def _fetcher(api_key="test-key", redis_client=None):
@@ -14,6 +18,17 @@ def _payload(value):
     return {"data": [{"date": "2024-01-01", "value": str(value)}]}
 
 
+def test_only_consumed_series_are_requested():
+    assert set(MACRO_SERIES) == {
+        "CPI",
+        "FED_RATE",
+        "GDP",
+        "UNEMPLOYMENT",
+        "TREASURY_YIELD",
+    }
+    assert len(MACRO_SERIES) <= 5
+
+
 async def test_macro_data_maps_every_function(monkeypatch):
     fetcher = _fetcher()
     by_function = {
@@ -22,9 +37,6 @@ async def test_macro_data_maps_every_function(monkeypatch):
         "REAL_GDP": 27000.0,
         "UNEMPLOYMENT": 4.1,
         "TREASURY_YIELD": 4.2,
-        "INFLATION": 3.0,
-        "CONSUMER_SENTIMENT": 68.0,
-        "RETAIL_SALES": 700000.0,
     }
 
     async def _fake(url, params=None, headers=None, limiter=None, endpoint_name="default"):
@@ -34,14 +46,29 @@ async def test_macro_data_maps_every_function(monkeypatch):
 
     result = await fetcher.get_macro_economic_data()
 
-    assert result["CPI"] == 3.2
-    assert result["FED_RATE"] == 4.5
-    assert result["GDP"] == 27000.0
-    assert result["UNEMPLOYMENT"] == 4.1
-    assert result["TREASURY_YIELD_10Y"] == 4.2
-    assert result["INFLATION"] == 3.0
-    assert result["CONSUMER_SENTIMENT"] == 68.0
-    assert result["RETAIL_SALES"] == 700000.0
+    assert result == {
+        "CPI": 3.2,
+        "FED_RATE": 4.5,
+        "GDP": 27000.0,
+        "UNEMPLOYMENT": 4.1,
+        "TREASURY_YIELD": 4.2,
+    }
+
+
+async def test_the_api_key_is_attached_to_every_request(monkeypatch):
+    fetcher = _fetcher(api_key="secret-key")
+    seen: list[dict] = []
+
+    async def _fake(url, params=None, **kwargs):
+        seen.append(params)
+        return _payload(1.0)
+
+    monkeypatch.setattr(fetcher, "_fetch_json", _fake)
+
+    await fetcher.get_macro_economic_data()
+
+    assert len(seen) == 5
+    assert all(params["apikey"] == "secret-key" for params in seen)
 
 
 async def test_missing_api_key_returns_empty_dict_without_a_request(monkeypatch):
@@ -69,13 +96,20 @@ async def test_a_failing_function_is_skipped(monkeypatch):
     assert result["FED_RATE"] == 1.0
 
 
-async def test_empty_data_array_is_ignored(monkeypatch):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": []},
+        {"data": [{"value": "."}]},
+        {"data": [{}]},
+        {"data": "not-a-list"},
+        {"Information": "rate limit"},
+        None,
+    ],
+)
+async def test_unusable_payloads_are_ignored(monkeypatch, payload):
     fetcher = _fetcher()
-
-    async def _fake(url, params=None, **kwargs):
-        return {"data": []}
-
-    monkeypatch.setattr(fetcher, "_fetch_json", _fake)
+    monkeypatch.setattr(fetcher, "_fetch_json", AsyncMock(return_value=payload))
 
     assert await fetcher.get_macro_economic_data() == {}
 
@@ -90,6 +124,7 @@ async def test_macro_data_is_cached(monkeypatch):
 
     redis.set.assert_awaited_once()
     assert json.loads(redis.set.await_args.args[1])["CPI"] == 2.0
+    assert redis.set.await_args.kwargs["ex"] == 86400
 
 
 async def test_macro_cache_hit_skips_the_requests(monkeypatch):
@@ -103,33 +138,73 @@ async def test_macro_cache_hit_skips_the_requests(monkeypatch):
     request.assert_not_awaited()
 
 
-async def test_comprehensive_macro_data_uses_its_own_cache_key(monkeypatch):
+async def test_a_corrupt_cache_entry_falls_through_to_the_network(monkeypatch):
+    redis = AsyncMock()
+    redis.get = AsyncMock(return_value="{not json")
+    fetcher = _fetcher(redis_client=redis)
+    monkeypatch.setattr(fetcher, "_fetch_json", AsyncMock(return_value=_payload(3.0)))
+
+    result = await fetcher.get_macro_economic_data()
+    assert result["CPI"] == 3.0
+
+
+async def test_a_failing_cache_read_falls_through_to_the_network(monkeypatch):
+    redis = AsyncMock()
+    redis.get = AsyncMock(side_effect=ConnectionError("redis down"))
+    fetcher = _fetcher(redis_client=redis)
+    monkeypatch.setattr(fetcher, "_fetch_json", AsyncMock(return_value=_payload(3.0)))
+
+    result = await fetcher.get_macro_economic_data()
+    assert result["CPI"] == 3.0
+
+
+async def test_a_failing_cache_write_does_not_lose_the_result(monkeypatch):
     redis = AsyncMock()
     redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock(side_effect=ConnectionError("redis down"))
     fetcher = _fetcher(redis_client=redis)
-    monkeypatch.setattr(fetcher, "_fetch_json", AsyncMock(return_value=_payload(5.0)))
+    monkeypatch.setattr(fetcher, "_fetch_json", AsyncMock(return_value=_payload(3.0)))
 
-    result = await fetcher.get_comprehensive_macro_data()
-
-    assert result["CPI"] == 5.0
-    key = redis.set.await_args.args[0]
-    assert "comprehensive" in key
+    result = await fetcher.get_macro_economic_data()
+    assert result["CPI"] == 3.0
 
 
-async def test_comprehensive_macro_without_a_key_returns_empty(monkeypatch):
-    fetcher = _fetcher(api_key="")
+async def test_concurrent_callers_share_one_fetch(monkeypatch):
+    fetcher = _fetcher()
+    calls = 0
+    release = asyncio.Event()
 
-    assert await fetcher.get_comprehensive_macro_data() == {}
+    async def _fake(url, params=None, **kwargs):
+        nonlocal calls
+        calls += 1
+        await release.wait()
+        return _payload(1.0)
+
+    monkeypatch.setattr(fetcher, "_fetch_json", _fake)
+
+    waiters = [asyncio.ensure_future(fetcher.get_macro_economic_data()) for _ in range(10)]
+    await asyncio.sleep(0.05)
+    release.set()
+    results = await asyncio.gather(*waiters)
+
+    assert calls == 5
+    assert all(result["CPI"] == 1.0 for result in results)
+
+
+async def test_a_later_call_after_completion_refetches(monkeypatch):
+    fetcher = _fetcher()
+    request = AsyncMock(return_value=_payload(1.0))
+    monkeypatch.setattr(fetcher, "_fetch_json", request)
+
+    await fetcher.get_macro_economic_data()
+    await fetcher.get_macro_economic_data()
+
+    assert request.await_count == 10
 
 
 async def test_closed_fetcher_is_rejected():
     fetcher = _fetcher()
     await fetcher.close()
 
-    from common.exceptions import ObjectClosedError
-
-    try:
-        await fetcher.get_comprehensive_macro_data()
-    except ObjectClosedError:
-        return
-    raise AssertionError("expected ObjectClosedError")
+    with pytest.raises(ObjectClosedError):
+        await fetcher.get_macro_economic_data()

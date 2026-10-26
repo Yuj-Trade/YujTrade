@@ -6,6 +6,18 @@ from common.cache import CacheKeyBuilder
 from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher
 
+MACRO_SERIES: dict[str, dict[str, str]] = {
+    "CPI": {"function": "CPI", "interval": "monthly"},
+    "FED_RATE": {"function": "FEDERAL_FUNDS_RATE", "interval": "monthly"},
+    "GDP": {"function": "REAL_GDP", "interval": "quarterly"},
+    "UNEMPLOYMENT": {"function": "UNEMPLOYMENT"},
+    "TREASURY_YIELD": {
+        "function": "TREASURY_YIELD",
+        "interval": "monthly",
+        "maturity": "10year",
+    },
+}
+
 
 class AlphaVantageFetcher(BaseFetcher):
     def __init__(self, api_key: str, **kwargs):
@@ -13,244 +25,87 @@ class AlphaVantageFetcher(BaseFetcher):
         self.api_key = api_key
         self.base_url = "https://www.alphavantage.co/query"
         self.source_name = "alphavantage"
+        self._macro_lock = asyncio.Lock()
+        self._macro_inflight: asyncio.Task | None = None
 
-    async def get_macro_economic_data(self) -> dict[str, Any]:
-        cache_key = CacheKeyBuilder.macro_key(self.source_name, "all")
-        cache_ttl = self.config_manager.get_cache_ttl("macro")
-
-        if self.redis:
-            cached = await self.redis.get(cache_key)
-            if cached:
-                return json.loads(cached)
-
-        if not self.api_key:
-            return {}
-
-        tasks = {
-            "cpi": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "CPI",
-                    "interval": "monthly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="cpi",
-            ),
-            "fed_rate": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "FEDERAL_FUNDS_RATE",
-                    "interval": "monthly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="fed_rate",
-            ),
-            "gdp": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "REAL_GDP",
-                    "interval": "quarterly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="gdp",
-            ),
-            "unemployment": self._fetch_json(
-                self.base_url,
-                params={"function": "UNEMPLOYMENT", "apikey": self.api_key},
-                endpoint_name="unemployment",
-            ),
-            "treasury_yield": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "TREASURY_YIELD",
-                    "interval": "monthly",
-                    "maturity": "10year",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="treasury_yield",
-            ),
-            "inflation": self._fetch_json(
-                self.base_url,
-                params={"function": "INFLATION", "apikey": self.api_key},
-                endpoint_name="inflation",
-            ),
-            "consumer_sentiment": self._fetch_json(
-                self.base_url,
-                params={"function": "CONSUMER_SENTIMENT", "apikey": self.api_key},
-                endpoint_name="consumer_sentiment",
-            ),
-            "retail_sales": self._fetch_json(
-                self.base_url,
-                params={"function": "RETAIL_SALES", "apikey": self.api_key},
-                endpoint_name="retail_sales",
-            ),
-        }
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-        macro_data = {}
-        (
-            cpi_data,
-            fed_rate_data,
-            gdp_data,
-            unemployment_data,
-            yield_data,
-            inflation_data,
-            consumer_sentiment_data,
-            retail_sales_data,
-        ) = results
-
-        if (
-            not isinstance(cpi_data, Exception)
-            and cpi_data
-            and "data" in cpi_data
-            and cpi_data["data"]
-        ):
-            macro_data["CPI"] = float(cpi_data["data"][0]["value"])
-        if (
-            not isinstance(fed_rate_data, Exception)
-            and fed_rate_data
-            and "data" in fed_rate_data
-            and fed_rate_data["data"]
-        ):
-            macro_data["FED_RATE"] = float(fed_rate_data["data"][0]["value"])
-        if (
-            not isinstance(gdp_data, Exception)
-            and gdp_data
-            and "data" in gdp_data
-            and gdp_data["data"]
-        ):
-            macro_data["GDP"] = float(gdp_data["data"][0]["value"])
-        if (
-            not isinstance(unemployment_data, Exception)
-            and unemployment_data
-            and "data" in unemployment_data
-            and unemployment_data["data"]
-        ):
-            macro_data["UNEMPLOYMENT"] = float(unemployment_data["data"][0]["value"])
-        if (
-            not isinstance(yield_data, Exception)
-            and yield_data
-            and "data" in yield_data
-            and yield_data["data"]
-        ):
-            macro_data["TREASURY_YIELD_10Y"] = float(yield_data["data"][0]["value"])
-        if (
-            not isinstance(inflation_data, Exception)
-            and inflation_data
-            and "data" in inflation_data
-            and inflation_data["data"]
-        ):
-            macro_data["INFLATION"] = float(inflation_data["data"][0]["value"])
-        if (
-            not isinstance(consumer_sentiment_data, Exception)
-            and consumer_sentiment_data
-            and "data" in consumer_sentiment_data
-            and consumer_sentiment_data["data"]
-        ):
-            macro_data["CONSUMER_SENTIMENT"] = float(consumer_sentiment_data["data"][0]["value"])
-        if (
-            not isinstance(retail_sales_data, Exception)
-            and retail_sales_data
-            and "data" in retail_sales_data
-            and retail_sales_data["data"]
-        ):
-            macro_data["RETAIL_SALES"] = float(retail_sales_data["data"][0]["value"])
-
-        if self.redis and macro_data:
-            await self.redis.set(cache_key, json.dumps(macro_data), ex=cache_ttl)
-
-        return macro_data
-
-    async def get_comprehensive_macro_data(self) -> dict[str, Any]:
-        self._check_if_closed()
-        cache_key = CacheKeyBuilder.macro_key(self.source_name, "comprehensive")
-        cache_ttl = self.config_manager.get_cache_ttl("macro")
-
+    @staticmethod
+    def _latest_value(payload: Any) -> float | None:
+        if not isinstance(payload, dict):
+            return None
+        rows = payload.get("data")
+        if not isinstance(rows, list) or not rows:
+            return None
+        first = rows[0]
+        if not isinstance(first, dict):
+            return None
         try:
-            if self.redis:
-                cached = await self.redis.get(cache_key)
-                if cached:
-                    return json.loads(cached)
+            return float(first["value"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def _read_macro_cache(self, cache_key: str) -> dict[str, Any] | None:
+        if not self.redis:
+            return None
+        try:
+            cached = await self.redis.get(cache_key)
         except Exception as e:
             logger.warning(f"Redis GET failed for {cache_key}: {e}")
+            return None
+        if not cached:
+            return None
+        try:
+            payload = json.loads(cached)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Discarding unreadable macro cache entry {cache_key}: {e}")
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    async def _fetch_macro_series(self, cache_key: str, cache_ttl: int) -> dict[str, Any]:
+        requests = {
+            name: self._fetch_json(
+                self.base_url,
+                params={**params, "apikey": self.api_key},
+                endpoint_name=name.lower(),
+            )
+            for name, params in MACRO_SERIES.items()
+        }
+        results = await asyncio.gather(*requests.values(), return_exceptions=True)
+
+        macro_data: dict[str, Any] = {}
+        for name, result in zip(requests.keys(), results, strict=False):
+            if isinstance(result, Exception):
+                continue
+            value = self._latest_value(result)
+            if value is not None:
+                macro_data[name] = value
+
+        if self.redis and macro_data:
+            try:
+                await self.redis.set(cache_key, json.dumps(macro_data), ex=cache_ttl)
+            except Exception as e:
+                logger.warning(f"Redis SET failed for {cache_key}: {e}")
+
+        return macro_data
+
+    async def get_macro_economic_data(self) -> dict[str, Any]:
+        self._check_if_closed()
+        cache_key = CacheKeyBuilder.macro_key(self.source_name, "economic")
+        cache_ttl = self.config_manager.get_cache_ttl("macro")
+
+        cached = await self._read_macro_cache(cache_key)
+        if cached is not None:
+            return cached
 
         if not self.api_key:
             return {}
 
-        tasks = {
-            "cpi": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "CPI",
-                    "interval": "monthly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="cpi",
-            ),
-            "fed_rate": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "FEDERAL_FUNDS_RATE",
-                    "interval": "monthly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="fed_rate",
-            ),
-            "gdp": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "REAL_GDP",
-                    "interval": "quarterly",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="gdp",
-            ),
-            "unemployment": self._fetch_json(
-                self.base_url,
-                params={"function": "UNEMPLOYMENT", "apikey": self.api_key},
-                endpoint_name="unemployment",
-            ),
-            "treasury_yield": self._fetch_json(
-                self.base_url,
-                params={
-                    "function": "TREASURY_YIELD",
-                    "interval": "monthly",
-                    "maturity": "10year",
-                    "apikey": self.api_key,
-                },
-                endpoint_name="treasury_yield",
-            ),
-            "inflation": self._fetch_json(
-                self.base_url,
-                params={"function": "INFLATION", "apikey": self.api_key},
-                endpoint_name="inflation",
-            ),
-            "consumer_sentiment": self._fetch_json(
-                self.base_url,
-                params={"function": "CONSUMER_SENTIMENT", "apikey": self.api_key},
-                endpoint_name="consumer_sentiment",
-            ),
-            "retail_sales": self._fetch_json(
-                self.base_url,
-                params={"function": "RETAIL_SALES", "apikey": self.api_key},
-                endpoint_name="retail_sales",
-            ),
-        }
+        async with self._macro_lock:
+            inflight = self._macro_inflight
+            if inflight is None or inflight.done():
+                cached = await self._read_macro_cache(cache_key)
+                if cached is not None:
+                    return cached
+                inflight = asyncio.ensure_future(self._fetch_macro_series(cache_key, cache_ttl))
+                self._macro_inflight = inflight
 
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-        macro_data = {}
-        keys_list = list(tasks.keys())
-
-        for i, result in enumerate(results):
-            key = keys_list[i]
-            if not isinstance(result, Exception) and result and "data" in result and result["data"]:
-                try:
-                    macro_data[key.upper()] = float(result["data"][0]["value"])
-                except (KeyError, ValueError, IndexError) as e:
-                    logger.warning(f"Could not parse {key}: {e}")
-
-        if self.redis and macro_data:
-            await self.redis.set(cache_key, json.dumps(macro_data), ex=cache_ttl)
-
-        return macro_data
+        return await asyncio.shield(inflight)

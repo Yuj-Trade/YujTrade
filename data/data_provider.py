@@ -149,7 +149,6 @@ class MarketDataProvider:
             coingecko_fetcher=self.coingecko_fetcher,
             defillama_fetcher=self.defillama_fetcher,
             yfinance_fetcher=self.yfinance_fetcher,
-            alphavantage_fetcher=self.alphavantage_fetcher,
             **common_args,
         )
 
@@ -509,7 +508,7 @@ class MarketDataProvider:
     async def get_macro_data(self) -> MacroEconomicData | None:
         if self.alphavantage_fetcher:
             try:
-                data = await self.alphavantage_fetcher.get_comprehensive_macro_data()
+                data = await self.alphavantage_fetcher.get_macro_economic_data()
                 if data:
                     return MacroEconomicData(
                         cpi=data.get("CPI"),

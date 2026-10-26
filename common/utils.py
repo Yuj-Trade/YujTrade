@@ -31,10 +31,22 @@ class RateLimiter:
         self.throttle_count = 0
         self.cooldown_count = 0
         self._cooldown_until = 0.0
+        self._last_wait_log: dict[tuple[str, str], float] = {}
         self._lock = asyncio.Lock()
 
     def _bucket(self, endpoint: str) -> str:
         return "" if self.scope == "provider" else endpoint
+
+    def _log_wait(self, bucket: str, reason: str, sleep_time: float) -> None:
+        now = time.time()
+        log_key = (bucket, reason)
+        if now - self._last_wait_log.get(log_key, 0.0) < self.time_window:
+            return
+        self._last_wait_log[log_key] = now
+        logger.debug(
+            f"Rate limit {reason} for {bucket or self.provider}; waiting up to "
+            f"{sleep_time:.2f}s ({self.throttle_count} throttle events so far)"
+        )
 
     async def wait_if_needed(self, endpoint: str):
         bucket = self._bucket(endpoint)
@@ -61,9 +73,9 @@ class RateLimiter:
 
             if throttled:
                 self.throttle_count += 1
-            logger.debug(
-                f"Rate limit hit for {bucket or self.provider}. Sleeping for {sleep_time:.2f}s"
-            )
+                self._log_wait(bucket, "hit", sleep_time)
+            else:
+                self._log_wait(bucket, "cooldown", sleep_time)
             await asyncio.sleep(sleep_time)
 
     async def penalize(self, seconds: float) -> None:

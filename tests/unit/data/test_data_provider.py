@@ -362,7 +362,7 @@ ENRICHMENT_METHODS = [
     ("get_fundamental_data", "coingecko_fetcher", "get_fundamental_data", ("BTC/USDT",)),
     ("get_onchain_data", "messari_fetcher", "get_on_chain_data", ("BTC/USDT",)),
     ("get_order_book", "binance_fetcher", "get_order_book_depth", ("BTC/USDT",)),
-    ("get_macro_data", "alphavantage_fetcher", "get_comprehensive_macro_data", ()),
+    ("get_macro_data", "alphavantage_fetcher", "get_macro_economic_data", ()),
     ("get_trending_data", "coingecko_fetcher", "get_trending_searches", ()),
     ("get_news_sentiment", "news_fetcher", "fetch_sentiment_analysis", (["BTC"],)),
     ("get_market_indices", "market_indices_fetcher", "get_crypto_indices", ()),
