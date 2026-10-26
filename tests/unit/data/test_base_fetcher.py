@@ -177,3 +177,86 @@ class TestFetchJson:
 
         limiter = await rate_limit_registry().limiter("coindesk")
         assert limiter.requests["probe"]
+
+
+class TestTransportErrorClassification:
+    @pytest.mark.parametrize(
+        "error",
+        [
+            aiohttp.ServerDisconnectedError(yarl.URL("https://example.test")),
+            aiohttp.ClientOSError(104, "Connection reset by peer"),
+            aiohttp.ClientPayloadError("truncated"),
+            aiohttp.ServerTimeoutError("read timeout"),
+            ConnectionResetError("reset"),
+            ConnectionAbortedError("aborted"),
+        ],
+        ids=[
+            "server-disconnected",
+            "client-os",
+            "payload",
+            "server-timeout",
+            "reset",
+            "aborted",
+        ],
+    )
+    async def test_transport_failures_become_upstream_unavailable(self, error):
+        fetcher, _ = _fetcher(error=error)
+
+        with pytest.raises(UpstreamUnavailableError):
+            await fetcher._fetch_json("https://example.test/endpoint")
+
+    async def test_a_transport_failure_counts_toward_the_breaker(self):
+        fetcher, _ = _fetcher(error=aiohttp.ServerDisconnectedError())
+
+        for _ in range(fetcher.circuit_breaker.failure_threshold):
+            with pytest.raises(UpstreamUnavailableError):
+                await fetcher._fetch_json("https://example.test/endpoint")
+
+        assert fetcher.circuit_breaker.failure_count >= fetcher.circuit_breaker.failure_threshold
+
+    async def test_an_application_error_is_not_reclassified(self):
+        from common.exceptions import DataError
+
+        fetcher, _ = _fetcher(error=DataError("bad payload"))
+
+        with pytest.raises(DataError):
+            await fetcher._fetch_json("https://example.test/endpoint")
+
+
+class TestFailureReporting:
+    def test_upstream_failures_stay_out_of_error(self):
+        from config.logger import logger as configured_logger
+        from data.sources.base_fetcher import report_fetch_failure
+
+        messages: list[tuple[str, str]] = []
+        handler_id = configured_logger.add(
+            lambda m: messages.append((m.record["level"].name, m.record["message"])),
+            format="{message}",
+            level="DEBUG",
+        )
+        try:
+            report_fetch_failure("Error fetching trending data", UpstreamUnavailableError("down"))
+            report_fetch_failure("Error fetching trending data", RuntimeError("bug"))
+        finally:
+            configured_logger.remove(handler_id)
+
+        levels = [level for level, _ in messages]
+        assert levels == ["DEBUG", "ERROR"]
+
+    def test_open_breaker_failures_stay_out_of_error(self):
+        from config.logger import logger as configured_logger
+        from data.sources.base_fetcher import report_fetch_failure
+        from utils.circuit_breaker import CircuitBreakerError
+
+        messages: list[tuple[str, str]] = []
+        handler_id = configured_logger.add(
+            lambda m: messages.append((m.record["level"].name, m.record["message"])),
+            format="{message}",
+            level="DEBUG",
+        )
+        try:
+            report_fetch_failure("Error fetching open interest", CircuitBreakerError("open"))
+        finally:
+            configured_logger.remove(handler_id)
+
+        assert messages[0][0] == "DEBUG"

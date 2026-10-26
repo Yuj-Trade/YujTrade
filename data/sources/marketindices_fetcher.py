@@ -7,7 +7,7 @@ import redis
 from common.cache import CacheCategory, CacheKeyBuilder
 from config.logger import logger
 from config.settings import ConfigManager
-from data.sources.base_fetcher import BaseFetcher
+from data.sources.base_fetcher import BaseFetcher, report_fetch_failure
 from data.sources.coingecko_fetcher import CoinGeckoFetcher
 from data.sources.defillama_fetcher import DeFiLlamaFetcher
 from data.sources.yfinance_fetcher import YFinanceFetcher
@@ -65,7 +65,7 @@ class MarketIndicesFetcher(BaseFetcher):
                 url = f"{self.coingecko.base_url}/global"
                 return await self.coingecko._fetch_json(url, endpoint_name="global")
             except Exception as e:
-                logger.error(f"Failed to fetch global market data from coingecko: {e}")
+                report_fetch_failure("Failed to fetch global market data from coingecko", e)
                 return None
 
         tasks = {

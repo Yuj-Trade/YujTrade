@@ -16,15 +16,8 @@ from common.exceptions import (
 )
 from common.utils import async_retry
 from config.logger import logger
-from data.sources.base_fetcher import BaseFetcher, retry_after_seconds
+from data.sources.base_fetcher import BaseFetcher, report_fetch_failure, retry_after_seconds
 from utils.circuit_breaker import CircuitBreaker
-
-
-def _report_fetch_failure(message: str, exc: Exception) -> None:
-    if isinstance(exc, UpstreamUnavailableError):
-        logger.debug(f"{message}: {exc}")
-    else:
-        logger.error(f"{message}: {exc}")
 
 
 class BinanceFetcher(BaseFetcher):
@@ -148,7 +141,7 @@ class BinanceFetcher(BaseFetcher):
             logger.warning(f"Invalid symbol for Binance OHLC: {symbol}")
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching historical OHLC from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching historical OHLC from Binance for {symbol}", e)
             raise DataError(f"Failed to fetch OHLC for {symbol}") from e
 
     async def get_open_interest(self, symbol: str) -> float | None:
@@ -183,7 +176,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching open interest from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching open interest from Binance for {symbol}", e)
             return None
 
     async def get_taker_long_short_ratio(self, symbol: str) -> float | None:
@@ -218,7 +211,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(
+            report_fetch_failure(
                 f"Error fetching taker long/short ratio from Binance for {symbol}", e
             )
             return None
@@ -237,7 +230,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(
+            report_fetch_failure(
                 f"Error fetching top trader acc ratio from Binance for {symbol}", e
             )
             return None
@@ -256,7 +249,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(
+            report_fetch_failure(
                 f"Error fetching top trader pos ratio from Binance for {symbol}", e
             )
             return None
@@ -290,7 +283,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching order book depth from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching order book depth from Binance for {symbol}", e)
             return None
 
     async def get_mark_price(self, symbol: str) -> float | None:
@@ -307,7 +300,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching mark price from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching mark price from Binance for {symbol}", e)
             return None
 
     async def get_24h_ticker(self, symbol: str) -> dict[str, Any] | None:
@@ -340,7 +333,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching 24h ticker from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching 24h ticker from Binance for {symbol}", e)
             return None
 
     async def get_long_short_ratio_history(
@@ -358,7 +351,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            _report_fetch_failure(
+            report_fetch_failure(
                 f"Error fetching long/short ratio history from Binance for {symbol}", e
             )
             return []
@@ -378,7 +371,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            _report_fetch_failure(
+            report_fetch_failure(
                 f"Error fetching open interest history from Binance for {symbol}", e
             )
             return []
@@ -424,7 +417,7 @@ class BinanceFetcher(BaseFetcher):
                     return funding_rate
                 return None
             except Exception as e:
-                _report_fetch_failure(
+                report_fetch_failure(
                     f"Error fetching funding rate (fallback) from Binance for {symbol}", e
                 )
                 return None
@@ -450,7 +443,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            _report_fetch_failure(f"Error fetching kline data from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching kline data from Binance for {symbol}", e)
             return []
 
     async def get_ticker_price(self, symbol: str) -> float | None:
@@ -465,7 +458,7 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return None
         except Exception as e:
-            _report_fetch_failure(f"Error fetching ticker price from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching ticker price from Binance for {symbol}", e)
             return None
 
     async def get_agg_trades(self, symbol: str, limit: int = 500) -> list[dict]:
@@ -478,5 +471,5 @@ class BinanceFetcher(BaseFetcher):
         except InvalidSymbolError:
             return []
         except Exception as e:
-            _report_fetch_failure(f"Error fetching aggregate trades from Binance for {symbol}", e)
+            report_fetch_failure(f"Error fetching aggregate trades from Binance for {symbol}", e)
             return []

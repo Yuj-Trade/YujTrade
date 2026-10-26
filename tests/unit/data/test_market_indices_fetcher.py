@@ -119,3 +119,47 @@ async def test_closed_fetcher_is_rejected():
 
     with pytest.raises(RuntimeError, match="closed"):
         await fetcher.get_crypto_indices()
+
+
+async def test_an_unreachable_coingecko_is_not_logged_as_an_error():
+    from common.exceptions import UpstreamUnavailableError
+    from config.logger import logger as configured_logger
+
+    fetcher = _fetcher()
+    fetcher.coingecko._fetch_json = AsyncMock(
+        side_effect=UpstreamUnavailableError("Upstream unavailable for /global")
+    )
+    records: list[tuple[str, str]] = []
+    handler_id = configured_logger.add(
+        lambda m: records.append((m.record["level"].name, m.record["message"])),
+        format="{message}",
+        level="DEBUG",
+    )
+    try:
+        await fetcher.get_crypto_indices()
+    finally:
+        configured_logger.remove(handler_id)
+
+    global_records = [r for r in records if "global market data" in r[1]]
+    assert global_records
+    assert all(level != "ERROR" for level, _ in global_records)
+
+
+async def test_a_broken_global_payload_is_logged_as_an_error():
+    from config.logger import logger as configured_logger
+
+    fetcher = _fetcher()
+    fetcher.coingecko._fetch_json = AsyncMock(side_effect=ValueError("unexpected shape"))
+    records: list[tuple[str, str]] = []
+    handler_id = configured_logger.add(
+        lambda m: records.append((m.record["level"].name, m.record["message"])),
+        format="{message}",
+        level="DEBUG",
+    )
+    try:
+        await fetcher.get_crypto_indices()
+    finally:
+        configured_logger.remove(handler_id)
+
+    global_records = [r for r in records if "global market data" in r[1]]
+    assert [level for level, _ in global_records] == ["ERROR"]

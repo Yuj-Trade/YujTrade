@@ -30,6 +30,13 @@ def retry_after_seconds(response) -> float:
         return _DEFAULT_RETRY_AFTER_SECONDS
 
 
+def report_fetch_failure(message: str, exc: BaseException) -> None:
+    if isinstance(exc, UpstreamUnavailableError):
+        logger.debug(f"{message}: {exc}")
+    else:
+        logger.error(f"{message}: {exc}")
+
+
 class BaseFetcher:
     def __init__(
         self,
@@ -120,7 +127,9 @@ class BaseFetcher:
                         )
                         response.raise_for_status()
                     return await response.json()
-            except (TimeoutError, aiohttp.ClientConnectorError) as exc:
+            except aiohttp.ClientResponseError:
+                raise
+            except (TimeoutError, ConnectionError, aiohttp.ClientError) as exc:
                 raise UpstreamUnavailableError(f"Upstream unavailable for {url}") from exc
 
         return await self.circuit_breaker.call(_do_fetch)

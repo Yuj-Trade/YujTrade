@@ -4,7 +4,8 @@ import pytest
 
 from common.exceptions import DataError, UpstreamUnavailableError
 from config.logger import logger as configured_logger
-from data.sources.binance_fetcher import BinanceFetcher, _report_fetch_failure
+from data.sources.base_fetcher import report_fetch_failure
+from data.sources.binance_fetcher import BinanceFetcher
 from utils.circuit_breaker import CircuitBreakerError, CircuitState
 
 
@@ -67,13 +68,13 @@ def _capture(level: str):
 def test_upstream_unavailable_failures_do_not_log_at_error_level():
     messages, handler_id = _capture("DEBUG")
     try:
-        _report_fetch_failure(
+        report_fetch_failure(
             "Error fetching open interest for BTC/USDT", UpstreamUnavailableError("down")
         )
-        _report_fetch_failure(
+        report_fetch_failure(
             "Error fetching open interest for ETH/USDT", CircuitBreakerError("open")
         )
-        _report_fetch_failure("Error fetching open interest for SOL/USDT", DataError("broken"))
+        report_fetch_failure("Error fetching open interest for SOL/USDT", DataError("broken"))
     finally:
         configured_logger.remove(handler_id)
 
