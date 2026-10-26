@@ -26,23 +26,53 @@ class ResourceManager:
                 logger.info("AIOHTTP session created.")
             return self._session
 
+    @staticmethod
+    def build_redis_url() -> str | None:
+        if SecretsManager.REDIS_URL:
+            return SecretsManager.REDIS_URL
+
+        host = SecretsManager.REDIS_HOST
+        port = SecretsManager.REDIS_PORT
+        password = SecretsManager.REDIS_PASSWORD
+        username = SecretsManager.REDIS_USERNAME or "default"
+
+        if not all([host, port, password]):
+            return None
+
+        scheme = "rediss" if SecretsManager.REDIS_SSL else "redis"
+        return f"{scheme}://{username}:{password}@{host}:{port}"
+
+    @staticmethod
+    def redact_redis_url(url: str) -> str:
+        prefix, _, remainder = url.partition("://")
+        credentials, _, host = remainder.rpartition("@")
+        user = credentials.partition(":")[0]
+        return f"{prefix}://{user}:****@{host}" if credentials else url
+
+    async def _discard_redis_client(self) -> None:
+        client, self._redis_client = self._redis_client, None
+        if client is None:
+            return
+        try:
+            await client.aclose()
+        except Exception as close_e:
+            logger.debug(f"Error closing failed redis client: {close_e}")
+
     async def get_redis_client(self) -> redis.Redis | None:
         async with self._lock:
             if self._redis_unavailable:
                 return None
 
             if self._redis_client is None:
-                host = SecretsManager.REDIS_HOST
-                port = SecretsManager.REDIS_PORT
-                password = SecretsManager.REDIS_PASSWORD
-
-                if not all([host, port, password]):
+                redis_url = self.build_redis_url()
+                if redis_url is None:
                     logger.warning("Redis not fully configured. Caching will be disabled.")
                     self._redis_unavailable = True
                     return None
 
-                redis_url = f"rediss://default:{password}@{host}:{port}"
-                logger.debug(f"Connecting to Redis using URL: rediss://default:****@{host}:{port}")
+                logger.debug(f"Connecting to Redis using URL: {self.redact_redis_url(redis_url)}")
+                use_tls = redis_url.startswith("rediss://")
+                tls_options = {"ssl_cert_reqs": None} if use_tls else {}
 
                 try:
                     self._redis_client = redis.from_url(
@@ -55,45 +85,27 @@ class ResourceManager:
                         health_check_interval=30,
                         retry_on_timeout=True,
                         retry_on_error=[redis.ConnectionError, redis.TimeoutError],
-                        ssl_cert_reqs=None,
+                        **tls_options,
                     )
 
                     await asyncio.wait_for(self._redis_client.ping(), timeout=10.0)
-                    logger.info("Connected to Redis successfully.")
+                    logger.info(
+                        f"Connected to Redis successfully ({'TLS' if use_tls else 'plain'})."
+                    )
                 except TimeoutError as e:
                     logger.warning(f"Redis connection timed out: {e}. Caching will be disabled.")
-                    if self._redis_client:
-                        try:
-                            await self._redis_client.aclose()
-                        except Exception as close_e:
-                            logger.error(f"Error closing failed redis client: {close_e}")
-                    self._redis_client = None
+                    await self._discard_redis_client()
                 except redis.ConnectionError as e:
                     logger.warning(f"Redis connection error: {e}. Caching will be disabled.")
-                    if self._redis_client:
-                        try:
-                            await self._redis_client.aclose()
-                        except Exception as close_e:
-                            logger.error(f"Error closing failed redis client: {close_e}")
-                    self._redis_client = None
+                    await self._discard_redis_client()
                 except redis.TimeoutError as e:
                     logger.warning(f"Redis timeout error: {e}. Caching will be disabled.")
-                    if self._redis_client:
-                        try:
-                            await self._redis_client.aclose()
-                        except Exception as close_e:
-                            logger.error(f"Error closing failed redis client: {close_e}")
-                    self._redis_client = None
+                    await self._discard_redis_client()
                 except Exception as e:
                     logger.error(
                         f"Unexpected error connecting to Redis: {e}. Caching will be disabled."
                     )
-                    if self._redis_client:
-                        try:
-                            await self._redis_client.aclose()
-                        except Exception as close_e:
-                            logger.error(f"Error closing failed redis client: {close_e}")
-                    self._redis_client = None
+                    await self._discard_redis_client()
 
             if self._redis_client is None:
                 self._redis_unavailable = True

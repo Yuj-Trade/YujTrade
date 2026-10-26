@@ -56,8 +56,11 @@ class SecretsManager:
     TF_CPP_MIN_LOG_LEVEL = decouple_config("TF_CPP_MIN_LOG_LEVEL", default="3")
     TF_ENABLE_ONEDNN_OPTS = decouple_config("TF_ENABLE_ONEDNN_OPTS", default="0")
 
+    REDIS_URL = decouple_config("REDIS_URL", default="")
     REDIS_HOST = decouple_config("REDIS_HOST", default="")
     REDIS_PORT = decouple_config("REDIS_PORT", default=6379, cast=int)
+    REDIS_USERNAME = decouple_config("REDIS_USERNAME", default="default")
+    REDIS_SSL = decouple_config("REDIS_SSL", default=False, cast=bool)
     REDIS_PASSWORD = get_secret("REDIS_TOKEN", default="")
     if not REDIS_PASSWORD:
         logger.warning(
