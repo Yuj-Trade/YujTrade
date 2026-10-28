@@ -1,4 +1,4 @@
-# Open Issues Register
+﻿# Open Issues Register
 
 Status as of 2026-10-20 (Phases 0-2 of IMPROVEMENT_REPORT.md delivered,
 Phase 3 model lifecycle in progress, verified locally).
@@ -6,7 +6,7 @@ A `blocked` entry never guesses missing content; it records the reason and moves
 Resolved items live under Resolved with their evidence; nothing resolved stays
 in the open lists.
 
-## Resolved — verified this session
+## Resolved â€” verified this session
 
 - [x] Container image verified with Podman: `podman build --format docker`
   succeeds, `scripts/docker_healthcheck.py` exits 0 in-container, the image
@@ -41,7 +41,7 @@ in the open lists.
   deterministic fixtures, expanded docs/ADRs, walk-forward/holdout and model
   lifecycle tests added, `.gitignore` denylist complete.
 
-## Remaining — still true, verified
+## Remaining â€” still true, verified
 
 - [ ] Live execution: no live-exchange adapter exists; paper only. Out of
   scope until a separately reviewed live deployment.
@@ -95,8 +95,8 @@ in the open lists.
 - [ ] Golden baselines are not byte-reproducible on every machine. The
   determinism test fails on a clean checkout of `main` (verified by stashing
   the Phase 3 work: the same test fails without it). The drift is ULP-level
-  in `confidence_score` only — 59 signals, 15 trades and every other field
-  are identical — and TensorFlow reports "oneDNN custom operations are on.
+  in `confidence_score` only â€” 59 signals, 15 trades and every other field
+  are identical â€” and TensorFlow reports "oneDNN custom operations are on.
   You may see slightly different numerical results due to floating-point
   round-off errors from different computation orders". The committed
   baseline was recorded on a different TensorFlow build. `TF_ENABLE_ONEDNN_OPTS=0`
@@ -105,7 +105,7 @@ in the open lists.
   re-record in the Linux CI image, or pin the TensorFlow build used for the
   original recording, and keep the hash check as the gate.
 
-## New issues for the next phase — in fix order
+## New issues for the next phase â€” in fix order
 
 1. Remove dead `scripts/run_golden.py` (near-duplicate of
    `tests/golden/record_signals.py` with a hardcoded `C:/ME/YujTrade` path)
@@ -120,7 +120,7 @@ in the open lists.
    remaining test prose for references to removed code.
 4. Remove or wire the four caller-less fetcher methods
    (`get_exchange_info`, `get_all_futures_symbols`, `get_circulating_supply`,
-   `get_all_assets` — definition-only matches repo-wide). If exchange
+   `get_all_assets` â€” definition-only matches repo-wide). If exchange
    filters are wanted, that needs its own proposal first.
 5. Deduplicate OHLCV caching: `fetch_ohlcv_data` caches per timeframe and
    `_get_higher_tf_data` re-fetches and re-caches the same candles under the
@@ -132,25 +132,25 @@ in the open lists.
 7. Sync `sqlite3` in async paths (`SchedulerStore`, `IndicatorHistoryWarehouse`,
    `PaperLedger` hold a blocking connection). Measure loop impact first,
    then migrate behind the same discipline as the asset-reference store.
-   (Warehouse + SchedulerStore + `PaperLedger` are migrated — see
+   (Warehouse + SchedulerStore + `PaperLedger` are migrated â€” see
    IMPROVEMENT_REPORT.md Phase 1.)
 8. Feature store for training reuse. The Phase 3 prediction trace records
    what the model saw at prediction time; a store that training can consume
    needs its own OpenSpec proposal (`add-feature-store`) before it is built.
-9. Performance report — legacy resolutions. Signals that the tracker resolved
+9. Performance report â€” legacy resolutions. Signals that the tracker resolved
    with the pre-phase-3 logic (the current-price fallback) are not written to
    `signal_resolutions` and are therefore not part of the report. The report
    only covers resolutions recorded from the phase-3 resolution path onwards.
    Backfilling them would require re-running the old fallback, which is
    exactly the non-reproducible behaviour this work removed.
-10. Performance report — data provider windowing. `fetch_ohlcv_data` only
+10. Performance report â€” data provider windowing. `fetch_ohlcv_data` only
     accepts a candle *count*, not a time range, so the resolver asks for
     `ceil(expiry / candle_duration) + 2` candles and then verifies the
     coverage itself. A signal that is reconciled later than its expiry can
     therefore fail the coverage check and resolve to `no_data`. A time-range
     fetch in `data/data_provider.py` would remove the limit; that is a data
     contract change and needs its own proposal.
-11. Performance report — the `1M` candle duration is a fixed 43200 minutes
+11. Performance report â€” the `1M` candle duration is a fixed 43200 minutes
     (30 days) because a calendar month has no fixed length. The coverage
     check for a monthly signal is therefore approximate. A per-month
     duration derived from the candle timestamps themselves would remove the
@@ -399,3 +399,38 @@ Evidence: `docs/remediation/app-log-2026-10-24.md`.
   pool saturates again; a closer region would be the real fix.
 - [ ] `logs/app.log` is appended to by every pytest run, which makes the file
   hard to read as evidence. Consider a separate log file for tests.
+
+
+## Exchange connectivity 2026-10-29 - open
+
+Items resolved with the safe default of ADR-0011 and ADR-0012. Each one is a
+blocked decision, not a silent assumption.
+
+- [ ] `TradingService.execute_signal` and `TradingService.portfolio_snapshot`
+  are called by `app/telegram_bot.py` and stubbed by the app tests, but the
+  methods are absent from `services/trading_service.py`. The gap predates the
+  exchange work and is untouched by it; `/paper`, `/portfolio` and
+  `/health` raise `AttributeError` until it is closed. The exchange path does
+  not depend on these methods.
+- [ ] `lbank2` does not exist in `ccxt==4.5.90`; the `lbank` class reports
+  `version == "v2"` and is used instead. Recorded in ADR-0011.
+- [ ] The LBank permission endpoint is `supplement/api_Restrictions`, not
+  `v2/supplement/api_Restrictions.do`. Its response fields were not verified
+  against official LBank documentation, so `verify_key_permissions` returns
+  `(False, "lbank_rule_not_defined")` and LBank cannot reach live.
+- [ ] `kucoin` refuses `set_sandbox_mode(True)` in `ccxt==4.5.90`
+  (`TypeError: 'NoneType' object is not iterable`). The registry keeps
+  `sandbox_expected` true; the gateway reports `sandbox_not_supported` and
+  the venue stays unreachable until ccxt fixes it or a sandbox host is
+  documented.
+- [ ] Official Ourbit API documentation could not be located from this
+  environment. `docs/exchange_ourbit_api.md` is a template and the gateway is
+  not implemented; `factory.build_gateway` raises `OurbitNotReady`.
+- [ ] `requirements.lock` still needs the `lock-refresh` workflow on the
+  operator machine; `requirements.txt` is pinned to `ccxt==4.5.90`.
+- [ ] `coinbase` and `bullish` remain `secret_encoding == "base64"`
+  because a real key was never inspected. Switch to `plain` if the key is
+  single-line.
+- [ ] Venue sandbox support is unverified for every venue whose
+  `sandbox_expected` is `None`. `scripts/probe_exchanges.py` records it;
+  the field is updated in the registry in its own commit afterwards.

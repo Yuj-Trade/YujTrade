@@ -278,7 +278,121 @@ while the delivery is in flight, `notification_claimed_at`.
 | A message arrives twice | at-least-once delivery: the process died between the send and the completion, the claim TTL bounds the window |
 | A signal stays `pending` | the delivery keeps failing; the attempts counter shows the progress and the notification is abandoned at the limit |
 
-## 12. Troubleshooting
+## 12. Exchange connectivity
+
+Exchange connectivity is disabled by default. `exchange_enabled` is empty,
+`exchange_sandbox` is true, `exchange_shadow_mode` is true and
+`exchange_live_enabled` is false in `ConfigManager.DEFAULT_CONFIG`. Nothing in
+this section is executed by the agent; the steps marked **operator** run on the
+operator machine, with network access to the venues.
+
+See `docs/adr/ADR-0011-exchange-connectivity.md` for the venue registry
+decisions and `docs/adr/ADR-0012-exchange-access-profiles.md` for the access
+profiles. The outstanding operator work is tracked in
+`docs/operator_pending.md`.
+
+### 12.1 Secret names
+
+The repository `.env` carries the exchange key names with empty values. Only
+the names are tracked in this document; values are never written here.
+
+Live names: `<PREFIX>_API_KEY`, `<PREFIX>_API_SECRET`, and
+`<PREFIX>_API_PASSPHRASE` when the venue needs a passphrase.
+
+Sandbox names: `<PREFIX>_SANDBOX_API_KEY`, `<PREFIX>_SANDBOX_API_SECRET`, and
+`<PREFIX>_SANDBOX_API_PASSPHRASE` when the venue needs a passphrase.
+
+`<PREFIX>` is the upper-case `exchange_id` (`BINANCE`, `LBANK`, `CRYPTOCOM`,
+`OURBIT`, ...). `python -c "from trading.exchanges.registry import
+all_secret_names; print('\n'.join(all_secret_names()))"` prints the full list.
+
+`trading/exchanges/credentials.py` reads only `ENCRYPTED_<NAME>`. A plaintext
+value in `.env` makes the credentials unavailable and is reported by name only;
+it never silently works and its value never reaches a log.
+
+### 12.2 Startup order
+
+1. **operator** Fill the sandbox or read-only key values in `.env`, then run
+   `python scripts/encrypt_keys.py`. The script replaces each plaintext line
+   with `ENCRYPTED_<NAME>`.
+2. **operator** Run the read-only probe on the operator machine:
+   `python scripts/probe_exchanges.py`. It writes `runs/exchange_probe.json`
+   and never sends an order. Record the result in
+   `docs/exchange_probe_results.md`.
+3. **operator** Verify key permissions. When the venue documents a permission
+   endpoint, the check runs automatically before a live submission; otherwise
+   the human attestation is the only evidence.
+4. **operator** Fill `exchange_attested_keys` in `config.json` with the venues
+   whose keys were confirmed to carry no withdrawal right.
+5. **operator** Enable the venue in `exchange_enabled` and keep
+   `exchange_shadow_mode` true. Run the 14-day shadow soak (section 12.6).
+6. **operator** Only after the soak passes, set `exchange_shadow_mode` false,
+   fill `exchange_live_review_id` with the accepted ADR id, set
+   `exchange_sandbox` false, set `execution_dry_run` false and set
+   `exchange_live_enabled` true. The live mode additionally needs the
+   one-time code from `/exchange_confirm`.
+
+### 12.3 Emergency stop
+
+1. Send `/exchange_halt`. The control row `halted=1` in
+   `runs/live_ledger.db` refuses every new submission, including shadow rows.
+   Open orders are **not** cancelled by the halt; cancel them at the venue.
+2. Run `/exchange_status <client_order_id>` for every row in `pending_submit`
+   or `unknown`.
+3. Any `unknown` row is a manual decision. Reconciliation reads the venue and
+   never re-sends.
+4. Resume with `/exchange_resume` only after every unresolved row is closed.
+
+### 12.4 Key rotation
+
+Every 90 days, or immediately after an incident:
+
+1. Create the new key at the venue.
+2. Revoke the old key at the venue.
+3. Replace the value in `.env`, then run `python scripts/encrypt_keys.py`.
+4. Restart the bot and repeat the attestation step: update
+   `exchange_attested_keys` in `config.json`.
+
+### 12.5 Backups
+
+- `secret.salt` must be kept offline, outside the repository and outside this
+  machine. If it is lost, every `ENCRYPTED_` value is undecryptable and every
+  key must be entered again. Losing it does not expose a value; it destroys
+  access.
+- `runs/live_ledger.db` is copied daily. Run `PRAGMA wal_checkpoint(TRUNCATE)`
+  before the copy so the WAL is folded into the main file, then copy the
+  `.db` file.
+
+### 12.6 Shadow soak
+
+The soak runs for 14 days with `exchange_shadow_mode` true and
+`exchange_enabled` set to the venue. Each signal is recorded as a `shadow` row
+and no order is placed. Generate the report with
+`python scripts/exchange_shadow_report.py`.
+
+Exit criteria, from `ADR-0011`:
+
+- zero `exchange_not_ready` rows;
+- zero `key_not_attested` rows;
+- no price deviation outside `exchange_max_price_deviation_pct`;
+- no unexplained `unknown` row.
+
+### 12.7 Terms of use and account
+
+This section records the operator statement; it is not a finding of the
+application.
+
+> 2026-10-29, operator: I have reviewed the terms of use of my accounts for
+> the venues I use.
+
+The application does not verify the operator's identity, residence, or the
+sanction regime that applies to an account, and it implements no proxy, VPN, IP
+rotation or header workaround. Matching an account to a venue's terms of use
+and to applicable sanctions is the operator's responsibility. The `iran`
+profile selects the reachable venue set (`lbank`, `ourbit`); it does not
+assert that an account is eligible.
+
+## 13. Troubleshooting
 
 | Symptom | Action |
 |---|---|
