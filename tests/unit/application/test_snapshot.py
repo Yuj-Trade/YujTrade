@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -115,6 +116,6 @@ def test_snapshot_is_frozen():
         stop=95.0,
         target=110.0,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         snapshot.score = 90.0
     assert isinstance(snapshot, MarketSnapshot)

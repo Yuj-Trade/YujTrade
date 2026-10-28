@@ -42,7 +42,7 @@ async def test_write_many_empty_is_noop(warehouse):
 
 async def test_read_limit_returns_latest(warehouse):
     await warehouse.write_many(
-        [(  "atr", f"2026-01-{day:02d}T00:00:00", float(day)) for day in range(1, 6)]
+        [("atr", f"2026-01-{day:02d}T00:00:00", float(day)) for day in range(1, 6)]
     )
     result = await warehouse.read(["atr"], limit=2)
     assert result["atr"] == [4.0, 5.0]
