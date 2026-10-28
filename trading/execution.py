@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +14,10 @@ class ExecutionResult:
     quantity: float = 0.0
     fee: float = 0.0
     error: str = ""
+    status: str = ""
+
+
+_LIMIT_OPEN_STATUSES = {"open", "new", "pending", "partially_filled", "partial", "created"}
 
 
 class ExchangeAdapter:
@@ -27,11 +30,28 @@ class ExchangeAdapter:
         try:
             if self.exchange is None:
                 return None
-            ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+            ticker = await self.exchange.fetch_ticker(symbol)
             return float(ticker.get("last") or ticker.get("close") or 0.0) or None
         except Exception as e:
             logger.debug(f"Exchange price fetch failed for {symbol}: {e}")
             return None
+
+    @staticmethod
+    def _resolution_status(result: dict[str, Any], order_type: OrderType) -> OrderStatus:
+        raw = str(result.get("status") or "").strip().lower()
+        if raw == "closed" or raw == "filled":
+            return OrderStatus.FILLED
+        if raw in {"canceled", "cancelled"}:
+            return OrderStatus.CANCELLED
+        if raw == "expired":
+            return OrderStatus.EXPIRED
+        if raw == "rejected":
+            return OrderStatus.REJECTED
+        if order_type == OrderType.LIMIT:
+            return OrderStatus.OPEN
+        if raw in _LIMIT_OPEN_STATUSES:
+            return OrderStatus.OPEN
+        return OrderStatus.PENDING
 
     async def create_order(
         self,
@@ -41,7 +61,7 @@ class ExchangeAdapter:
         price: float | None = None,
         order_type: OrderType = OrderType.MARKET,
     ) -> ExecutionResult:
-        if self.dry_run or self.exchange is None:
+        if self.dry_run:
             order_id = uuid.uuid4().hex[:12]
             return ExecutionResult(
                 ok=True,
@@ -50,20 +70,46 @@ class ExchangeAdapter:
                 quantity=float(quantity),
                 fee=float((price or 0.0) * quantity * self.fee_rate),
             )
+        if self.exchange is None:
+            return ExecutionResult(ok=False, error="exchange_not_configured")
         try:
             side_str = "buy" if side == OrderSide.BUY else "sell"
-            params = {"type": order_type.value}
-            result = await asyncio.to_thread(
-                self.exchange.create_order, symbol, params["type"], side_str, float(quantity), price
+            result = await self.exchange.create_order(
+                symbol, order_type.value, side_str, float(quantity), price
             )
-            order_id = str(result.get("id", uuid.uuid4().hex[:12]))
-            avg = float(result.get("average") or result.get("price") or price or 0.0)
-            filled = float(result.get("filled") or result.get("amount") or quantity)
-            fee = avg * filled * self.fee_rate
-            return ExecutionResult(ok=True, order_id=order_id, price=avg, quantity=filled, fee=fee)
         except Exception as e:
             logger.error(f"Live order failed for {symbol}: {e}")
             return ExecutionResult(ok=False, error=str(e))
+        if not isinstance(result, dict):
+            return ExecutionResult(ok=False, error="missing_order_id")
+        order_id = str(result.get("id") or "").strip()
+        if not order_id:
+            return ExecutionResult(ok=False, error="missing_order_id")
+        if result.get("filled") is None:
+            return ExecutionResult(ok=False, order_id=order_id, error="fill_unknown")
+        filled = float(result.get("filled") or 0.0)
+        average = float(result.get("average") or result.get("price") or price or 0.0)
+        fee_payload = result.get("fee") or {}
+        fee_cost = result.get("fee_cost")
+        if fee_cost is None and isinstance(fee_payload, dict):
+            fee_cost = fee_payload.get("cost")
+        if fee_cost is None:
+            return ExecutionResult(
+                ok=False, order_id=order_id, error="fee_unknown", quantity=filled, price=average
+            )
+        return ExecutionResult(
+            ok=True,
+            order_id=order_id,
+            price=average,
+            quantity=filled,
+            fee=float(fee_cost),
+            status=str(result.get("status") or ""),
+        )
+
+    def resolve_status(self, result: ExecutionResult, order_type: OrderType) -> OrderStatus:
+        if not result.ok:
+            return OrderStatus.REJECTED
+        return self._resolution_status({"status": result.status}, order_type)
 
 
 class FakeAdapter(ExchangeAdapter):
@@ -132,14 +178,17 @@ class ExecutionEngine:
         if exec_price <= 0:
             return ExecutionResult(ok=False, error="no_price")
         result = await self.adapter.create_order(symbol, side, quantity, exec_price, order_type)
-        order = Order(
-            order_id=result.order_id or uuid.uuid4().hex[:12],
+        if not result.ok and not result.order_id:
+            return result
+        status = self.adapter.resolve_status(result, order_type)
+        self.orders[result.order_id] = Order(
+            order_id=result.order_id,
             symbol=symbol,
             side=side,
             order_type=order_type,
             quantity=float(quantity),
             price=float(exec_price),
-            status=OrderStatus.FILLED if result.ok else OrderStatus.REJECTED,
+            status=status,
             filled_quantity=float(result.quantity) if result.ok else 0.0,
             average_fill_price=float(result.price) if result.ok else 0.0,
             fee_paid=float(result.fee) if result.ok else 0.0,
@@ -148,5 +197,4 @@ class ExecutionEngine:
             paper=self.adapter.dry_run,
             notes=result.error if not result.ok else "",
         )
-        self.orders[order.order_id] = order
         return result

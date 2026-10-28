@@ -15,7 +15,7 @@ beautifulsoup4
 billiard
 bitarray
 build
-ccxt
+ccxt==4.5.90
 celery
 certifi
 cffi
