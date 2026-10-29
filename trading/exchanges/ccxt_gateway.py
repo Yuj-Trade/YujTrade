@@ -121,17 +121,26 @@ class CcxtGateway:
     async def fetch_order_by_client_id(
         self, symbol: str, client_order_id: str
     ) -> OrderSnapshot | None:
-        raise NotImplementedError("fetch_order_by_client_id_is_phase_five")
+        from trading.exchanges.authenticated import AuthenticatedQueries
+
+        return await AuthenticatedQueries(self).fetch_order_by_client_id(symbol, client_order_id)
 
     async def fetch_free_balance(self, currency: str) -> float:
-        raise NotImplementedError("fetch_free_balance_is_phase_five")
+        from trading.exchanges.authenticated import AuthenticatedQueries
+
+        return await AuthenticatedQueries(self).fetch_free_balance(currency)
 
     def describe(self) -> dict[str, Any]:
         described = self.client.describe()
         return described if isinstance(described, dict) else {}
 
     def has(self, name: str) -> bool:
-        return bool(getattr(self.client, "has", {}).get(name))
+        capabilities = getattr(self.client, "has", {}) or {}
+        if callable(capabilities):
+            capabilities = capabilities()
+        if not isinstance(capabilities, dict):
+            return False
+        return bool(capabilities.get(name))
 
     def status_from_order(self, order: dict[str, Any]) -> str:
         amount = float(order.get("amount") or 0.0)
