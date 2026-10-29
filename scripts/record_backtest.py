@@ -8,9 +8,13 @@ import pandas as pd
 sys.path.insert(0, ".")
 
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
+from config.settings import ConfigManager
+from domain.costs import CostProfile, cost_profile_from_config
 from strategy.signal_tracker import make_signal_id
 
 EQUITY_START = 1_000_000.0
+LEGACY_PATH = Path("tests/golden/backtest_baseline.json")
+COST_V2_PATH = Path("tests/golden/backtest_cost_v2_baseline.json")
 
 
 def _candles(frame: pd.DataFrame) -> list[dict]:
@@ -49,13 +53,22 @@ def _simulator_inputs(records: list[dict]) -> list[dict]:
     return inputs
 
 
-def record_backtest_baseline() -> dict:
+def default_cost_profile(
+    config_manager: ConfigManager | None = None,
+) -> CostProfile:
+    defaults = ConfigManager.DEFAULT_CONFIG["paper_cost_model"]
+    if config_manager is None:
+        return cost_profile_from_config(defaults, defaults)
+    return cost_profile_from_config(config_manager.get("paper_cost_model"), defaults)
+
+
+def _build_report(config: SimulatorConfig, *, cost_model_version: str | None) -> dict:
     baseline = json.loads(Path("tests/golden/signals_baseline.json").read_text(encoding="utf-8"))
-    config = SimulatorConfig()
     simulator = EventDrivenSimulator(config)
     per_timeframe: dict[str, dict] = {}
     all_trades = []
     totals = {"signals_evaluated": 0, "size_zero": 0, "no_window": 0, "no_outcome": 0}
+    unfilled_total = 0
     for timeframe in ("1h", "1d"):
         frame = pd.read_csv(f"tests/fixtures/ohlcv_{timeframe}.csv", index_col=0, parse_dates=True)
         candles = _candles(frame)
@@ -66,6 +79,7 @@ def record_backtest_baseline() -> dict:
         totals["size_zero"] += stats.skipped_size_zero
         totals["no_window"] += stats.skipped_no_window
         totals["no_outcome"] += stats.skipped_no_outcome
+        unfilled_total += stats.skipped_unfilled
         per_timeframe[timeframe] = {
             "signals_evaluated": stats.signals_evaluated,
             "trades_count": len(trades),
@@ -89,9 +103,46 @@ def record_backtest_baseline() -> dict:
             "exit_on_opposite_signal": config.exit_on_opposite_signal,
         },
     }
-    output = Path("tests/golden/backtest_baseline.json")
-    with output.open("w", encoding="utf-8", newline="\n") as handle:
+    if cost_model_version is not None:
+        profile = config.effective_profile()
+        report["cost_model_version"] = cost_model_version
+        report["skipped_unfilled"] = unfilled_total
+        report["rejected"]["unfilled"] = unfilled_total
+        report["cost_profile"] = {
+            "version": profile.version,
+            "maker_fee_rate": profile.maker_fee_rate,
+            "taker_fee_rate": profile.taker_fee_rate,
+            "entry_liquidity": profile.entry_liquidity,
+            "target_exit_liquidity": profile.target_exit_liquidity,
+            "stop_exit_liquidity": profile.stop_exit_liquidity,
+            "expiry_exit_liquidity": profile.expiry_exit_liquidity,
+            "entry_slippage_rate": profile.entry_slippage_rate,
+            "market_exit_slippage_rate": profile.market_exit_slippage_rate,
+            "target_exit_slippage_rate": profile.target_exit_slippage_rate,
+            "funding_rate_per_period": profile.funding_rate_per_period,
+            "funding_period_hours": profile.funding_period_hours,
+            "max_volume_participation": profile.max_volume_participation,
+        }
+    return report
+
+
+def _write(path: Path, report: dict) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+
+def record_backtest_baseline() -> dict:
+    report = _build_report(SimulatorConfig(), cost_model_version=None)
+    _write(LEGACY_PATH, report)
+    return report
+
+
+def record_cost_v2_baseline(config_manager: ConfigManager | None = None) -> dict:
+    profile = default_cost_profile(config_manager)
+    report = _build_report(
+        SimulatorConfig(cost_profile=profile), cost_model_version=profile.version
+    )
+    _write(COST_V2_PATH, report)
     return report
 
 
