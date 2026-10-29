@@ -4,6 +4,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+from domain.costs import legacy_report_profile, net_r
+
 SIDES: frozenset[str] = frozenset({"buy", "sell"})
 EXIT_REASONS: frozenset[str] = frozenset({"stop", "target", "expired", "no_data"})
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
@@ -110,10 +112,24 @@ def net_r_multiple(record: ResolutionRecord, fee_rate: float, slippage_rate: flo
     risk = abs(record.entry - record.stop)
     if risk == 0.0:
         raise ValueError("entry and stop must differ")
-    direction = 1.0 if record.side == "buy" else -1.0
-    gross = direction * (record.exit_price - record.entry) / risk
-    cost = (fee_rate + slippage_rate) * (record.entry + record.exit_price) / risk
-    return gross - cost
+    profile = legacy_report_profile(fee_rate, slippage_rate)
+    exit_at = record.exit_at
+    if exit_at is None:
+        holding_hours = 0.0
+    else:
+        holding_hours = (exit_at - record.created_at).total_seconds() / 3600.0
+        if holding_hours < 0.0:
+            holding_hours = 0.0
+    return net_r(
+        record.entry,
+        record.stop,
+        record.exit_price,
+        record.side,
+        record.exit_reason,
+        holding_hours,
+        profile,
+        1.0,
+    )
 
 
 def fixed_fraction_return(r_multiple: float, risk_per_trade_pct: float) -> float:
