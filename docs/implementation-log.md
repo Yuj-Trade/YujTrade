@@ -159,3 +159,46 @@ the formula `min(1, p * quote_volume / notional)` that only happens at a zero
 quote volume; a dust volume (for example `1.0`) yields a positive but tiny
 fraction and the trade stays in the statistics. The implementation keeps the
 formula exactly as specified, and the test pins both cases.
+
+## P4 - paper execution path restored [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit | `abc1af6 fix: restore paper execution path behind paper_execution_enabled [behavior-change]` |
+| Files | `services/trading_service.py`, `trading/ledger.py`, `app/telegram_bot.py`, `main.py`, `config/settings.py` |
+| Tests | `tests/unit/services/test_paper_execution.py` (new, 12), `tests/unit/trading/test_paper_execution_guard.py` (new, 5), `test_command_guards.py` isolation case |
+| Gate | default 1965 passed; slow 11 passed; ruff, format, `mypy domain`; `test_no_withdraw_calls.py` passes |
+| Golden | unchanged (`d17e604f...`, `8f7173b7...`) |
+
+### Contract as implemented
+
+- `execute_signal` refuses `unsupported_mode`, `paper_execution_disabled`,
+  `duplicate_signal`, `no_mark_price`, `risk_rejected` and `unfilled`
+  without raising.
+- The duplicate guard reads `orders` through `PaperLedger.has_order`, so it
+  survives a restart.
+- The mark price is the last closed candle (open time + duration at or
+  before now); the quote volume is that candle's volume times its close.
+- `paper_positions_opened` / `paper_positions_closed` are append-only;
+  `load_open_positions` is opened minus closed, and
+  `rehydrate_paper_positions` runs inside `TradingService.initialize()`.
+- `_paper_resolution_loop` runs when `paper_execution_enabled` is true and
+  does not depend on the outcome notification policy (F8).
+- The AST guard proves no paper module and no paper entrypoint reaches
+  `trading/exchanges/`, `ExchangeAdapter` or `ExecutionEngine`; the exchange
+  wiring stays inside `_build_exchange_service` and the `ExchangeExecutionService`
+  construction, which are a separate concern of the same module.
+
+### Additional operator-visible change (not in the spec)
+
+`TradingService.portfolio_snapshot()` is added because `/portfolio` also
+called a missing method; it returns the live `PortfolioManager` snapshot
+with the mark prices. It is outside the six items and is reported here and
+in the final report.
+
+### Test helper note
+
+`tests/unit/app/test_command_guards.py` is updated (existing test kept
+intact) with a new isolation case; the original
+`test_paper_command_rejects_non_admin` body was accidentally deleted by an
+edit and restored verbatim in the same commit.
