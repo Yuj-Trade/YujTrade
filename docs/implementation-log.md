@@ -115,3 +115,47 @@ formula to a relative error below `1e-12`.
 
 Issues 10 and 17 are resolved in `docs/open_issues.md`; the superseded
 ADR-0009 bullet carries a pointer to `870d0c4`.
+
+## P3 - cost-model-v2 in the paper engine and the report [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit 1 | `6d66942 chore: add entry_quote_volume column to signal resolutions` |
+| Commit 2 | `b57a571 fix: apply cost-model-v2 to paper engine and performance report [behavior-change]` |
+| Commit 3 | `43417c3 docs: add performance worked example v2 and log phase P3` |
+| Files | `domain/costs.py` (used), `domain/performance.py`, `domain/outcome.py`, `trading/ledger.py`, `trading/paper_trading.py`, `application/performance_report.py`, `services/trading_service.py`, `config/settings.py` |
+| Tests | `tests/unit/trading/test_paper_cost_model_v2.py` (new, 19), `tests/unit/application/test_performance_worked_example_v2.py` (new, 9), 4 migration cases in `test_resolution_ledger.py` |
+| Gate | default 1947 passed; ruff, format, `mypy domain` pass |
+| Golden | unchanged (`d17e604f...`, `8f7173b7...`) |
+
+### Migration
+
+`runs/paper_ledger.db` does not exist on this machine, so no backup was
+needed. The migration is idempotent: `PRAGMA table_info(signal_resolutions)`
+gates the `ALTER TABLE ... ADD COLUMN entry_quote_volume REAL`; the triggers
+and the CHECK constraints are untouched; an old row reads back with `NULL`
+and is treated as a full fill.
+
+On an operator machine the backup is taken before the first run of the new
+code (`runs/backup/paper_ledger-<UTC timestamp>.db`); the runbook records
+the step.
+
+### Behavior change listed for the final report
+
+- The report is `performance-report-v2`; the parameter block carries the
+  whole cost profile; the report gains `coverage`, `equity_source` and
+  `legacy_resolutions_note`.
+- The data hash now covers `entry_quote_volume`, so existing report hashes
+  change once (expected; recorded here).
+- The paper engine now follows `SIGNAL_EXPIRY_BY_TIMEFRAME` when it resolves
+  a position (it previously used the barrier-only `resolve_outcome` and never
+  expired a position).
+- `apply_funding` and `funding_rate_per_day` are removed.
+
+### Deviation
+
+The spec says a fill fraction of `0.0` means "the order does not fill". With
+the formula `min(1, p * quote_volume / notional)` that only happens at a zero
+quote volume; a dust volume (for example `1.0`) yields a positive but tiny
+fraction and the trade stays in the statistics. The implementation keeps the
+formula exactly as specified, and the test pins both cases.
