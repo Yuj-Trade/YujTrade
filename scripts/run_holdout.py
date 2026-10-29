@@ -19,15 +19,22 @@ from backtesting.historical_signals import (
     trade_metrics as shared_trade_metrics,
 )
 from backtesting.montecarlo import bootstrap_confidence_interval, simulate_r_multiples
-from backtesting.simulator import EventDrivenSimulator
+from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from backtesting.walk_forward import HoldoutGuard
 from common.constants import LONG_TERM_CONFIG
 from config.settings import ConfigManager
 from data.data_validator import DataQualityChecker
+from domain.costs import cost_profile_from_config
 from modeling.artifacts import ArtifactRegistry
 from strategy.signal_generator import SignalGenerator
 
 EQUITY_START = 1_000_000.0
+
+
+def _simulator_config() -> SimulatorConfig:
+    defaults = ConfigManager.DEFAULT_CONFIG["paper_cost_model"]
+    profile = cost_profile_from_config(ConfigManager().get("paper_cost_model"), defaults)
+    return SimulatorConfig(cost_profile=profile)
 
 
 def _disable_freshness_for_historical_csv() -> None:
@@ -187,7 +194,7 @@ def run_holdout(
     )
 
     candles = _candles(frame)
-    simulator = EventDrivenSimulator()
+    simulator = EventDrivenSimulator(_simulator_config())
     trades, stats = simulator.run_with_stats(candles, _simulator_inputs(signals), EQUITY_START)
     metrics = _trade_metrics(trades, EQUITY_START)
     close = holdout["close"].astype(float)

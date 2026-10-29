@@ -18,10 +18,11 @@ from backtesting.historical_signals import (
     simulator_inputs_from_signals,
     trade_metrics,
 )
-from backtesting.simulator import EventDrivenSimulator
+from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from backtesting.walk_forward import WalkForwardValidator
 from config.settings import ConfigManager
 from data.data_validator import DataQualityChecker
+from domain.costs import cost_profile_from_config
 from strategy.signal_generator import SignalGenerator
 
 WALK_FORWARD_SCHEMA_VERSION = 1
@@ -29,6 +30,12 @@ EQUITY_START = 1_000_000.0
 DEFAULT_FOLDS = 4
 DEFAULT_MIN_TRAIN_FRACTION = 0.6
 DEFAULT_STEP = 4
+
+
+def _simulator_config() -> SimulatorConfig:
+    defaults = ConfigManager.DEFAULT_CONFIG["paper_cost_model"]
+    profile = cost_profile_from_config(ConfigManager().get("paper_cost_model"), defaults)
+    return SimulatorConfig(cost_profile=profile)
 
 
 def _disable_freshness_for_historical_csv() -> None:
@@ -132,7 +139,7 @@ def run_walk_forward(
         )
     )
 
-    simulator = EventDrivenSimulator()
+    simulator = EventDrivenSimulator(_simulator_config())
     fold_reports: list[dict[str, Any]] = []
     leakage_total = 0
     for fold in splits:

@@ -8,6 +8,7 @@ sequence (FakeAdapter style: no network, no exchange).
 from datetime import UTC, datetime, timedelta
 
 import aiosqlite
+import pytest
 
 from backtesting.simulator import EventDrivenSimulator, SimulatorConfig
 from domain.outcome import resolve_outcome, resolve_signal_outcome
@@ -183,3 +184,73 @@ async def test_equity_uses_mark_price_and_flags_stale(tmp_path):
     equity_missing = await ledger.snapshot_equity(9000.0, positions, {})
     assert equity_missing == 9000.0
     assert (await _fetch_stale(tmp_path / "paper_ledger.db"))[0] == 1
+
+
+def _v2_profile():
+    from domain.costs import CostProfile
+
+    return CostProfile(
+        version="cost-model-v2",
+        maker_fee_rate=0.001,
+        taker_fee_rate=0.001,
+        entry_liquidity="taker",
+        target_exit_liquidity="maker",
+        stop_exit_liquidity="taker",
+        expiry_exit_liquidity="taker",
+        entry_slippage_rate=0.0005,
+        market_exit_slippage_rate=0.0005,
+        target_exit_slippage_rate=0.0,
+        funding_rate_per_period=0.0001,
+        funding_period_hours=8.0,
+        max_volume_participation=0.05,
+    )
+
+
+def test_resolver_and_simulator_agree_with_the_same_v2_profile():
+    from domain.costs import net_r
+    from domain.outcome import resolve_signal_outcome
+    from domain.sizing import SizingConfig, calculate_position_size
+
+    candles = _candles()
+    for candle in candles:
+        candle["volume"] = 1e9
+    base = candles[0]["timestamp"]
+    profile = _v2_profile()
+
+    resolution = resolve_signal_outcome(
+        candles, "buy", 100.0, 95.0, 110.0, base, 3.0, timedelta(hours=1)
+    )
+    simulator = EventDrivenSimulator(SimulatorConfig(cost_profile=profile))
+    signals = [
+        {
+            "signal_id": "sig-1",
+            "side": "buy",
+            "timestamp": base,
+            "stop": 95.0,
+            "target": 110.0,
+        }
+    ]
+    trades = simulator.run(candles, signals, equity=100_000.0)
+
+    assert len(trades) == 1
+    assert resolution.exit_reason == trades[0].exit_reason
+    assert resolution.exit_price == pytest.approx(trades[0].exit_price)
+    full_qty = calculate_position_size(
+        100_000.0, 100.0, 95.0, SizingConfig(1.0, 10.0, 60.0, 3.0)
+    ).quantity
+    ratio = trades[0].qty / full_qty
+    resolver_r = net_r(
+        100.0, 95.0, resolution.exit_price, "buy", resolution.exit_reason, 1.0, profile, 1.0
+    )
+    simulator_r = net_r(
+        100.0,
+        95.0,
+        trades[0].exit_price,
+        trades[0].side,
+        trades[0].exit_reason,
+        1.0,
+        profile,
+        ratio,
+    )
+    assert ratio == pytest.approx(1.0)
+    assert resolver_r == pytest.approx(simulator_r)
