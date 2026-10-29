@@ -19,6 +19,30 @@ from config.logger import logger
 from data.sources.base_fetcher import BaseFetcher, report_fetch_failure, retry_after_seconds
 from utils.circuit_breaker import CircuitBreaker
 
+KLINE_COLUMNS = (
+    "timestamp",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_asset_volume",
+    "number_of_trades",
+    "taker_buy_base_asset_volume",
+    "taker_buy_quote_asset_volume",
+    "ignore",
+)
+
+
+def klines_to_frame(rows: list) -> pd.DataFrame:
+    df = pd.DataFrame(rows, columns=list(KLINE_COLUMNS))
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df.set_index("timestamp", inplace=True)
+    numeric_cols = ["open", "high", "low", "close", "volume"]
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    return df[numeric_cols].dropna()
+
 
 class BinanceFetcher(BaseFetcher):
     FUTURES_BLACKLIST = {"SHIBUSDT", "PEPEUSDT", "FLOKIUSDT", "ASTRUSDT", "ONDOUSDT"}
@@ -111,32 +135,7 @@ class BinanceFetcher(BaseFetcher):
             if not data:
                 return None
 
-            df = pd.DataFrame(
-                data,
-                columns=[
-                    "timestamp",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "volume",
-                    "close_time",
-                    "quote_asset_volume",
-                    "number_of_trades",
-                    "taker_buy_base_asset_volume",
-                    "taker_buy_quote_asset_volume",
-                    "ignore",
-                ],
-            )
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-            df.set_index("timestamp", inplace=True)
-
-            numeric_cols = ["open", "high", "low", "close", "volume"]
-            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
-
-            df = df[numeric_cols].dropna()
-
-            return df
+            return klines_to_frame(data)
         except InvalidSymbolError:
             logger.warning(f"Invalid symbol for Binance OHLC: {symbol}")
             return None

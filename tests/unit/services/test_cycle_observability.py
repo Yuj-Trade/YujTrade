@@ -35,7 +35,10 @@ def _service(signal=None, multi_tf=None) -> TradingService:
     service.invalid_symbols = set()
     service._cycle_log = root_logger.bind(run_id="test-run-id")
 
-    provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=MagicMock(empty=False)))
+    provider = SimpleNamespace(
+        fetch_ohlcv_data=AsyncMock(return_value=MagicMock(empty=False)),
+        fetch_ohlcv_range=AsyncMock(return_value=MagicMock(empty=False)),
+    )
     service.market_data_provider = provider
 
     generated = MagicMock()
@@ -160,7 +163,7 @@ class TestMetricsWiring:
         threshold_manager.flush = AsyncMock()
         service.signal_generator = SimpleNamespace(threshold_manager=threshold_manager)
 
-        async def fake_resolve(symbol, timeframe, details, created_at, expiry_hours):
+        async def fake_resolve(symbol, timeframe, details, created_at, expiry_hours, *, now):
             return Resolution("target", 110.0, datetime.now(UTC), 3)
 
         service._resolve_signal_outcome = fake_resolve

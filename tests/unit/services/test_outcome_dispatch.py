@@ -223,7 +223,7 @@ async def test_the_sequence_watch_dispatch_and_reload_sends_once(tmp_path):
         [(101.0, 99.0, 100.0), (112.0, 101.0, 110.0), (101.0, 99.0, 100.0)],
         created,
     )
-    service.market_data_provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=frame))
+    service.market_data_provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=frame))
     notifier = _FakeNotifier(sent=[])
 
     policy = build_policy(

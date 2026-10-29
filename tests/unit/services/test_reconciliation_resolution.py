@@ -3,6 +3,7 @@
 These tests replace the phase-1 characterization: the current-price
 fallback is gone, an expired signal is valued at the close of the last
 candle inside its window and an uncovered window resolves to `no_data`.
+The candles are fetched by time range.
 """
 
 import asyncio
@@ -41,9 +42,13 @@ def _details(**overrides):
     return base
 
 
+def _after_window(created: datetime, expiry_hours: float) -> datetime:
+    return created + timedelta(hours=expiry_hours + 1)
+
+
 class TestResolveSignalOutcome:
     def _run(self, rows, **kwargs):
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=_frame(rows)))
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=_frame(rows)))
         service = _service(provider)
         created = datetime(2024, 1, 1, tzinfo=UTC)
         params = {
@@ -52,6 +57,7 @@ class TestResolveSignalOutcome:
             "details": _details(),
             "created_at": created,
             "expiry_hours": 3.0,
+            "now": _after_window(created, 3.0),
         }
         params.update(kwargs)
         return asyncio.run(service._resolve_signal_outcome(**params))
@@ -80,7 +86,7 @@ class TestResolveSignalOutcome:
 
     def test_the_current_price_is_never_used_as_an_exit_price(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
+            fetch_ohlcv_range=AsyncMock(
                 return_value=_frame(
                     [(101.0, 99.0, 100.0), (101.0, 99.0, 101.5), (101.0, 99.0, 102.5)]
                 )
@@ -96,23 +102,18 @@ class TestResolveSignalOutcome:
                 details=_details(),
                 created_at=created,
                 expiry_hours=3.0,
+                now=_after_window(created, 3.0),
             )
         )
 
         assert resolution is not None
         assert resolution.exit_price == 102.5
-        assert not any(
-            call.kwargs.get("limit") == 2 for call in provider.fetch_ohlcv_data.await_args_list
-        )
+        range_call = provider.fetch_ohlcv_range.await_args
+        assert range_call.args[2] == created
+        assert range_call.args[3] == created + timedelta(hours=3.0)
 
-    def test_the_candle_count_is_derived_from_the_expiry_and_the_candle_duration(self):
-        provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
-                return_value=_frame(
-                    [(101.0, 99.0, 100.0), (101.0, 99.0, 101.5), (101.0, 99.0, 102.5)]
-                )
-            )
-        )
+    def test_the_fetch_is_a_time_range(self):
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=_frame([])))
         service = _service(provider)
         created = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -123,15 +124,56 @@ class TestResolveSignalOutcome:
                 details=_details(),
                 created_at=created,
                 expiry_hours=3.0,
+                now=_after_window(created, 3.0),
             )
         )
 
-        limits = [call.kwargs.get("limit") for call in provider.fetch_ohlcv_data.await_args_list]
-        assert limits == [5]
+        assert provider.fetch_ohlcv_range.await_count == 1
+        args = provider.fetch_ohlcv_range.await_args.args
+        assert args == ("BTC/USDT", "1h", created, created + timedelta(hours=3.0))
+
+    def test_no_candles_before_the_window_end_returns_none(self):
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=_frame([])))
+        service = _service(provider)
+        created = datetime(2024, 1, 1, tzinfo=UTC)
+
+        resolution = asyncio.run(
+            service._resolve_signal_outcome(
+                symbol="BTC/USDT",
+                timeframe="1h",
+                details=_details(),
+                created_at=created,
+                expiry_hours=12.0,
+                now=created + timedelta(hours=1),
+            )
+        )
+
+        assert resolution is None
+
+    def test_no_candles_after_the_window_end_resolves_to_no_data(self):
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=_frame([])))
+        service = _service(provider)
+        created = datetime(2024, 1, 1, tzinfo=UTC)
+
+        resolution = asyncio.run(
+            service._resolve_signal_outcome(
+                symbol="BTC/USDT",
+                timeframe="1h",
+                details=_details(),
+                created_at=created,
+                expiry_hours=12.0,
+                now=created + timedelta(hours=13),
+            )
+        )
+
+        assert resolution is not None
+        assert resolution.exit_reason == "no_data"
+        assert resolution.exit_price is None
+        assert resolution.exit_at is None
 
     def test_an_incomplete_window_resolves_to_no_data(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
+            fetch_ohlcv_range=AsyncMock(
                 return_value=_frame([(101.0, 99.0, 100.0), (101.0, 99.0, 101.5)])
             )
         )
@@ -145,6 +187,7 @@ class TestResolveSignalOutcome:
                 details=_details(),
                 created_at=created,
                 expiry_hours=12.0,
+                now=_after_window(created, 12.0),
             )
         )
 
@@ -155,7 +198,7 @@ class TestResolveSignalOutcome:
 
     def test_an_unknown_timeframe_raises_an_explicit_error(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(return_value=_frame([(101.0, 99.0, 100.0)]))
+            fetch_ohlcv_range=AsyncMock(return_value=_frame([(101.0, 99.0, 100.0)]))
         )
         service = _service(provider)
         created = datetime(2024, 1, 1, tzinfo=UTC)
@@ -168,12 +211,13 @@ class TestResolveSignalOutcome:
                     details=_details(),
                     created_at=created,
                     expiry_hours=3.0,
+                    now=_after_window(created, 3.0),
                 )
             )
 
     def test_missing_levels_skip_the_signal(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(return_value=_frame([(101.0, 99.0, 100.0)]))
+            fetch_ohlcv_range=AsyncMock(return_value=_frame([(101.0, 99.0, 100.0)]))
         )
         service = _service(provider)
         created = datetime(2024, 1, 1, tzinfo=UTC)
@@ -185,6 +229,7 @@ class TestResolveSignalOutcome:
                 details={"entry": 100.0, "signal_type": "buy"},
                 created_at=created,
                 expiry_hours=3.0,
+                now=_after_window(created, 3.0),
             )
         )
 

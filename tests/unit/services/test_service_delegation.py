@@ -103,13 +103,14 @@ class TestResolveSignalOutcome:
             "details": _details(),
             "created_at": created,
             "expiry_hours": 3.0,
+            "now": created + timedelta(hours=4),
         }
         params.update(kwargs)
         return asyncio.run(service._resolve_signal_outcome(**params))
 
     def test_stop_hit_resolves_failure(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
+            fetch_ohlcv_range=AsyncMock(
                 return_value=_frame(
                     [(112.0, 94.0, 100.0), (101.0, 99.0, 100.0), (101.0, 99.0, 100.0)]
                 )
@@ -122,7 +123,7 @@ class TestResolveSignalOutcome:
 
     def test_target_hit_resolves_success(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
+            fetch_ohlcv_range=AsyncMock(
                 return_value=_frame(
                     [(101.0, 99.0, 100.0), (112.0, 101.0, 110.0), (101.0, 99.0, 100.0)]
                 )
@@ -135,7 +136,7 @@ class TestResolveSignalOutcome:
 
     def test_no_hit_expires_at_the_last_close_of_the_window(self):
         provider = SimpleNamespace(
-            fetch_ohlcv_data=AsyncMock(
+            fetch_ohlcv_range=AsyncMock(
                 return_value=_frame(
                     [(101.0, 99.0, 100.0), (101.0, 99.0, 101.0), (101.0, 99.0, 102.0)]
                 )
@@ -146,14 +147,22 @@ class TestResolveSignalOutcome:
         assert resolution.exit_reason == "expired"
         assert resolution.exit_price == 102.0
 
-    def test_no_data_without_candles_returns_none(self):
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=pd.DataFrame()))
-        assert self._run(provider) is None
+    def test_no_data_before_the_window_end_stays_pending(self):
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=pd.DataFrame()))
+        created = datetime(2024, 1, 1, tzinfo=UTC)
+        assert self._run(provider, created_at=created, now=created + timedelta(hours=1)) is None
+
+    def test_no_data_after_the_window_end_resolves_to_no_data(self):
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=pd.DataFrame()))
+        created = datetime(2024, 1, 1, tzinfo=UTC)
+        resolution = self._run(provider, created_at=created, now=created + timedelta(hours=4))
+        assert resolution is not None
+        assert resolution.exit_reason == "no_data"
 
     def test_malformed_rows_skipped(self):
         frame = _frame([(112.0, 101.0, 110.0), (101.0, 99.0, 100.0), (101.0, 99.0, 100.0)])
         frame.loc[frame.index[0], "high"] = None
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=frame))
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=frame))
         resolution = self._run(provider)
         assert resolution is not None
         assert resolution.exit_reason == "expired"

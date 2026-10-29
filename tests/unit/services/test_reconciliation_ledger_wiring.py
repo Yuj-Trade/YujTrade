@@ -42,7 +42,7 @@ def _service(ledger, resolution, tracker=None):
     service.model_manager = SimpleNamespace(record_signal_performance=AsyncMock())
     service.signal_generator = SimpleNamespace(threshold_manager=MagicMock(flush=AsyncMock()))
 
-    async def fake_resolve(symbol, timeframe, details, created_at, expiry_hours):
+    async def fake_resolve(symbol, timeframe, details, created_at, expiry_hours, *, now):
         return resolution
 
     service._resolve_signal_outcome = fake_resolve

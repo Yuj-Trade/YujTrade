@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from typing import Any
 
@@ -30,7 +31,7 @@ from data.ohlcv_store import OhlcvStore
 from data.sources.alphavantage_fetcher import AlphaVantageFetcher
 from data.sources.alternativeme_fetcher import AlternativeMeFetcher
 from data.sources.base_fetcher import report_fetch_failure
-from data.sources.binance_fetcher import BinanceFetcher
+from data.sources.binance_fetcher import BinanceFetcher, klines_to_frame
 from data.sources.coindesk_fetcher import CoinDeskFetcher
 from data.sources.coingecko_fetcher import CoinGeckoFetcher
 from data.sources.cryptopanic_fetcher import CryptoPanicFetcher
@@ -40,6 +41,8 @@ from data.sources.messari_fetcher import MessariFetcher
 from data.sources.news_fetcher import NewsFetcher
 from data.sources.yfinance_fetcher import YFinanceFetcher
 from utils.resource_manager import ResourceManager
+
+OHLCV_RANGE_PAGE_SIZE = 1000
 
 
 class MarketDataProvider:
@@ -415,6 +418,56 @@ class MarketDataProvider:
         raise InsufficientDataError(
             f"Failed to fetch sufficient OHLCV for {symbol} on {timeframe} from all sources."
         )
+
+    @async_retry(attempts=3, delay=5, exceptions=(NetworkError, DataError))
+    async def fetch_ohlcv_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        if self._is_closed:
+            raise ObjectClosedError("MarketDataProvider is closed")
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("start and end must be timezone-aware")
+        start_utc = start.astimezone(UTC)
+        end_utc = end.astimezone(UTC)
+        if start_utc >= end_utc:
+            raise ValueError("start must precede end")
+        if self.session is None or self.session.closed:
+            await self.initialize()
+        if self.binance_fetcher is None:
+            raise InsufficientDataError(f"No range-capable source for {symbol} on {timeframe}.")
+        page_size = OHLCV_RANGE_PAGE_SIZE
+        cursor = start_utc
+        frames: list[pd.DataFrame] = []
+        while cursor <= end_utc:
+            rows = await self.binance_fetcher.get_kline_data(
+                symbol,
+                timeframe,
+                start_time=int(cursor.timestamp() * 1000),
+                end_time=int(end_utc.timestamp() * 1000),
+                limit=page_size,
+            )
+            if not rows:
+                break
+            frames.append(klines_to_frame(rows))
+            last_open = pd.to_datetime(rows[-1][0], unit="ms", utc=True)
+            next_cursor = last_open.to_pydatetime() + timedelta(milliseconds=1)
+            if next_cursor <= cursor or next_cursor > end_utc:
+                break
+            cursor = next_cursor
+            if len(rows) < page_size:
+                break
+        if not frames:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        combined = pd.concat(frames)
+        combined = combined[~combined.index.duplicated(keep="first")].sort_index()
+        in_window = combined[
+            (combined.index >= pd.Timestamp(start_utc)) & (combined.index <= pd.Timestamp(end_utc))
+        ]
+        return in_window
 
     async def prewarm_ohlcv_store(
         self, symbols: list[str], timeframes: list[str], limit: int = 1000

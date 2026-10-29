@@ -69,7 +69,7 @@ def _service(tracker, provider) -> TradingService:
 
 
 def _provider(frame):
-    return SimpleNamespace(fetch_ohlcv_data=AsyncMock(return_value=frame))
+    return SimpleNamespace(fetch_ohlcv_range=AsyncMock(return_value=frame))
 
 
 class TestOutcomeWatch:
@@ -173,12 +173,12 @@ class TestOutcomeWatch:
             created,
         )
 
-        async def fetch(symbol, timeframe, limit=1000, bypass_cache=False):
+        async def fetch(symbol, timeframe, start, end):
             if symbol == "BTC/USDT":
                 raise RuntimeError("exchange down")
             return frame
 
-        provider = SimpleNamespace(fetch_ohlcv_data=AsyncMock(side_effect=fetch))
+        provider = SimpleNamespace(fetch_ohlcv_range=AsyncMock(side_effect=fetch))
         service = _service(tracker, provider)
 
         report = await service.watch_outcomes(_policy(), now)
@@ -203,7 +203,7 @@ class TestOutcomeWatch:
 
         report = await service.watch_outcomes(_policy(), now)
 
-        assert provider.fetch_ohlcv_data.await_count == 1
+        assert provider.fetch_ohlcv_range.await_count == 1
         assert report.groups == 1
         assert report.detected == 3
 

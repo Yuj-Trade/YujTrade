@@ -1,8 +1,7 @@
 import asyncio
-import math
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -568,10 +567,11 @@ class TradingService(ModelDataProvider):
         if not expired:
             return 0
 
+        now = datetime.now(UTC)
         resolved_count = 0
         for item in expired:
             try:
-                if await self._settle_expired(item):
+                if await self._settle_expired(item, now):
                     resolved_count += 1
             except ValueError as e:
                 logger.error(f"Signal reconciliation failed: {e}")
@@ -582,7 +582,7 @@ class TradingService(ModelDataProvider):
             logger.info(f"Reconciled {resolved_count} expired pending signal(s).")
         return resolved_count
 
-    async def _settle_expired(self, item: dict[str, Any]) -> bool:
+    async def _settle_expired(self, item: dict[str, Any], now: datetime | None = None) -> bool:
         signal_id = item["signal_id"]
         signal_log = self._log().bind(signal_id=signal_id)
         details = item["details"]
@@ -594,8 +594,9 @@ class TradingService(ModelDataProvider):
             return False
         created_at = SignalTracker._extract_created_at(signal_id, details)
         expiry_hours = SIGNAL_EXPIRY_BY_TIMEFRAME.get(timeframe)
+        moment = now if now is not None else datetime.now(UTC)
         resolution = await self._resolve_signal_outcome(
-            symbol, timeframe, details, created_at, expiry_hours
+            symbol, timeframe, details, created_at, expiry_hours, now=moment
         )
         if resolution is None:
             signal_log.debug("Reconciliation skipped (incomplete levels).")
@@ -642,11 +643,13 @@ class TradingService(ModelDataProvider):
         async with semaphore:
             duration = candle_duration(timeframe)
             oldest = min(item.created_at for item in items)
-            count = int(math.ceil((now - oldest).total_seconds() / duration.total_seconds())) + 2
             try:
-                frame = await self.market_data_provider.fetch_ohlcv_data(
-                    symbol, timeframe, limit=count, bypass_cache=True
+                frame = await self.market_data_provider.fetch_ohlcv_range(
+                    symbol, timeframe, oldest, now
                 )
+            except ValueError:
+                logger.warning(f"Outcome watch window invalid for {symbol}-{timeframe}.")
+                return 0
             except Exception as e:
                 logger.error(f"Outcome watch fetch failed for {symbol}-{timeframe}: {e}")
                 raise
@@ -682,6 +685,8 @@ class TradingService(ModelDataProvider):
         details: dict[str, Any],
         created_at: datetime | None,
         expiry_hours: float | None,
+        *,
+        now: datetime,
     ) -> Resolution | None:
         if created_at is None or not expiry_hours:
             return None
@@ -696,17 +701,30 @@ class TradingService(ModelDataProvider):
             return None
 
         duration = candle_duration(timeframe)
-        candle_count = int(math.ceil(expiry_hours * 3600 / duration.total_seconds())) + 2
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        window_end = created_at + timedelta(hours=expiry_hours)
         try:
-            frame = await self.market_data_provider.fetch_ohlcv_data(
-                symbol, timeframe, limit=candle_count, bypass_cache=True
+            frame = await self.market_data_provider.fetch_ohlcv_range(
+                symbol, timeframe, created_at, window_end
             )
         except Exception as e:
             logger.debug(f"Resolution candles fetch failed: {e}")
             frame = None
         candles = _frame_candles(frame)
         if not candles:
-            return None
+            if now < window_end:
+                return None
+            return resolve_signal_outcome(
+                [],
+                signal_type,
+                entry,
+                stop,
+                target,
+                created_at=created_at,
+                expiry_hours=expiry_hours,
+                candle_duration=duration,
+            )
         return resolve_signal_outcome(
             candles,
             signal_type,
