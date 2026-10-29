@@ -124,6 +124,20 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler("risk", self.risk_command))
         self.application.add_handler(CommandHandler("portfolio", self.portfolio_command))
         self.application.add_handler(CommandHandler("health", self.health_command))
+        self.application.add_handler(CommandHandler("exchanges", self.exchanges_command))
+        self.application.add_handler(
+            CommandHandler("exchange_status", self.exchange_status_command)
+        )
+        self.application.add_handler(
+            CommandHandler("exchange_execute", self.exchange_execute_command)
+        )
+        self.application.add_handler(CommandHandler("exchange_halt", self.exchange_halt_command))
+        self.application.add_handler(
+            CommandHandler("exchange_resume", self.exchange_resume_command)
+        )
+        self.application.add_handler(
+            CommandHandler("exchange_confirm", self.exchange_confirm_command)
+        )
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
@@ -360,6 +374,178 @@ class TelegramBotHandler:
             await update.message.reply_text(
                 escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
             )
+
+    def _exchange_service(self):
+        return getattr(self.trading_service, "exchange_service", None)
+
+    async def _reply(self, update: Update, text: str) -> None:
+        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def exchanges_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        try:
+            from application.exchange_policy import (
+                PROFILE_GENERAL,
+                PROFILE_IRAN,
+                scope_matches_profile,
+            )
+            from trading.exchanges.registry import EXCHANGE_REGISTRY
+        except ImportError as e:
+            logger.opt(exception=True).debug(f"Exchange registry unavailable: {e}")
+            await self._reply(update, "Exchange registry unavailable.")
+            return
+        profile = str(self.config_manager.get("exchange_access_profile", PROFILE_GENERAL))
+        enabled = {str(item) for item in self.config_manager.get("exchange_enabled", []) or []}
+        lines = [f"Exchange profile: {profile}"]
+        for spec in EXCHANGE_REGISTRY:
+            allowed = scope_matches_profile(spec.access_scope, profile)
+            state = "enabled" if spec.exchange_id in enabled else "disabled"
+            scope_note = " (iran users only)" if spec.access_scope != PROFILE_GENERAL else ""
+            lines.append(
+                f"{spec.display_name} [{spec.exchange_id}]: {spec.status}, "
+                f"{state}, {'allowed' if allowed else 'not allowed'}{scope_note}"
+            )
+        if profile != PROFILE_IRAN:
+            lines.append("LBank and Ourbit require the iran profile.")
+        await self._reply(update, "\n".join(lines))
+
+    async def exchange_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        args = context.args or []
+        if not args:
+            await self._reply(update, "Usage: /exchange_status <client_order_id> [exchange_id]")
+            return
+        client_order_id = args[0]
+        exchange_id = args[1] if len(args) > 1 else ""
+        row = None
+        try:
+            if exchange_id:
+                row = await service.order_status(client_order_id, exchange_id)
+            else:
+                rows = await service.ledger.get_non_terminal()
+                row = next(
+                    (item for item in rows if item["client_order_id"] == client_order_id), None
+                )
+        except Exception as e:
+            logger.opt(exception=True).debug(f"Exchange status unavailable: {e}")
+        if row is None:
+            await self._reply(update, f"No live order row for {client_order_id}.")
+            return
+        text = (
+            f"Order {row['client_order_id']} on {row['exchange_id']}: "
+            f"{row['status']} ({row['mode']}), filled {row['filled']}, reason {row['reason']}"
+        )
+        await self._reply(update, text)
+
+    def _signal_amount(self, signal) -> tuple[float, float]:
+        entry = float(signal.entry_price or 0.0)
+        stop = float(signal.stop_loss or 0.0)
+        quantity = signal.position_size
+        if quantity is None:
+            try:
+                decision = self.trading_service.risk_manager.evaluate(
+                    signal,
+                    float(self.trading_service.portfolio.equity(entry, stop)),
+                    float(self.trading_service.portfolio.exposure_pct({signal.symbol: entry})),
+                    len(self.trading_service.portfolio.positions),
+                )
+                quantity = decision.position_size
+            except Exception as e:
+                logger.opt(exception=True).debug(f"Position sizing unavailable: {e}")
+                quantity = 0.0
+        return float(quantity or 0.0), entry
+
+    async def exchange_execute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        args = context.args or []
+        if len(args) < 2:
+            await self._reply(update, "Usage: /exchange_execute <exchange_id> <signal_id>")
+            return
+        exchange_id, signal_id = args[0], args[1]
+        try:
+            from strategy.signal_tracker import make_signal_id
+
+            signals = await self.trading_service.run_quick_analysis(["1h"])
+        except Exception as e:
+            logger.opt(exception=True).debug(f"Signal lookup failed: {e}")
+            signals = []
+        signal = None
+        for candidate in signals:
+            candidate_id = make_signal_id(
+                candidate.symbol,
+                candidate.timeframe,
+                candidate.timestamp,
+                candidate.signal_type.value,
+            )
+            if candidate_id == signal_id:
+                signal = candidate
+                break
+        if signal is None:
+            await self._reply(update, f"Signal {signal_id} not found.")
+            return
+        amount, price = self._signal_amount(signal)
+        side = "buy" if signal.signal_type.value == "buy" else "sell"
+        result = await service.submit_signal(
+            exchange_id=exchange_id,
+            signal_id=signal_id,
+            symbol=signal.symbol,
+            side=side,
+            amount=amount,
+            price=price,
+        )
+        text = (
+            f"Exchange execution {exchange_id}: ok={result.ok} mode={result.mode} "
+            f"status={result.status} reason={result.reason}"
+        )
+        await self._reply(update, text)
+
+    async def exchange_halt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        await service.halt()
+        await self._reply(update, "Exchange halted. New orders are refused.")
+
+    async def exchange_resume_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        await service.resume()
+        await self._reply(update, "Exchange resumed.")
+
+    async def exchange_confirm_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        args = context.args or []
+        if not args:
+            await self._reply(update, "Usage: /exchange_confirm <code>")
+            return
+        self._pending_confirmation = args[0]
+        await self._reply(
+            update,
+            "Confirmation code received. Submit the live execution again to use it.",
+        )
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if not self.admin_chat_id:
