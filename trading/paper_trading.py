@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+from common.constants import SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
 from common.core import (
     Order,
     OrderSide,
@@ -11,7 +12,9 @@ from common.core import (
     SignalType,
     TradingSignal,
 )
-from domain.outcome import resolve_outcome
+from config.logger import logger
+from domain.costs import CostProfile, fee_rate, fill_fraction, legacy_report_profile
+from domain.outcome import resolve_signal_outcome
 from trading.portfolio import PortfolioManager
 from trading.risk_manager import RiskManager
 
@@ -24,20 +27,26 @@ class PaperTradingEngine:
         *,
         fee_rate: float,
         slippage_rate: float,
-        funding_rate_per_day: float = 0.0,
+        cost_profile: CostProfile | None = None,
     ):
         self.portfolio = portfolio or PortfolioManager()
         self.risk_manager = risk_manager or RiskManager()
         self.fee_rate = fee_rate
         self.slippage_rate = slippage_rate
-        self.funding_rate_per_day = funding_rate_per_day
+        self.cost_profile = cost_profile or legacy_report_profile(fee_rate, slippage_rate)
         self.orders: dict[str, Order] = {}
         self.trade_history: list[dict] = []
 
-    def _apply_slippage(self, price: float, side: OrderSide) -> float:
+    def _legacy_profile(self) -> bool:
+        return self.cost_profile.version == "legacy-report-v1"
+
+    def _entry_price(self, market_price: float, side: OrderSide) -> float:
+        profile = self.cost_profile
+        if profile.entry_liquidity != "taker":
+            return market_price
         if side == OrderSide.BUY:
-            return price * (1 + self.slippage_rate)
-        return price * (1 - self.slippage_rate)
+            return market_price * (1 + profile.entry_slippage_rate)
+        return market_price * (1 - profile.entry_slippage_rate)
 
     def submit_signal(
         self,
@@ -89,7 +98,12 @@ class PaperTradingEngine:
         return order
 
     def fill_order(
-        self, order_id: str, market_price: float, stop_loss: float = 0.0, take_profit: float = 0.0
+        self,
+        order_id: str,
+        market_price: float,
+        stop_loss: float = 0.0,
+        take_profit: float = 0.0,
+        candle_quote_volume: float | None = None,
     ) -> Position | None:
         order = self.orders.get(order_id)
         if order is None or order.status not in (
@@ -98,29 +112,50 @@ class PaperTradingEngine:
             OrderStatus.PARTIAL,
         ):
             return None
-        fill_price = self._apply_slippage(market_price, order.side)
-        fee = fill_price * order.quantity * self.fee_rate
-        order.filled_quantity = order.quantity
+        profile = self.cost_profile
+        if self._legacy_profile():
+            ratio = 1.0
+        else:
+            if candle_quote_volume is None:
+                logger.warning(
+                    f"Paper fill refused for {order.order_id}: "
+                    "no quote volume for the entry candle."
+                )
+                return None
+            ratio = fill_fraction(
+                order.quantity * market_price,
+                candle_quote_volume,
+                profile.max_volume_participation,
+            )
+        if ratio == 0.0:
+            order.status = OrderStatus.CANCELLED
+            order.updated_at = datetime.now(UTC)
+            return None
+        fill_price = self._entry_price(market_price, order.side)
+        filled_qty = order.quantity * ratio
+        fee = fill_price * filled_qty * fee_rate(profile, profile.entry_liquidity)
+        order.filled_quantity = filled_qty
         order.average_fill_price = fill_price
         order.fee_paid = fee
-        order.status = OrderStatus.FILLED
+        order.status = OrderStatus.FILLED if ratio >= 1.0 else OrderStatus.PARTIAL
         order.updated_at = datetime.now(UTC)
         side = PositionSide.LONG if order.side == OrderSide.BUY else PositionSide.SHORT
         position = Position(
             position_id=uuid.uuid4().hex[:12],
             symbol=order.symbol,
             side=side,
-            quantity=order.quantity,
+            quantity=filled_qty,
             entry_price=fill_price,
             stop_loss=float(stop_loss or fill_price * 0.98),
             take_profit=float(take_profit or fill_price * 1.04),
+            opened_at=datetime.now(UTC),
             signal_id=order.signal_id,
             timeframe=order.timeframe,
-            risk_amount=abs(fill_price - stop_loss) * order.quantity if stop_loss else 0.0,
+            risk_amount=abs(fill_price - stop_loss) * filled_qty if stop_loss else 0.0,
             fees_paid=fee,
         )
-        cost = order.quantity * fill_price if side == PositionSide.LONG else 0.0
-        self.portfolio.open_position(position, cost, fee if side == PositionSide.LONG else fee)
+        cost = filled_qty * fill_price if side == PositionSide.LONG else 0.0
+        self.portfolio.open_position(position, cost, fee)
         self.trade_history.append(
             {
                 "order_id": order.order_id,
@@ -128,20 +163,11 @@ class PaperTradingEngine:
                 "symbol": order.symbol,
                 "side": side.value,
                 "price": fill_price,
-                "quantity": order.quantity,
+                "quantity": filled_qty,
+                "fill_fraction": ratio,
             }
         )
         return position
-
-    def apply_funding(self, prices: dict[str, float], days: float = 1.0) -> float:
-        total = 0.0
-        for position in self.portfolio.positions.values():
-            price = prices.get(position.symbol, position.entry_price)
-            funding = price * position.quantity * self.funding_rate_per_day * days
-            total += funding
-            self.portfolio.cash -= funding
-            self.portfolio.realized_pnl -= funding
-        return total
 
     def update_positions(self, prices: dict[str, float]) -> list[dict]:
         closed: list[dict] = []
@@ -161,7 +187,11 @@ class PaperTradingEngine:
             )
             if hit_stop or hit_target:
                 exit_price = position.stop_loss if hit_stop else position.take_profit
-                fee = exit_price * position.quantity * self.fee_rate
+                fee = (
+                    exit_price
+                    * position.quantity
+                    * fee_rate(self.cost_profile, self.cost_profile.stop_exit_liquidity)
+                )
                 pnl = self.portfolio.close_position(position_id, exit_price, fee)
                 closed.append(
                     {
@@ -174,29 +204,74 @@ class PaperTradingEngine:
                 )
         return closed
 
+    def _adjusted_exit(self, exit_price: float, exit_reason: str, side: str) -> tuple[float, str]:
+        profile = self.cost_profile
+        if exit_reason == "target":
+            liquidity = profile.target_exit_liquidity
+            slippage = profile.target_exit_slippage_rate
+        elif exit_reason == "stop":
+            liquidity = profile.stop_exit_liquidity
+            slippage = profile.market_exit_slippage_rate
+        else:
+            liquidity = profile.expiry_exit_liquidity
+            slippage = profile.market_exit_slippage_rate
+        if liquidity != "taker":
+            return exit_price, liquidity
+        if side == "buy":
+            return exit_price * (1 - slippage), liquidity
+        return exit_price * (1 + slippage), liquidity
+
     def resolve_position_with_candles(
         self, position_id: str, candles: list[dict[str, object]]
     ) -> dict | None:
         position = self.portfolio.positions.get(position_id)
         if position is None:
             return None
+        timeframe = position.timeframe
+        if timeframe is None or timeframe not in SIGNAL_EXPIRY_BY_TIMEFRAME:
+            raise ValueError(f"unknown timeframe {timeframe!r}")
         side = "buy" if position.side == PositionSide.LONG else "sell"
-        outcome = resolve_outcome(
+        resolution = resolve_signal_outcome(
             candles,
             side,
             position.entry_price,
             position.stop_loss,
             position.take_profit,
+            created_at=position.opened_at,
+            expiry_hours=SIGNAL_EXPIRY_BY_TIMEFRAME[timeframe],
+            candle_duration=candle_duration(timeframe),
         )
-        if outcome is None:
+        if resolution.exit_reason == "no_data":
+            return {
+                "position_id": position_id,
+                "exit": None,
+                "pnl": 0.0,
+                "reason": "no_data",
+                "resolution": resolution,
+            }
+        if resolution.exit_price is None or resolution.exit_at is None:
             return None
-        fee = outcome.exit_price * position.quantity * self.fee_rate
-        pnl = self.portfolio.close_position(position_id, outcome.exit_price, fee)
+        exit_price, liquidity = self._adjusted_exit(
+            resolution.exit_price, resolution.exit_reason, side
+        )
+        exit_fee = exit_price * position.quantity * fee_rate(self.cost_profile, liquidity)
+        holding_hours = max(0.0, (resolution.exit_at - position.opened_at).total_seconds() / 3600.0)
+        funding = (
+            self.cost_profile.funding_rate_per_period
+            * (holding_hours / self.cost_profile.funding_period_hours)
+            * position.entry_price
+            * position.quantity
+        )
+        pnl = self.portfolio.close_position(position_id, exit_price, exit_fee + funding)
         return {
             "position_id": position_id,
-            "exit": outcome.exit_price,
+            "exit": exit_price,
             "pnl": pnl,
-            "reason": outcome.reason,
+            "reason": resolution.exit_reason,
+            "exit_liquidity": liquidity,
+            "fill_fraction": 1.0,
+            "funding": funding,
+            "resolution": resolution,
         }
 
     def cancel_order(self, order_id: str) -> bool:

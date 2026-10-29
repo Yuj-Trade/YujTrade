@@ -73,7 +73,7 @@ def test_the_script_writes_a_report_and_prints_the_data_hash(tmp_path, monkeypat
     payload = json.loads(output.read_text(encoding="utf-8"))
     printed = capsys.readouterr().out.strip()
 
-    assert payload["report_version"] == "performance-report-v1"
+    assert payload["report_version"] == "performance-report-v2"
     assert payload["mode"] == "paper"
     assert payload["total_resolved"] == 1
     assert payload["status"] == "insufficient_sample"

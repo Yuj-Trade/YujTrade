@@ -18,6 +18,7 @@ from common.rate_limit import configure_rate_limits
 from config.logger import logger
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
+from domain.costs import CostProfile, cost_profile_from_config
 from domain.gates import normalize_confidence, quality_gate_reason
 from domain.outcome import (
     Resolution,
@@ -85,7 +86,13 @@ def build_performance_config(config_manager: ConfigManager) -> PerformanceConfig
                 "performance_min_trades_for_ratios", defaults["performance_min_trades_for_ratios"]
             )
         ),
+        cost_profile=build_cost_profile(config_manager),
     )
+
+
+def build_cost_profile(config_manager: ConfigManager) -> CostProfile:
+    defaults = ConfigManager.DEFAULT_CONFIG["paper_cost_model"]
+    return cost_profile_from_config(config_manager.get("paper_cost_model"), defaults)
 
 
 def _utc_moment(value: Any) -> datetime | None:
@@ -262,6 +269,7 @@ class TradingService(ModelDataProvider):
                     "paper_slippage_rate", ConfigManager.DEFAULT_CONFIG["paper_slippage_rate"]
                 )
             ),
+            cost_profile=build_cost_profile(self.config_manager),
         )
         self.execution_engine = ExecutionEngine(
             adapter=ExchangeAdapter(

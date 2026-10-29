@@ -197,7 +197,7 @@ def test_the_json_output_contains_no_nan_and_no_infinity():
 def test_the_report_carries_the_version_the_mode_and_the_window():
     report = build_performance_report([_record()], _config(), _AS_OF)
 
-    assert report.report_version == "performance-report-v1"
+    assert report.report_version == "performance-report-v2"
     assert report.mode == "paper"
     assert report.as_of == "2026-10-20T12:00:00.000000+00:00"
     assert report.period_start == "2026-10-01"

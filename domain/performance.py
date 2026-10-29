@@ -4,7 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from domain.costs import legacy_report_profile, net_r
+from domain.costs import CostProfile, legacy_report_profile, net_r
 
 SIDES: frozenset[str] = frozenset({"buy", "sell"})
 EXIT_REASONS: frozenset[str] = frozenset({"stop", "target", "expired", "no_data"})
@@ -64,7 +64,7 @@ class ResolutionRecord:
 
     def __post_init__(self) -> None:
         if self.entry_quote_volume is not None:
-            _require_positive(self.entry_quote_volume, "entry_quote_volume")
+            _require_non_negative(self.entry_quote_volume, "entry_quote_volume")
         if self.side not in SIDES:
             raise ValueError(f"side must be buy or sell, got {self.side!r}")
         if self.exit_reason not in EXIT_REASONS:
@@ -132,6 +132,26 @@ def net_r_multiple(record: ResolutionRecord, fee_rate: float, slippage_rate: flo
         holding_hours,
         profile,
         1.0,
+    )
+
+
+def net_r_for_profile(
+    record: ResolutionRecord,
+    profile: CostProfile,
+    fill_ratio: float,
+    holding_hours: float,
+) -> float:
+    if record.exit_price is None:
+        raise ValueError("no_data resolution has no R multiple")
+    return net_r(
+        record.entry,
+        record.stop,
+        record.exit_price,
+        record.side,
+        record.exit_reason,
+        holding_hours,
+        profile,
+        fill_ratio,
     )
 
 
