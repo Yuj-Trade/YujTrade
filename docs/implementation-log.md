@@ -85,3 +85,33 @@ Seven OpenSpec changes created under `openspec/changes/`, approved by G1:
 | `add-intrabar-outcome-port` | item 5 (intrabar port) |
 
 Each passes `openspec validate <id> --strict`.
+
+## P1 - pure cost foundation
+
+| Item | Result |
+|---|---|
+| Commit | `4960f7b chore: add pure cost profile and fill model in domain` |
+| Files | `domain/costs.py` (new), `domain/performance.py`, `tests/unit/domain/test_costs.py` (new) |
+| Gate | default 1899 passed; ruff, format, `mypy domain` pass; domain coverage 96.83 % |
+| Golden | unchanged (`d17e604f...`, `8f7173b7...`) |
+| Tag | none (no existing test changed) |
+
+`net_r_multiple` keeps its signature and delegates to `net_r` with
+`legacy_report_profile(fee_rate, slippage_rate)` and `fill_ratio = 1.0`. The
+200-record seeded equivalence test pins the legacy profile to the previous
+formula to a relative error below `1e-12`.
+
+## P2 - time-range candle fetch [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit | `870d0c4 fix: fetch outcome candles by time range [behavior-change]` |
+| Files | `data/data_provider.py`, `data/sources/binance_fetcher.py`, `services/trading_service.py`, `tests/unit/data/test_ohlcv_range.py` (new), 6 service test files |
+| Tests | 11 new range tests; the service tests now exercise the range call |
+| Gate | default 1913 passed; slow 11 passed; ruff, format, `mypy domain` pass |
+| Golden | unchanged (`d17e604f...`, `8f7173b7...`) |
+| Behavior change | `_resolve_signal_outcome` takes a keyword-only `now` and fetches the expiry window by range; `_watch_group` fetches `[oldest, now]` by range. An empty window before the window end stays pending; at or after the window end it resolves to `no_data`. |
+| Test call sites updated | `tests/unit/services/test_reconciliation_resolution.py` (provider fake and `now`), `test_service_delegation.py` (provider fake and `now`), `test_outcome_watch.py` (range fake), `test_reconciliation_ledger_wiring.py` and `test_cycle_observability.py` (fake resolver signature), `test_outcome_dispatch.py` (range fake) |
+
+Issues 10 and 17 are resolved in `docs/open_issues.md`; the superseded
+ADR-0009 bullet carries a pointer to `870d0c4`.
