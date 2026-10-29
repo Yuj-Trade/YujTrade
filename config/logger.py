@@ -9,7 +9,11 @@ log_file = f"{log_directory}/app.log"
 
 logger.remove()
 
-_SECRET_PATTERN = re.compile(r"(auth_token|x_cg_demo_api_key|api_key|apikey)=[^&\s'\"]+")
+_SECRET_PATTERN = re.compile(
+    r"(auth_token|x_cg_demo_api_key|api_key|apikey|api_secret|secret|passphrase|password"
+    r"|encrypted_[a-z0-9_]+)=[^&\s'\"]+",
+    re.IGNORECASE,
+)
 
 
 def _redact_secrets(record):

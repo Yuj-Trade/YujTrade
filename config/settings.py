@@ -44,6 +44,20 @@ class SecretsManager:
 
         return decouple_config(key, default=default, cast=cast)
 
+    @staticmethod
+    def get_exchange_secret(name: str) -> str | None:
+        encryptor = SecretsManager._encryptor
+        if encryptor is None:
+            return None
+        value = decouple_config(f"ENCRYPTED_{name}", default="")
+        if not value:
+            return None
+        decrypted = encryptor.decrypt(value)
+        if not decrypted:
+            logger.error(f"Failed to decrypt exchange secret {name}.")
+            return None
+        return decrypted
+
     TELEGRAM_BOT_TOKEN = get_secret("TELEGRAM_BOT_TOKEN", default="")
     ADMIN_CHAT_ID = get_secret("ADMIN_CHAT_ID", default="")
     CRYPTOPANIC_KEY = get_secret("CRYPTOPANIC_KEY", default="")

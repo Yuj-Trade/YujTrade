@@ -4,6 +4,7 @@ from pathlib import Path
 from decouple import Config, RepositoryEnv
 
 from config.logger import logger
+from trading.exchanges.registry import all_secret_names
 from utils.security import KeyEncryptor
 
 
@@ -21,7 +22,7 @@ def run():
     encryptor = KeyEncryptor(password)
     config = Config(RepositoryEnv(str(env_file)))
 
-    keys_to_encrypt = [
+    base_keys = [
         "TELEGRAM_BOT_TOKEN",
         "ADMIN_CHAT_ID",
         "CRYPTOPANIC_KEY",
@@ -32,6 +33,7 @@ def run():
         "SENTRY_DSN",
         "REDIS_TOKEN",
     ]
+    keys_to_encrypt = base_keys + [name for name in all_secret_names() if name not in base_keys]
 
     new_env_content = ""
     updated_keys = set()
