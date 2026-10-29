@@ -27,6 +27,9 @@ try:
     _outcome_notifications_total = Counter(
         "yujtrade_outcome_notifications_total", "Outcome notification results", ["state"]
     )
+    _exchange_unknown_total = Counter(
+        "yujtrade_exchange_unknown_total", "Exchange orders left in unknown state", ["exchange"]
+    )
     _equity = Gauge("yujtrade_equity", "Portfolio equity")
     _exposure = Gauge("yujtrade_exposure_pct", "Portfolio exposure pct")
     _signal_latency = Histogram("yujtrade_signal_latency_seconds", "Signal pipeline latency")
@@ -91,6 +94,16 @@ def record_outcome_notification(state: str):
 def record_order(symbol: str, mode: str, status: str):
     if _PROM:
         _orders_total.labels(symbol, mode, status).inc()
+
+
+def record_exchange_order(exchange_id: str, mode: str, status: str):
+    if _PROM:
+        _orders_total.labels(exchange_id, mode, status).inc()
+
+
+def record_exchange_unknown(exchange_id: str):
+    if _PROM:
+        _exchange_unknown_total.labels(exchange_id).inc()
 
 
 def set_equity(value: float):

@@ -1,4 +1,4 @@
-# Architecture (behavioral contracts moved out of code comments)
+﻿# Architecture (behavioral contracts moved out of code comments)
 
 Code files carry no rationale comments by rule; this document owns the
 contracts that used to live in them.
@@ -220,3 +220,56 @@ Cycle-wide sources (`macro`, `trending`, `market_indices`) are keyed by `None`
 and fetched once per cycle no matter how many symbols or timeframes run.
 Per-symbol sources are keyed by symbol; news is keyed by base asset. A failed
 source is logged once per cycle, not once per caller.
+
+## Exchange connectivity layers
+
+```
+app/telegram_bot.py            admin commands only
+        |
+services/trading_service.py    create_trading_stack -> _build_exchange_service
+        |
+trading/exchanges/             everything that may import ccxt
+   execution_service.py        the single decision + submission path
+   gate_inputs.py              settings and gate booleans
+   ccxt_gateway.py             public and authenticated venue calls
+   authenticated.py            balances and order lookups by client id
+   permissions.py              key permission check
+   credentials.py              ENCRYPTED_<NAME> loading only
+   confirmation.py             one-time live code
+   registry.py                 the 22 frozen ExchangeSpec values
+   factory.py                  build_gateway (Ourbit raises)
+        |
+trading/live_ledger.py         durable order rows (aiosqlite, WAL)
+trading/reconciliation.py      forward-only status repair
+```
+
+The dependency direction is one way. `domain/exchange_types.py` holds the
+statuses and frozen dataclasses with no imports outside the standard library.
+`application/exchange_ports.py` holds the gateway Protocol.
+`application/exchange_policy.py` holds `submission_mode`, `risk_check`,
+`map_ccxt_status`, `next_status` and `scope_matches_profile` as pure
+functions. No other package imports `ccxt`:
+`tests/unit/test_architecture.py` enforces the domain and application rule and
+`tests/unit/trading/test_no_withdraw_calls.py` scans the exchange package.
+
+Order submission is fail closed at every step:
+
+```
+submit_signal
+  -> registry lookup                KeyError -> unknown_exchange
+  -> profile scope                  mismatch -> scope_mismatch
+  -> credential load                absent or plaintext -> credentials_missing
+  -> halt flag                      set -> halted
+  -> submission_mode gate           any unmet condition -> refused with a reason
+  -> live mode                      one-time code required (60 s, single use)
+  -> market data + normalize        venue error -> refused, no row
+  -> risk_check                     rejection -> refused, no row
+  -> ledger.append_pending          duplicate -> refused, no second order
+  -> shadow                         record only, never place
+  -> place_limit_order              network error -> row stays pending_submit
+  -> terminal statuses             never rewritten by any path
+```
+
+Reconciliation reads the venue through the client order id, applies
+`next_status` and stops at `unknown` for a human decision. It never sends an
+order and never creates a second row.

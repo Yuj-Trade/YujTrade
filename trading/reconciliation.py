@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from application.exchange_policy import next_status
+from common import metrics
 from config.logger import logger
 from domain.exchange_types import PENDING_SUBMIT, UNKNOWN
 from trading.live_ledger import LiveLedger
@@ -60,6 +61,8 @@ async def reconcile_once(
                 str(row["client_order_id"]), exchange_id, target, "reconcile_no_snapshot"
             )
         changed.append(str(row["client_order_id"]))
+        if target == UNKNOWN:
+            metrics.record_exchange_unknown(exchange_id)
         if target == UNKNOWN and notify is not None:
             await notify(
                 f"Order {row['client_order_id']} on {exchange_id} is unknown; "

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from application.exchange_policy import risk_check, submission_mode
+from common import metrics
 from config.logger import logger
 from config.settings import ConfigManager
 from domain.exchange_types import (
@@ -277,6 +278,7 @@ class ExchangeExecutionService:
                 f"Shadow signal {signal_id} on {exchange_id}: {intent.symbol} {side} "
                 f"{norm_amount} @ {norm_price}"
             )
+            metrics.record_exchange_order(exchange_id, mode, SHADOW)
             return SubmitResult(
                 ok=True,
                 mode=mode,
@@ -291,6 +293,7 @@ class ExchangeExecutionService:
         if result.accepted:
             await self.ledger.set_exchange_order_id(cid, exchange_id, result.exchange_order_id)
             await self.ledger.set_status(cid, exchange_id, SUBMITTED, "submitted")
+            metrics.record_exchange_order(exchange_id, mode, SUBMITTED)
             await self._announce(
                 f"Order {cid} submitted on {exchange_id} (mode={mode}, {intent.symbol} {side})"
             )
@@ -304,6 +307,7 @@ class ExchangeExecutionService:
             )
         cleaned = sanitize(result.error, secrets)
         await self.ledger.set_status(cid, exchange_id, REJECTED, cleaned)
+        metrics.record_exchange_order(exchange_id, mode, REJECTED)
         await self._announce(f"Order {cid} rejected on {exchange_id}: {cleaned}")
         return SubmitResult(
             ok=False,
