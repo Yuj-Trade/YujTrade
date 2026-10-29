@@ -143,13 +143,11 @@ in the open lists.
    only covers resolutions recorded from the phase-3 resolution path onwards.
    Backfilling them would require re-running the old fallback, which is
    exactly the non-reproducible behaviour this work removed.
-10. Performance report â€” data provider windowing. `fetch_ohlcv_data` only
-    accepts a candle *count*, not a time range, so the resolver asks for
-    `ceil(expiry / candle_duration) + 2` candles and then verifies the
-    coverage itself. A signal that is reconciled later than its expiry can
-    therefore fail the coverage check and resolve to `no_data`. A time-range
-    fetch in `data/data_provider.py` would remove the limit; that is a data
-    contract change and needs its own proposal.
+10. ~~Performance report — data provider windowing.~~ **Resolved 2026-10-29**
+    (`870d0c4`). `MarketDataProvider.fetch_ohlcv_range` pages the candles by
+    time window, and `_resolve_signal_outcome` fetches the expiry window
+    directly instead of deriving a count. A signal reconciled later than its
+    expiry no longer fails the coverage check because of the request size.
 11. Performance report â€” the `1M` candle duration is a fixed 43200 minutes
     (30 days) because a calendar month has no fixed length. The coverage
     check for a monthly signal is therefore approximate. A per-month
@@ -182,12 +180,10 @@ in the open lists.
     never run at the same time as the main tracker: the two trackers would
     overwrite each other's history and the notification state. `app/tasks.py`
     is not wired to the outcome watch loop.
-17. The outcome watch fetches the candles with a **count**, not a time
-    range, like the resolution path (see open issue 10). A signal that is
-    observed long after its creation may not find a covered window and is
-    then not observed at all. A time-range fetch in
-    `data/data_provider.py` would remove the limit and is a data contract
-    change that needs its own proposal.
+17. ~~The outcome watch fetches the candles with a count, not a time range.~~
+    **Resolved 2026-10-29** (`870d0c4`). `_watch_group` calls
+    `fetch_ohlcv_range(symbol, timeframe, oldest, now)`, so a signal observed
+    long after its creation still finds the window it needs.
 
 ## Legacy tracked artifacts (resolved in v3.0, still true)
 

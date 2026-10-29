@@ -154,6 +154,8 @@ is never re-resolved.
   coverage itself. A signal reconciled later than its expiry can fail the
   coverage check and become `no_data`; the `no_data` ratio is a monitored
   acceptance criterion of the soak.
+  *Superseded 2026-10-29 (`870d0c4`): `fetch_ohlcv_range` fetches the
+  window by time, so the request size no longer decides coverage.*
 - **The `1M` candle duration is a fixed 43200 minutes** (30 days) because
   a calendar month has no fixed length, so the monthly coverage check is
   approximate.
