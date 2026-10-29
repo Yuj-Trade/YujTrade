@@ -211,3 +211,16 @@ config_hash (min_trades_for_ratios = 3)  = 3b52ca2c086a3f140a15c8da7965b3ae4207b
   "win_rate": 0.6666666666666666
 }
 ```
+
+## Report schema v2 note
+
+Since `performance-report-v2` (P3) every record above carries no entry
+quote volume, so each one is counted as a legacy full fill and the
+`coverage` block reads
+`{"legacy_resolutions_included": false, "legacy_full_fill_records": 3, "unfilled_trades": 0}`.
+The cost profile is the legacy report profile (`legacy-report-v1`), so the
+arithmetic of steps 1 to 6 above is unchanged. The `data_hash` now covers
+the extra `entry_quote_volume` field and is
+`94e5374204b61d1e43f8ded6e6cf29d1526d52b1c91fe303c02fb25caee82e9c`; the
+`config_hash` now covers the effective cost profile. The cost-model-v2
+variant with volume and partial fills is `docs/performance-worked-example-v2.md`.
