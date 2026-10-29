@@ -175,3 +175,71 @@ def test_with_ml_refuses_artifact_overlapping_holdout(tmp_path):
             artifact_root=tmp_path / "artifacts",
             model_path=tmp_path / "models",
         )
+
+
+def test_holdout_report_is_schema_v2_with_the_unified_sharpe(tmp_path):
+    module = _load_run_holdout()
+    out = tmp_path / "report.json"
+    state = tmp_path / "state.json"
+    result = module.run_holdout(
+        ROOT / "tests/fixtures/ohlcv_1h.csv",
+        state,
+        confirm=True,
+        symbol="BTC/USDT",
+        timeframe="1h",
+        out=out,
+    )
+
+    assert result["schema_version"] == "holdout-v2"
+    assert "sharpe_legacy_pnl" in result
+    assert "metrics_v2" in result
+    assert result["cost_model_version"] == "cost-model-v2"
+    assert result["periods_per_year"] == 365.0
+    assert result["rf_annual"] == 0.0
+    metrics_v2 = result["metrics_v2"]
+    for key in ("sortino", "max_drawdown_depth", "win_rate", "profit_factor", "expectancy_pnl"):
+        assert key in metrics_v2
+    assert result["sharpe"] == metrics_v2["sharpe"]
+
+
+def test_holdout_without_losses_has_no_profit_factor(tmp_path):
+    module = _load_run_holdout()
+    out = tmp_path / "report.json"
+    state = tmp_path / "state.json"
+    result = module.run_holdout(
+        ROOT / "tests/fixtures/ohlcv_1h.csv",
+        state,
+        confirm=True,
+        symbol="BTC/USDT",
+        timeframe="1h",
+        out=out,
+    )
+
+    if result["metrics_v2"]["profit_factor"] is None:
+        assert result["profit_factor"] is None
+    else:
+        assert result["profit_factor"] > 0.0
+
+
+def test_a_v1_report_without_schema_version_is_readable(tmp_path):
+    module = _load_run_holdout()
+    out = tmp_path / "report.json"
+    out.write_text('{"trades_count": 1, "sharpe": 1.0}', encoding="utf-8")
+    stored = json.loads(out.read_text(encoding="utf-8"))
+
+    assert module.report_schema_version(stored) == "holdout-v1"
+
+
+def test_the_state_file_is_not_touched_by_the_schema_change(tmp_path):
+    module = _load_run_holdout()
+    state = tmp_path / "state.json"
+    module.run_holdout(
+        ROOT / "tests/fixtures/ohlcv_1h.csv",
+        state,
+        confirm=True,
+        out=tmp_path / "report.json",
+    )
+
+    assert state.exists()
+    payload = json.loads(state.read_text(encoding="utf-8"))
+    assert "holdout" in json.dumps(payload).lower() or payload

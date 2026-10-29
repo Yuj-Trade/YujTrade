@@ -1,8 +1,10 @@
 import argparse
 import asyncio
 import json
+import statistics
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,10 +27,73 @@ from common.constants import LONG_TERM_CONFIG
 from config.settings import ConfigManager
 from data.data_validator import DataQualityChecker
 from domain.costs import cost_profile_from_config
+from domain.performance import (
+    ClosedTrade,
+    profit_factor,
+    summarize_closed_trades,
+    win_rate,
+)
 from modeling.artifacts import ArtifactRegistry
 from strategy.signal_generator import SignalGenerator
 
 EQUITY_START = 1_000_000.0
+HOLDOUT_SCHEMA_VERSION = "holdout-v2"
+
+
+def _holdout_summary(trades: list, periods_per_year: float, rf_annual: float) -> dict[str, object]:
+    closed: list[ClosedTrade] = []
+    for index, trade in enumerate(trades):
+        exit_at = trade.exit_time
+        if exit_at.tzinfo is None:
+            exit_at = exit_at.replace(tzinfo=UTC)
+        fraction = float(trade.r_multiple) * 1.0 / 100.0
+        closed.append(ClosedTrade(exit_at.astimezone(UTC), str(trade.signal_id or index), fraction))
+    if not closed:
+        return {
+            "sortino": None,
+            "max_drawdown_depth": 0.0,
+            "max_drawdown_duration": 0,
+            "win_rate": None,
+            "profit_factor": None,
+            "expectancy_pnl": None,
+            "sharpe": None,
+        }
+    start = min(item.exit_at.date() for item in closed)
+    end = max(item.exit_at.date() for item in closed)
+    summary = summarize_closed_trades(
+        closed,
+        initial_equity=EQUITY_START,
+        start=start,
+        end=end,
+        periods_per_year=periods_per_year,
+        rf_annual=rf_annual,
+        min_trades_for_ratios=2,
+    )
+    pnls = [float(trade.pnl) for trade in trades]
+    fractions = [item.return_fraction for item in closed]
+    return {
+        "sortino": summary.sortino,
+        "max_drawdown_depth": summary.max_drawdown,
+        "max_drawdown_duration": _drawdown_duration(closed, EQUITY_START),
+        "win_rate": win_rate(fractions),
+        "profit_factor": profit_factor(fractions),
+        "expectancy_pnl": statistics.fmean(pnls) if pnls else None,
+        "sharpe": summary.sharpe,
+    }
+
+
+def _drawdown_duration(closed: list[ClosedTrade], initial_equity: float) -> int:
+    equity = initial_equity
+    peak = initial_equity
+    peak_index = 0
+    best = 0
+    for index, item in enumerate(closed, start=1):
+        equity *= 1.0 + item.return_fraction
+        if equity > peak:
+            peak = equity
+            peak_index = index
+        best = max(best, index - peak_index)
+    return best
 
 
 def _simulator_config() -> SimulatorConfig:
@@ -131,8 +196,16 @@ def _simulator_inputs(signals: list) -> list[dict]:
     return simulator_inputs_from_signals(signals)
 
 
-def _trade_metrics(trades: list, equity_start: float) -> dict[str, float]:
-    metrics = shared_trade_metrics(trades, equity_start)
+def _trade_metrics(
+    trades: list,
+    equity_start: float,
+    *,
+    periods_per_year: float = 365.0,
+    rf_annual: float = 0.0,
+) -> dict[str, object]:
+    metrics = shared_trade_metrics(
+        trades, equity_start, periods_per_year=periods_per_year, rf_annual=rf_annual
+    )
     simulated = simulate_r_multiples([float(trade.r_multiple) for trade in trades])
     ordered = sorted(simulated)
     if ordered:
@@ -146,6 +219,16 @@ def _trade_metrics(trades: list, equity_start: float) -> dict[str, float]:
         [float(trade.r_multiple) for trade in trades]
     )
     return metrics
+
+
+def _legacy_pnl_sharpe(trades: list) -> float | None:
+    pnls = [float(trade.pnl) for trade in trades]
+    if len(pnls) < 2:
+        return None
+    spread = statistics.pstdev(pnls)
+    if spread == 0.0:
+        return None
+    return statistics.fmean(pnls) / spread * (len(pnls) ** 0.5)
 
 
 def run_holdout(
@@ -194,12 +277,29 @@ def run_holdout(
     )
 
     candles = _candles(frame)
-    simulator = EventDrivenSimulator(_simulator_config())
+    simulator_config = _simulator_config()
+    simulator = EventDrivenSimulator(simulator_config)
     trades, stats = simulator.run_with_stats(candles, _simulator_inputs(signals), EQUITY_START)
-    metrics = _trade_metrics(trades, EQUITY_START)
+    periods_per_year = float(
+        config_manager.get(
+            "performance_periods_per_year",
+            ConfigManager.DEFAULT_CONFIG["performance_periods_per_year"],
+        )
+    )
+    rf_annual = float(
+        config_manager.get(
+            "performance_rf_annual", ConfigManager.DEFAULT_CONFIG["performance_rf_annual"]
+        )
+    )
+    metrics = _trade_metrics(
+        trades, EQUITY_START, periods_per_year=periods_per_year, rf_annual=rf_annual
+    )
+    legacy_sharpe = _legacy_pnl_sharpe(trades)
     close = holdout["close"].astype(float)
     buy_and_hold_return = float(close.iloc[-1] / close.iloc[0] - 1.0)
+    summary = _holdout_summary(trades, periods_per_year, rf_annual)
     result: dict[str, object] = {
+        "schema_version": HOLDOUT_SCHEMA_VERSION,
         "rows": int(len(holdout)),
         "data_hash": guard.data_hash,
         "config_hash": guard.config_hash,
@@ -218,12 +318,22 @@ def run_holdout(
             "no_window": stats.skipped_no_window,
             "no_outcome": stats.skipped_no_outcome,
             "size_zero": stats.skipped_size_zero,
+            "unfilled": stats.skipped_unfilled,
         },
         "equity_start": EQUITY_START,
         "git_commit": _git_commit(),
         "evaluated_at_utc": datetime.now(UTC).isoformat(),
+        "cost_model_version": simulator_config.effective_profile().version,
+        "periods_per_year": periods_per_year,
+        "rf_annual": rf_annual,
+        "sharpe_legacy_pnl": legacy_sharpe,
+        "metrics_v2": summary,
     }
     result.update(metrics)
+    result["sharpe"] = summary["sharpe"]
+    result["sortino"] = summary["sortino"]
+    if result.get("profit_factor") == 0.0:
+        result["profit_factor"] = None
     target = (
         Path(out)
         if out
@@ -261,3 +371,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def report_schema_version(payload: Mapping[str, object]) -> str:
+    version = payload.get("schema_version")
+    return str(version) if version else "holdout-v1"
