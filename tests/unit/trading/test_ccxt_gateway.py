@@ -230,21 +230,171 @@ async def test_error_text_redacts_secrets(fake_ccxt):
     await gateway.close()
 
 
-@pytest.mark.asyncio
-async def test_place_limit_order_is_not_implemented_yet(fake_ccxt):
+class CreateOrderClient(FakeClient):
+    def __init__(self, options=None):
+        super().__init__(options)
+        self.create_response = {
+            "id": "ex-9",
+            "status": "open",
+            "fee": {"cost": 0.01, "currency": "USDT"},
+        }
+        self.create_error = None
+        self.create_args = []
+
+    async def create_order(self, symbol, order_type, side, amount, price, params=None):
+        self.create_args.append(
+            {
+                "symbol": symbol,
+                "order_type": order_type,
+                "side": side,
+                "amount": amount,
+                "price": price,
+                "params": params,
+            }
+        )
+        if self.create_error is not None:
+            raise self.create_error
+        return self.create_response
+
+
+def _create_gateway(monkeypatch, spec_id="binance", client=None):
+    created = {}
+    holder = client if client is not None else CreateOrderClient()
+
+    class FakeExchangeClass:
+        @staticmethod
+        def describe():
+            return {"id": "fake", "api": {}}
+
+        def __new__(cls, options=None):
+            created["client"] = holder
+            return holder
+
+    class FakeCcxtAsync:
+        class NetworkError(Exception):
+            pass
+
+        class ExchangeError(Exception):
+            pass
+
+        NotSupported = type("NotSupported", (Exception,), {})
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            return FakeExchangeClass
+
+    import trading.exchanges.ccxt_gateway as gateway_module
+
+    monkeypatch.setattr(gateway_module, "ccxt_async", FakeCcxtAsync())
+    return CcxtGateway(get_spec(spec_id), sandbox=False), holder
+
+
+def _intent(**overrides):
     from domain.exchange_types import OrderIntent
 
-    gateway = CcxtGateway(get_spec("binance"), sandbox=False)
-    intent = OrderIntent(
+    base = dict(
         exchange_id="binance",
         signal_id="s1",
         symbol="BTC/USDT",
         side="buy",
         amount=0.001,
         price=50_000.0,
-        client_order_id="c1",
+        client_order_id="abcdef0123456789abcdef0123456789",
         sandbox=False,
     )
-    with pytest.raises(NotImplementedError):
-        await gateway.place_limit_order(intent)
+    base.update(overrides)
+    return OrderIntent(**base)
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_returns_exchange_id(monkeypatch):
+    gateway, client = _create_gateway(monkeypatch)
+    await gateway.load_markets()
+    result = await gateway.place_limit_order(_intent())
+    assert result.accepted is True
+    assert result.exchange_order_id == "ex-9"
+    assert result.fee_cost == pytest.approx(0.01)
+    assert result.fee_currency == "USDT"
+    sent = client.create_args[0]
+    assert sent["order_type"] == "limit"
+    assert sent["side"] == "buy"
+    assert sent["params"]["clientOrderId"] == "abcdef0123456789abcdef0123456789"
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_missing_id_is_rejected(monkeypatch):
+    client = CreateOrderClient()
+    client.create_response = {"status": "open"}
+    gateway, _ = _create_gateway(monkeypatch, client=client)
+    await gateway.load_markets()
+    result = await gateway.place_limit_order(_intent())
+    assert result.accepted is False
+    assert result.error == "missing_order_id"
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_exchange_error_is_rejected(monkeypatch):
+    import trading.exchanges.ccxt_gateway as gateway_module
+
+    client = CreateOrderClient()
+    gateway, _ = _create_gateway(monkeypatch, client=client)
+    client.create_error = gateway_module.ccxt_async.ExchangeError("InvalidOrder")
+    await gateway.load_markets()
+    result = await gateway.place_limit_order(_intent())
+    assert result.accepted is False
+    assert "InvalidOrder" in result.error
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_network_error_propagates(monkeypatch):
+    import trading.exchanges.ccxt_gateway as gateway_module
+
+    client = CreateOrderClient()
+    gateway, _ = _create_gateway(monkeypatch, client=client)
+    client.create_error = gateway_module.ccxt_async.NetworkError("timeout")
+    await gateway.load_markets()
+    with pytest.raises(gateway_module.ccxt_async.NetworkError):
+        await gateway.place_limit_order(_intent())
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_rejects_invalid_side(monkeypatch):
+    gateway, _ = _create_gateway(monkeypatch)
+    await gateway.load_markets()
+    result = await gateway.place_limit_order(_intent(side="hold"))
+    assert result.accepted is False
+    assert result.error == "invalid_side"
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_place_limit_order_rejects_sandbox_mismatch(monkeypatch):
+    gateway, _ = _create_gateway(monkeypatch)
+    await gateway.load_markets()
+    result = await gateway.place_limit_order(_intent(sandbox=True))
+    assert result.accepted is False
+    assert result.error == "sandbox_mismatch"
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_kraken_uses_userref(monkeypatch):
+    gateway, client = _create_gateway(monkeypatch, spec_id="kraken")
+    await gateway.load_markets()
+    await gateway.place_limit_order(_intent(exchange_id="kraken", signal_id="signal12345678"))
+    assert client.create_args[0]["params"] == {"userref": "signal12"}
+    await gateway.close()
+
+
+@pytest.mark.asyncio
+async def test_lbank_uses_custom_id(monkeypatch):
+    gateway, client = _create_gateway(monkeypatch, spec_id="lbank")
+    await gateway.load_markets()
+    await gateway.place_limit_order(_intent(exchange_id="lbank"))
+    assert client.create_args[0]["params"] == {"custom_id": "abcdef0123456789abcdef0123456789"}
     await gateway.close()

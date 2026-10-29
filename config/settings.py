@@ -158,6 +158,23 @@ class ConfigManager:
         "outcome_notification_max_attempts": 3,
         "outcome_claim_ttl_seconds": 300,
         "outcome_watch_concurrency": 4,
+        "execution_dry_run": True,
+        "exchange_enabled": [],
+        "exchange_access_profile": "general",
+        "exchange_sandbox": True,
+        "exchange_shadow_mode": True,
+        "exchange_live_enabled": False,
+        "exchange_live_review_id": "",
+        "exchange_attested_keys": [],
+        "exchange_symbol_allowlist": [],
+        "exchange_max_order_notional_usdt": 50.0,
+        "exchange_max_daily_notional_usdt": 200.0,
+        "exchange_max_price_deviation_pct": 2.0,
+        "exchange_max_spread_pct": 0.5,
+        "exchange_ledger_path": "runs/live_ledger.db",
+        "exchange_reconcile_interval_seconds": 60,
+        "exchange_unknown_after_seconds": 120,
+        "exchange_request_timeout_ms": 15000,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {

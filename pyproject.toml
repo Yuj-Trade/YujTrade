@@ -45,6 +45,7 @@ markers = [
     "integration: integration test",
     "slow: slow test",
     "ml: test requires machine-learning artifacts",
+    "sandbox: test requires live sandbox credentials and network access",
 ]
 
 [tool.ruff]

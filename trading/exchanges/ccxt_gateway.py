@@ -116,7 +116,56 @@ class CcxtGateway:
         return min_amount, min_cost
 
     async def place_limit_order(self, intent: OrderIntent) -> PlacementResult:
-        raise NotImplementedError("place_limit_order_is_phase_seven")
+        self._market(intent.symbol)
+        if intent.side not in {"buy", "sell"}:
+            return PlacementResult(accepted=False, error="invalid_side")
+        if intent.sandbox and not self.sandbox:
+            return PlacementResult(accepted=False, error="sandbox_mismatch")
+        params = self._order_params(intent)
+        try:
+            response = await self.client.create_order(
+                intent.symbol,
+                "limit",
+                intent.side,
+                float(intent.amount),
+                float(intent.price),
+                params,
+            )
+        except ccxt_async.NetworkError:
+            raise
+        except ccxt_async.ExchangeError as exc:
+            return PlacementResult(accepted=False, error=self.error_text(exc))
+        if not isinstance(response, dict):
+            return PlacementResult(accepted=False, error="missing_order_id")
+        order_id = str(response.get("id") or "").strip()
+        if not order_id:
+            return PlacementResult(accepted=False, error="missing_order_id")
+        fee_payload = response.get("fee") or {}
+        fee_cost = 0.0
+        fee_currency = ""
+        if isinstance(fee_payload, dict):
+            fee_cost = float(fee_payload.get("cost") or 0.0)
+            fee_currency = str(fee_payload.get("currency") or "")
+        return PlacementResult(
+            accepted=True,
+            exchange_order_id=order_id,
+            fee_cost=fee_cost,
+            fee_currency=fee_currency,
+        )
+
+    def _order_params(self, intent: OrderIntent) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if self.exchange_id == "kraken":
+            params["userref"] = intent.signal_id[:8]
+            return params
+        if self.exchange_id == "lbank":
+            params["custom_id"] = intent.client_order_id
+            return params
+        if self.exchange_id == "bitvavo":
+            params["clientOrderId"] = intent.client_order_id
+            return params
+        params["clientOrderId"] = intent.client_order_id
+        return params
 
     async def fetch_order_by_client_id(
         self, symbol: str, client_order_id: str

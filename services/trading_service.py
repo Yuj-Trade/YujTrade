@@ -125,6 +125,27 @@ def _frame_candles(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     return candles
 
 
+def _build_exchange_service(config_manager: ConfigManager):
+    try:
+        from trading.exchanges.execution_service import ExchangeExecutionService
+        from trading.exchanges.factory import build_gateway
+        from trading.exchanges.gate_inputs import load_exchange_settings
+        from trading.live_ledger import LiveLedger
+    except ImportError as exc:
+        logger.error(f"Exchange service unavailable: {exc}")
+        return None
+    settings = load_exchange_settings(config_manager)
+    if not settings.enabled:
+        return None
+    ledger = LiveLedger(settings.ledger_path)
+    return ExchangeExecutionService(
+        settings=settings,
+        ledger=ledger,
+        gateway_factory=build_gateway,
+        execution_dry_run=bool(config_manager.get("execution_dry_run", True)),
+    )
+
+
 async def create_trading_stack(
     config_manager: ConfigManager | None = None,
     resource_manager: ResourceManager | None = None,
@@ -152,6 +173,7 @@ async def create_trading_stack(
         market_data_provider=market_data_provider,
         config_manager=config_manager,
         resource_manager=resource_manager,
+        exchange_service=_build_exchange_service(config_manager),
     )
     await trading_service.initialize()
 
@@ -167,10 +189,12 @@ class TradingService(ModelDataProvider):
         market_data_provider: MarketDataProvider,
         config_manager: ConfigManager,
         resource_manager: ResourceManager,
+        exchange_service: Any | None = None,
     ):
         self.market_data_provider = market_data_provider
         self.config_manager = config_manager
         self.resource_manager = resource_manager
+        self.exchange_service = exchange_service
         self.invalid_symbols: set[str] = set()
         self._initialized = False
 
