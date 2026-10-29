@@ -130,6 +130,7 @@ def _build_exchange_service(config_manager: ConfigManager):
         from trading.exchanges.execution_service import ExchangeExecutionService
         from trading.exchanges.factory import build_gateway
         from trading.exchanges.gate_inputs import load_exchange_settings
+        from trading.exchanges.permissions import verify_key_permissions
         from trading.live_ledger import LiveLedger
     except ImportError as exc:
         logger.error(f"Exchange service unavailable: {exc}")
@@ -138,11 +139,26 @@ def _build_exchange_service(config_manager: ConfigManager):
     if not settings.enabled:
         return None
     ledger = LiveLedger(settings.ledger_path)
+
+    async def permission_check(spec):
+        from trading.exchanges.credentials import load_exchange_credentials
+
+        credentials = load_exchange_credentials(spec, settings.sandbox)
+        gateway = build_gateway(spec, settings.sandbox, credentials)
+        try:
+            ok, reason = await verify_key_permissions(gateway, spec)
+        finally:
+            await gateway.close()
+        if not ok:
+            logger.warning(f"Key permissions not verified for {spec.exchange_id}: {reason}")
+        return ok
+
     return ExchangeExecutionService(
         settings=settings,
         ledger=ledger,
         gateway_factory=build_gateway,
         execution_dry_run=bool(config_manager.get("execution_dry_run", True)),
+        permission_check=permission_check,
     )
 
 

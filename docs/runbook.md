@@ -333,7 +333,6 @@ it never silently works and its value never reaches a log.
    one-time code from `/exchange_confirm`.
 
 ### 12.3 Emergency stop
-
 1. Send `/exchange_halt`. The control row `halted=1` in
    `runs/live_ledger.db` refuses every new submission, including shadow rows.
    Open orders are **not** cancelled by the halt; cancel them at the venue.
@@ -377,7 +376,35 @@ Exit criteria, from `ADR-0011`:
 - no price deviation outside `exchange_max_price_deviation_pct`;
 - no unexplained `unknown` row.
 
-### 12.7 Terms of use and account
+### 12.7 Live activation checklist
+
+All seven conditions below must hold before the live mode is returned by the
+gate. They are configuration, not code:
+
+1. `execution_dry_run` is `false`.
+2. `exchange_sandbox` is `false`.
+3. `exchange_live_enabled` is `true`.
+4. `exchange_live_review_id` names an ADR file on disk whose `Status:` line
+   says `accepted` (today: `ADR-0011`).
+5. The venue id is present in `exchange_attested_keys`.
+6. The key permission check passes, or the venue has no permission endpoint and
+   the attestation covers it. LBank never passes (`lbank_rule_not_defined`).
+7. `exchange_access_profile` matches the venue scope.
+
+Manual order for the operator:
+
+1. Confirm the shadow soak exit criteria of section 12.6.
+2. Set the six live values in `config.json` (never in a tracked file).
+3. Restart `python main.py` and send `/exchanges` to confirm the venue reads
+   `enabled`, `allowed` and `ready`.
+4. Run `/exchange_execute <venue> <signal_id>`.
+5. The bot refuses the live path and asks for a code. Run
+   `/exchange_confirm <code>` and repeat the execution request within 60
+   seconds. The code is single use.
+6. Watch `/exchange_status <client_order_id>` for the row, and
+   `/exchange_halt` if anything looks wrong.
+
+### 12.8 Terms of use and account
 
 This section records the operator statement; it is not a finding of the
 application.

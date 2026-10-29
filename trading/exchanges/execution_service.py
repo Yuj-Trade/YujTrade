@@ -42,6 +42,7 @@ class GatewayLike(Protocol):
 
 
 GatewayFactory = Callable[[ExchangeSpec, bool, Any], Any]
+PermissionCheck = Callable[[ExchangeSpec], Awaitable[bool]]
 
 
 @dataclass(frozen=True)
@@ -105,11 +106,13 @@ class ExchangeExecutionService:
         gateway_factory: GatewayFactory,
         notify: Notify | None = None,
         execution_dry_run: bool | None = None,
+        permission_check: PermissionCheck | None = None,
     ) -> None:
         self.settings = settings
         self.ledger = ledger
         self.gateway_factory = gateway_factory
         self.notify = notify
+        self.permission_check = permission_check
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
             if execution_dry_run is None
@@ -135,7 +138,15 @@ class ExchangeExecutionService:
         use_sandbox = bool(self.settings.sandbox)
         creds_ok, secrets = credentials_usable(spec, use_sandbox)
         halted = (await self.ledger.get_control("halted", "0")) == "1"
-        permissions_ok = True if spec.permission_endpoint is None else False
+        permissions_ok = True
+        if spec.permission_endpoint is not None and self.permission_check is not None:
+            try:
+                permissions_ok = bool(await self.permission_check(spec))
+            except Exception as exc:
+                logger.error(f"Permission verdict unavailable for {spec.exchange_id}: {exc}")
+                permissions_ok = False
+        elif spec.permission_endpoint is not None:
+            permissions_ok = False
         gate = build_gate_input(
             spec=spec,
             settings=self.settings,
