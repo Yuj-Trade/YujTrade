@@ -282,7 +282,19 @@ class TelegramBotHandler:
             )
             return
         for signal in signals[:5]:
-            result = await self.trading_service.execute_signal(signal, mode="paper")
+            try:
+                result = await self.trading_service.execute_signal(signal, mode="paper")
+            except Exception as e:
+                logger.opt(exception=True).error(
+                    f"Paper execution failed for {signal.symbol} {signal.timeframe}: {e}"
+                )
+                await update.message.reply_text(
+                    escape_markdown_v2(
+                        f"Paper order rejected: {signal.symbol} {signal.timeframe} (error)"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+                continue
             status = "accepted" if result.get("ok") else "rejected"
             await update.message.reply_text(
                 escape_markdown_v2(f"Paper order {status}: {signal.symbol} {signal.timeframe}"),

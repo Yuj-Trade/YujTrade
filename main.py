@@ -7,7 +7,7 @@ from app.telegram_bot import TelegramBotHandler, TelegramOutcomeNotifier
 from application.outcome_policy import NotificationPolicy, PolicyError, build_policy
 from common.constants import TIME_FRAMES
 from config.logger import logger
-from config.settings import SecretsManager
+from config.settings import ConfigManager, SecretsManager
 from services.outcome_dispatch import dispatch_outcomes
 from services.trading_service import TradingService
 from utils.resource_manager import ResourceManager
@@ -116,6 +116,20 @@ class MainApp:
                 "outcome_watch", started, started, datetime.now(UTC), status, error
             )
 
+    async def _paper_resolution_loop(self, config_manager) -> None:
+        interval = float(config_manager.get("outcome_watch_interval_minutes", 15)) * 60.0
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=interval)
+            except TimeoutError:
+                pass
+            if self.shutdown_event.is_set():
+                break
+            try:
+                await self.trading_service.resolve_open_paper_positions(datetime.now(UTC))
+            except Exception as exc:
+                logger.opt(exception=True).error(f"Paper resolution tick failed: {exc}")
+
     async def run(self):
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -188,6 +202,12 @@ class MainApp:
                     self.background_tasks_manager.create_task(
                         self._outcome_watch_loop(policy),
                         name="OutcomeWatch",
+                    )
+                paper_default = ConfigManager.DEFAULT_CONFIG["paper_execution_enabled"]
+                if config_manager.get("paper_execution_enabled", paper_default):
+                    self.background_tasks_manager.create_task(
+                        self._paper_resolution_loop(config_manager),
+                        name="PaperResolution",
                     )
             else:
                 logger.warning("Telegram bot not started due to missing token or admin chat ID.")

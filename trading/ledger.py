@@ -70,6 +70,51 @@ BEFORE DELETE ON signal_resolutions
 BEGIN
     SELECT RAISE(ABORT, 'signal_resolutions is append-only');
 END;
+CREATE TABLE IF NOT EXISTS paper_positions_opened (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id TEXT NOT NULL UNIQUE,
+    signal_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    entry_price REAL NOT NULL CHECK (entry_price > 0),
+    stop REAL NOT NULL CHECK (stop > 0),
+    target REAL NOT NULL CHECK (target > 0),
+    fee REAL NOT NULL DEFAULT 0,
+    opened_at_utc TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS paper_positions_opened_no_update
+BEFORE UPDATE ON paper_positions_opened
+BEGIN
+    SELECT RAISE(ABORT, 'paper_positions_opened is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS paper_positions_opened_no_delete
+BEFORE DELETE ON paper_positions_opened
+BEGIN
+    SELECT RAISE(ABORT, 'paper_positions_opened is append-only');
+END;
+CREATE TABLE IF NOT EXISTS paper_positions_closed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id TEXT NOT NULL UNIQUE,
+    exit_price REAL NOT NULL CHECK (exit_price > 0),
+    exit_reason TEXT NOT NULL CHECK (exit_reason IN ('stop', 'target', 'expired')),
+    exit_at_utc TEXT NOT NULL,
+    fee REAL NOT NULL DEFAULT 0,
+    funding REAL NOT NULL DEFAULT 0,
+    pnl REAL NOT NULL,
+    closed_at_utc TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS paper_positions_closed_no_update
+BEFORE UPDATE ON paper_positions_closed
+BEGIN
+    SELECT RAISE(ABORT, 'paper_positions_closed is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS paper_positions_closed_no_delete
+BEFORE DELETE ON paper_positions_closed
+BEGIN
+    SELECT RAISE(ABORT, 'paper_positions_closed is append-only');
+END;
 """
 
 _POSITIONS_UPDATED_AT = "ALTER TABLE positions ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
@@ -210,6 +255,125 @@ class PaperLedger:
             return row is not None
         finally:
             await connection.close()
+
+    async def has_order(self, signal_id: str) -> bool:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                "SELECT 1 FROM orders WHERE signal_id = ? LIMIT 1",
+                (signal_id,),
+            )
+            row = await cursor.fetchone()
+            return row is not None
+        finally:
+            await connection.close()
+
+    async def append_position_opened(
+        self,
+        position_id: str,
+        signal_id: str,
+        symbol: str,
+        timeframe: str,
+        side: str,
+        quantity: float,
+        entry_price: float,
+        stop: float,
+        target: float,
+        fee: float,
+        opened_at_utc: datetime,
+    ) -> bool:
+        connection = await self._connect()
+        try:
+            await connection.execute(
+                "INSERT INTO paper_positions_opened(position_id, signal_id, symbol, timeframe, "
+                "side, quantity, entry_price, stop, target, fee, opened_at_utc) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    position_id,
+                    signal_id,
+                    symbol,
+                    timeframe,
+                    side,
+                    float(quantity),
+                    float(entry_price),
+                    float(stop),
+                    float(target),
+                    float(fee),
+                    format_utc_timestamp(opened_at_utc),
+                ),
+            )
+            await connection.commit()
+            return True
+        except aiosqlite.IntegrityError:
+            logger.debug(f"Duplicate paper position {position_id} ignored")
+            return False
+        finally:
+            await connection.close()
+
+    async def append_position_closed(
+        self,
+        position_id: str,
+        exit_price: float,
+        exit_reason: str,
+        exit_at_utc: datetime,
+        fee: float,
+        funding: float,
+        pnl: float,
+        closed_at_utc: datetime,
+    ) -> bool:
+        connection = await self._connect()
+        try:
+            await connection.execute(
+                "INSERT INTO paper_positions_closed(position_id, exit_price, exit_reason, "
+                "exit_at_utc, fee, funding, pnl, closed_at_utc) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    position_id,
+                    float(exit_price),
+                    exit_reason,
+                    format_utc_timestamp(exit_at_utc),
+                    float(fee),
+                    float(funding),
+                    float(pnl),
+                    format_utc_timestamp(closed_at_utc),
+                ),
+            )
+            await connection.commit()
+            return True
+        except aiosqlite.IntegrityError:
+            logger.debug(f"Duplicate paper close {position_id} ignored")
+            return False
+        finally:
+            await connection.close()
+
+    async def load_open_positions(self) -> list[dict[str, Any]]:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                "SELECT position_id, signal_id, symbol, timeframe, side, quantity, entry_price, "
+                "stop, target, fee, opened_at_utc FROM paper_positions_opened "
+                "WHERE position_id NOT IN (SELECT position_id FROM paper_positions_closed) "
+                "ORDER BY opened_at_utc, position_id"
+            )
+            rows = await cursor.fetchall()
+        finally:
+            await connection.close()
+        return [
+            {
+                "position_id": str(row[0]),
+                "signal_id": str(row[1]),
+                "symbol": str(row[2]),
+                "timeframe": str(row[3]),
+                "side": str(row[4]),
+                "quantity": float(row[5]),
+                "entry_price": float(row[6]),
+                "stop": float(row[7]),
+                "target": float(row[8]),
+                "fee": float(row[9]),
+                "opened_at_utc": parse_utc_timestamp(str(row[10])),
+            }
+            for row in rows
+        ]
 
     async def load_resolutions(
         self, start_utc: datetime, end_utc: datetime

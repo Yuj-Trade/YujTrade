@@ -12,7 +12,7 @@ from application.outcome_policy import NotificationPolicy
 from application.performance_report import PerformanceConfig, PerformanceReport
 from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
-from common.core import TradingSignal
+from common.core import Position, PositionSide, TradingSignal
 from common.exceptions import InvalidSymbolError
 from common.rate_limit import configure_rate_limits
 from config.logger import logger
@@ -285,6 +285,8 @@ class TradingService(ModelDataProvider):
             self.config_manager.get("performance_ledger_enabled", False)
         )
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
+        self._paper_barriers: dict[str, tuple[float, float]] = {}
+        self._paper_positions_ready = False
 
     def _log(self):
         return self._cycle_log
@@ -300,6 +302,7 @@ class TradingService(ModelDataProvider):
         self._redis_client = redis_client
         self.model_manager.redis_client = redis_client
         self.multi_tf_analyzer.redis = redis_client
+        await self.rehydrate_paper_positions()
         self._initialized = True
 
     async def get_data_for_model(
@@ -860,6 +863,189 @@ class TradingService(ModelDataProvider):
                 [], build_performance_config(self.config_manager), as_of
             )
         return await build_performance_report_from_ledger(ledger, self.config_manager, as_of)
+
+    def paper_execution_enabled(self) -> bool:
+        return bool(
+            self.config_manager.get(
+                "paper_execution_enabled", ConfigManager.DEFAULT_CONFIG["paper_execution_enabled"]
+            )
+        )
+
+    async def execute_signal(self, signal: TradingSignal, mode: str = "paper") -> dict[str, Any]:
+        if mode != "paper":
+            return {"ok": False, "reason": "unsupported_mode"}
+        if not self.paper_execution_enabled():
+            return {"ok": False, "reason": "paper_execution_disabled"}
+        ledger = self.performance_ledger
+        if ledger is None:
+            return {"ok": False, "reason": "ledger_unavailable"}
+        signal_id = make_signal_id(
+            signal.symbol, signal.timeframe, signal.timestamp, signal.signal_type.value
+        )
+        if await ledger.has_order(signal_id):
+            return {"ok": False, "reason": "duplicate_signal"}
+        candle = await self._last_closed_candle(signal.symbol, signal.timeframe)
+        if candle is None:
+            return {"ok": False, "reason": "no_mark_price"}
+        market_price = float(candle["close"])
+        volume = float(candle.get("volume") or 0.0)
+        prices = {signal.symbol: market_price}
+        for position in self.portfolio.positions.values():
+            if position.symbol not in prices:
+                mark = await self._mark_price(position.symbol, position.timeframe)
+                if mark is None:
+                    return {"ok": False, "reason": "no_mark_price"}
+                prices[position.symbol] = mark
+        equity = self.portfolio.equity(prices)
+        volatility = signal.market_context.get("volatility") if signal.market_context else None
+        current_vol = float(volatility) if volatility is not None else 0.0
+        order = self.paper_engine.submit_signal(signal, equity, prices, current_vol)
+        if order is None:
+            return {"ok": False, "reason": "risk_rejected"}
+        position = self.paper_engine.fill_order(
+            order.order_id,
+            market_price,
+            signal.stop_loss,
+            signal.exit_price,
+            candle_quote_volume=volume * market_price,
+        )
+        if position is None:
+            return {"ok": False, "reason": "unfilled"}
+        order_id = await ledger.append_order(
+            signal_id, signal.symbol, order.side.value, order.filled_quantity
+        )
+        if order_id is None:
+            self.paper_engine.cancel_order(order.order_id)
+            return {"ok": False, "reason": "duplicate_signal"}
+        ratio = order.filled_quantity / order.quantity if order.quantity > 0 else 0.0
+        self._paper_barriers[position.position_id] = (signal.stop_loss, signal.exit_price)
+        await ledger.append_position_opened(
+            position.position_id,
+            signal_id,
+            position.symbol,
+            signal.timeframe,
+            "buy" if order.side.value == "buy" else "sell",
+            position.quantity,
+            position.entry_price,
+            signal.stop_loss,
+            signal.exit_price,
+            order.fee_paid,
+            position.opened_at,
+        )
+        return {
+            "ok": True,
+            "order_id": order_id,
+            "position_id": position.position_id,
+            "filled_quantity": order.filled_quantity,
+            "fill_ratio": ratio,
+            "fill_price": position.entry_price,
+            "fee": order.fee_paid,
+        }
+
+    async def _last_closed_candle(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
+        now = datetime.now(UTC)
+        duration = candle_duration(timeframe)
+        limit_map = self.config_manager.get("model_data_limits", {})
+        lookback = max(int(limit_map.get(timeframe, 500)), 10)
+        try:
+            frame = await self.market_data_provider.fetch_ohlcv_data(
+                symbol, timeframe, limit=lookback
+            )
+        except Exception as e:
+            logger.debug(f"Paper mark price fetch failed for {symbol}-{timeframe}: {e}")
+            return None
+        if frame is None or frame.empty:
+            return None
+        for index, row in frame.iloc[::-1].iterrows():
+            moment = _utc_moment(index)
+            if moment is None or moment + duration > now:
+                continue
+            return {"timestamp": moment, "close": float(row["close"]), "volume": row.get("volume")}
+        return None
+
+    async def _mark_price(self, symbol: str, timeframe: str | None) -> float | None:
+        if timeframe is None:
+            return None
+        candle = await self._last_closed_candle(symbol, timeframe)
+        return None if candle is None else float(candle["close"])
+
+    async def rehydrate_paper_positions(self) -> int:
+        ledger = self.performance_ledger
+        if ledger is None or self._paper_positions_ready:
+            return 0
+        rows = await ledger.load_open_positions()
+        for row in rows:
+            position = Position(
+                position_id=row["position_id"],
+                symbol=row["symbol"],
+                side=PositionSide.LONG if row["side"] == "buy" else PositionSide.SHORT,
+                quantity=row["quantity"],
+                entry_price=row["entry_price"],
+                stop_loss=row["stop"],
+                take_profit=row["target"],
+                opened_at=row["opened_at_utc"],
+                signal_id=row["signal_id"],
+                timeframe=row["timeframe"],
+                fees_paid=row["fee"],
+            )
+            self.portfolio.positions.setdefault(position.position_id, position)
+            self._paper_barriers.setdefault(
+                position.position_id, (position.stop_loss, position.take_profit)
+            )
+        self._paper_positions_ready = True
+        if rows:
+            logger.info(f"Rehydrated {len(rows)} open paper position(s).")
+        return len(rows)
+
+    async def resolve_open_paper_positions(self, now: datetime) -> int:
+        ledger = self.performance_ledger
+        if ledger is None:
+            return 0
+        closed_count = 0
+        for position in list(self.portfolio.positions.values()):
+            timeframe = position.timeframe
+            if timeframe is None:
+                continue
+            try:
+                frame = await self.market_data_provider.fetch_ohlcv_range(
+                    position.symbol, timeframe, position.opened_at, now
+                )
+            except Exception as e:
+                logger.debug(f"Paper resolution fetch failed for {position.symbol}: {e}")
+                continue
+            candles = _frame_candles(frame)
+            result = self.paper_engine.resolve_position_with_candles(position.position_id, candles)
+            if result is None or result.get("reason") == "no_data":
+                continue
+            exit_at = result["resolution"].exit_at
+            await ledger.append_position_closed(
+                position.position_id,
+                float(result["exit"]),
+                str(result["reason"]),
+                exit_at,
+                float(result.get("funding", 0.0)) + 0.0,
+                float(result.get("funding", 0.0)),
+                float(result["pnl"]),
+                now,
+            )
+            closed_count += 1
+        return closed_count
+
+    async def portfolio_snapshot(self) -> dict[str, Any]:
+        prices: dict[str, float] = {}
+        for position in self.portfolio.positions.values():
+            mark = await self._mark_price(position.symbol, position.timeframe)
+            if mark is not None:
+                prices[position.symbol] = mark
+        snapshot = self.portfolio.snapshot(prices)
+        return {
+            "equity": snapshot.equity,
+            "cash": snapshot.cash,
+            "exposure_pct": snapshot.exposure_pct,
+            "open_positions": snapshot.open_positions,
+            "unrealized_pnl": snapshot.unrealized_pnl,
+            "realized_pnl": snapshot.realized_pnl,
+        }
 
     async def cleanup(self):
         logger.info("Cleaning up TradingService resources.")

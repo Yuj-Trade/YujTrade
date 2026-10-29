@@ -69,3 +69,23 @@ def test_paper_command_rejects_non_admin():
 
     trading_service.run_quick_analysis.assert_not_called()
     trading_service.execute_signal.assert_not_called()
+
+
+def test_paper_command_isolates_a_failing_signal():
+    trading_service = MagicMock(name="TradingService")
+    good = MagicMock(name="Good")
+    good.symbol, good.timeframe = "BTC/USDT", "1h"
+    bad = MagicMock(name="Bad")
+    bad.symbol, bad.timeframe = "ETH/USDT", "1h"
+    trading_service.run_quick_analysis = AsyncMock(return_value=[bad, good])
+    trading_service.execute_signal = AsyncMock(side_effect=[RuntimeError("boom"), {"ok": True}])
+    handler = _handler(trading_service)
+    update, context = _update_context()
+
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.paper_command(update, context))
+
+    assert trading_service.execute_signal.await_count == 2
+    texts = [str(call.args[0]) for call in update.message.reply_text.await_args_list]
+    assert any("rejected" in text and "error" in text for text in texts)
+    assert any("accepted" in text for text in texts)

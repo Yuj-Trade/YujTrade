@@ -174,6 +174,7 @@ class ConfigManager:
         "outcome_claim_ttl_seconds": 300,
         "outcome_watch_concurrency": 4,
         "execution_dry_run": True,
+        "paper_execution_enabled": True,
         "exchange_enabled": [],
         "exchange_access_profile": "general",
         "exchange_sandbox": True,
