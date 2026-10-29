@@ -202,3 +202,34 @@ in the final report.
 intact) with a new isolation case; the original
 `test_paper_command_rejects_non_admin` body was accidentally deleted by an
 edit and restored verbatim in the same commit.
+
+## P5 - cost-model-v2 in the simulator and the v2 golden [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit 1 | `ab4cd8a chore: restructure the backtest golden recorder` |
+| Commit 2 | `a5a9d59 fix: simulate cost-model-v2 in event-driven backtests [behavior-change]` |
+| Commit 3 | `6e855ec test: record cost-model-v2 backtest golden [behavior-change]` |
+| Files | `backtesting/simulator.py`, `scripts/record_backtest.py`, `scripts/run_holdout.py`, `scripts/run_walk_forward.py` |
+| Tests | `tests/unit/backtesting/test_simulator_cost_v2.py` (new, 8), v2 parity in `test_ledger_parity.py`, `tests/golden/test_cost_v2_baseline.py` (new, 4) |
+| Gate | default 1974 passed; golden determinism passes; ruff, format, `mypy domain` pass |
+
+### Golden audit
+
+```
+d17e604f011a94909796c907321eafb9bd2558e07b50f3d3e5d4e1b4a9c6a512  backtest_baseline.json   (unchanged)
+8f7173b71a7cb9bf503a4363542f7319425a3717d0296239d25088d0d75d265a  signals_baseline.json    (unchanged)
+a533b2ad45ccb28c52d051a1c982d303c996eb16c150a081c05dfa57c8c09011  backtest_cost_v2_baseline.json  (new)
+```
+
+The v2 baseline: 64 signals evaluated, 16 trades, final capital
+`994222.5239168201`, `skipped_unfilled = 0`, `cost_model_version =
+cost-model-v2`. Recorded once by `record_cost_v2_baseline()`; the golden test
+reproduces it byte for byte.
+
+### Deviation
+
+`test_baseline_files_use_sorted_keys` in `tests/golden/test_determinism.py`
+lists only the two legacy files, so the new file is not added to that list;
+the v2 file has its own sorted-key and determinism test instead. The legacy
+files were not re-recorded.
