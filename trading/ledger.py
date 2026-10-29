@@ -375,6 +375,39 @@ class PaperLedger:
             for row in rows
         ]
 
+    async def load_closed_positions(self) -> list[dict[str, Any]]:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                "SELECT closed.position_id, closed.exit_price, closed.exit_reason, "
+                "closed.exit_at_utc, closed.fee, closed.funding, closed.pnl, "
+                "opened.entry_price, opened.quantity FROM paper_positions_closed AS closed "
+                "JOIN paper_positions_opened AS opened "
+                "ON opened.position_id = closed.position_id "
+                "ORDER BY closed.exit_at_utc, closed.position_id"
+            )
+            rows = await cursor.fetchall()
+        finally:
+            await connection.close()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            pnl = float(row[6])
+            notional = float(row[7]) * float(row[8])
+            fraction = pnl / notional if notional > 0.0 else 0.0
+            result.append(
+                {
+                    "position_id": str(row[0]),
+                    "exit_price": float(row[1]),
+                    "exit_reason": str(row[2]),
+                    "exit_at_utc": parse_utc_timestamp(str(row[3])),
+                    "fee": float(row[4]),
+                    "funding": float(row[5]),
+                    "pnl": pnl,
+                    "return_fraction": fraction,
+                }
+            )
+        return result
+
     async def load_resolutions(
         self, start_utc: datetime, end_utc: datetime
     ) -> list[ResolutionRecord]:

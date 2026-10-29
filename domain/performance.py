@@ -282,3 +282,109 @@ def expectancy(r_values: Sequence[float]) -> float | None:
     if not r_values:
         return None
     return statistics.fmean(r_values)
+
+
+@dataclass(frozen=True)
+class ClosedTrade:
+    exit_at: datetime
+    signal_id: str
+    return_fraction: float
+
+    def __post_init__(self) -> None:
+        if self.exit_at.tzinfo is None:
+            raise ValueError("exit_at must be timezone-aware")
+        if not self.signal_id:
+            raise ValueError("signal_id must not be empty")
+        _require_finite(self.return_fraction, "return_fraction")
+        if self.return_fraction <= -1.0:
+            raise ValueError("a per-trade fraction of -1 or less would wipe out equity")
+
+
+@dataclass(frozen=True)
+class PnlTrade:
+    exit_at: datetime
+    signal_id: str
+    pnl: float
+
+    def __post_init__(self) -> None:
+        if self.exit_at.tzinfo is None:
+            raise ValueError("exit_at must be timezone-aware")
+        if not self.signal_id:
+            raise ValueError("signal_id must not be empty")
+        _require_finite(self.pnl, "pnl")
+
+
+@dataclass(frozen=True)
+class PerformanceSummary:
+    status: str
+    total_closed: int
+    final_equity: float
+    total_return: float
+    max_drawdown: float
+    sharpe: float | None
+    sortino: float | None
+
+
+def _ordered_trades(trades: Iterable[PnlTrade | ClosedTrade]) -> list[PnlTrade | ClosedTrade]:
+    return sorted(trades, key=lambda trade: (trade.exit_at.astimezone(UTC), trade.signal_id))
+
+
+def fractions_from_pnl(trades: Sequence[PnlTrade], initial_equity: float) -> list[ClosedTrade]:
+    _require_positive(initial_equity, "initial_equity")
+    equity = initial_equity
+    closed: list[ClosedTrade] = []
+    for trade in _ordered_trades(trades):
+        assert isinstance(trade, PnlTrade)
+        before = equity
+        fraction = trade.pnl / before
+        if fraction <= -1.0:
+            raise ValueError("a per-trade fraction of -1 or less would wipe out equity")
+        equity = before * (1.0 + fraction)
+        closed.append(ClosedTrade(trade.exit_at, trade.signal_id, fraction))
+    return closed
+
+
+def summarize_closed_trades(
+    trades: Sequence[ClosedTrade],
+    *,
+    initial_equity: float,
+    start: date,
+    end: date,
+    periods_per_year: float,
+    rf_annual: float,
+    min_trades_for_ratios: int,
+) -> PerformanceSummary:
+    _require_positive(initial_equity, "initial_equity")
+    _require_finite(rf_annual, "rf_annual")
+    _require_positive(periods_per_year, "periods_per_year")
+    if min_trades_for_ratios < 0:
+        raise ValueError("min_trades_for_ratios must be non-negative")
+    ordered = [trade for trade in _ordered_trades(trades) if isinstance(trade, ClosedTrade)]
+    fractions = [trade.return_fraction for trade in ordered]
+    curve = equity_curve(initial_equity, fractions)
+    drawdown = max_drawdown(curve)
+    daily = daily_returns(
+        [(trade.exit_at.astimezone(UTC).date(), trade.return_fraction) for trade in ordered],
+        start,
+        end,
+    )
+    risk_free_per_period = rf_annual / periods_per_year
+    enough = len(ordered) >= min_trades_for_ratios
+    if not ordered:
+        status = "no_trades"
+    elif not enough:
+        status = "insufficient_sample"
+    else:
+        status = "ok"
+    sharpe = sharpe_ratio(daily, risk_free_per_period, periods_per_year) if enough else None
+    sortino = sortino_ratio(daily, risk_free_per_period, periods_per_year) if enough else None
+    final_equity = curve[-1]
+    return PerformanceSummary(
+        status=status,
+        total_closed=len(ordered),
+        final_equity=final_equity,
+        total_return=(final_equity / initial_equity) - 1.0,
+        max_drawdown=drawdown.depth,
+        sharpe=sharpe,
+        sortino=sortino,
+    )

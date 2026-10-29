@@ -99,7 +99,9 @@ def _fold_hygiene(train_positions, test_positions) -> dict[str, Any]:
     }
 
 
-def _finite(value: float) -> bool:
+def _finite(value: float | None) -> bool:
+    if value is None:
+        return False
     return not (math.isnan(value) or math.isinf(value))
 
 
@@ -167,7 +169,7 @@ def run_walk_forward(
             buy_and_hold = float(closes.iloc[-1] / closes.iloc[0] - 1.0) if len(closes) > 1 else 0.0
         else:
             buy_and_hold = 0.0
-        finite = all(_finite(float(value)) for value in metrics.values())
+        finite = all(value is None or _finite(float(value)) for value in metrics.values())
         fold_reports.append(
             {
                 "index": fold.index,

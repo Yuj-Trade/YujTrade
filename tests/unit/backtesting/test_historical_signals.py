@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,6 +37,14 @@ def make_signal(symbol="BTC/USDT", timeframe="1M", side="buy"):
         timestamp=datetime(2024, 2, 1, tzinfo=UTC),
         stop_loss=99.0,
         exit_price=105.0,
+    )
+
+
+def _trade(pnl, index=0, signal_id=None):
+    return SimpleNamespace(
+        pnl=pnl,
+        exit_at=datetime(2024, 2, 1, tzinfo=UTC) + timedelta(days=index),
+        signal_id=signal_id or f"sig-{index}",
     )
 
 
@@ -150,43 +158,47 @@ def test_simulator_inputs_from_signals_handles_pandas_timestamp():
 def test_trade_metrics_empty_trades():
     metrics = trade_metrics([], 1000.0)
     assert metrics["trades_count"] == 0
-    assert metrics["win_rate"] == 0.0
-    assert metrics["profit_factor"] == 0.0
+    assert metrics["win_rate"] is None
+    assert metrics["profit_factor"] is None
     assert metrics["max_drawdown"] == 0.0
-    assert metrics["sharpe"] == 0.0
+    assert metrics["sharpe"] is None
+    assert metrics["sortino"] is None
     assert metrics["final_equity"] == 1000.0
 
 
 def test_trade_metrics_counts_wins():
-    trades = [SimpleNamespace(pnl=10.0), SimpleNamespace(pnl=-5.0), SimpleNamespace(pnl=20.0)]
+    trades = [_trade(10.0, 0), _trade(-5.0, 1), _trade(20.0, 2)]
     metrics = trade_metrics(trades, 1000.0)
     assert metrics["trades_count"] == 3
     assert metrics["win_rate"] == pytest.approx(2 / 3)
-    assert metrics["profit_factor"] == pytest.approx(30.0 / 5.0)
+    assert metrics["profit_factor"] == pytest.approx((0.01 + 20.0 / 1005.0) / (5.0 / 1010.0))
     assert metrics["final_equity"] == pytest.approx(1025.0)
 
 
-def test_trade_metrics_drawdown_tracking():
-    trades = [SimpleNamespace(pnl=100.0), SimpleNamespace(pnl=-150.0)]
+def test_trade_metrics_drawdown_is_a_fraction():
+    trades = [_trade(100.0, 0), _trade(-150.0, 1)]
     metrics = trade_metrics(trades, 1000.0)
     assert metrics["max_drawdown"] == pytest.approx(150.0 / 1100.0)
     assert metrics["final_equity"] == pytest.approx(950.0)
 
 
-def test_trade_metrics_sharpe_zero_for_single_trade():
-    metrics = trade_metrics([SimpleNamespace(pnl=10.0)], 1000.0)
-    assert metrics["sharpe"] == 0.0
+def test_trade_metrics_sharpe_is_none_for_a_single_trade():
+    metrics = trade_metrics([_trade(10.0)], 1000.0)
+    assert metrics["sharpe"] is None
+    assert metrics["sortino"] is None
 
 
-def test_trade_metrics_sharpe_finite():
-    trades = [SimpleNamespace(pnl=pnl) for pnl in (10.0, -4.0, 6.0, -2.0)]
-    metrics = trade_metrics(trades, 1000.0)
+def test_trade_metrics_sharpe_is_finite_and_annualised():
+    trades = [_trade(pnl, index) for index, pnl in enumerate((10.0, -4.0, 6.0, -2.0))]
+    metrics = trade_metrics(trades, 1000.0, periods_per_year=365.0, rf_annual=0.0)
+    assert metrics["sharpe"] is not None
     assert metrics["sharpe"] != 0.0
     assert metrics["sharpe"] == metrics["sharpe"]
+    assert metrics["sortino"] is not None
 
 
-def test_trade_metrics_all_losses_profit_factor_zero():
-    trades = [SimpleNamespace(pnl=-10.0), SimpleNamespace(pnl=-5.0)]
+def test_trade_metrics_without_losses_has_no_profit_factor():
+    trades = [_trade(10.0, 0), _trade(5.0, 1)]
     metrics = trade_metrics(trades, 1000.0)
-    assert metrics["profit_factor"] == 0.0
-    assert metrics["win_rate"] == 0.0
+    assert metrics["profit_factor"] is None
+    assert metrics["win_rate"] == pytest.approx(1.0)

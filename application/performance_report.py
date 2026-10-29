@@ -10,8 +10,8 @@ from domain.costs import (
     legacy_report_profile,
 )
 from domain.performance import (
+    ClosedTrade,
     ResolutionRecord,
-    daily_returns,
     equity_curve,
     expectancy,
     fixed_fraction_return,
@@ -19,8 +19,7 @@ from domain.performance import (
     max_drawdown,
     net_r_for_profile,
     profit_factor,
-    sharpe_ratio,
-    sortino_ratio,
+    summarize_closed_trades,
     win_rate,
 )
 
@@ -185,24 +184,25 @@ def build_performance_report(
     curve_times.extend(entry.record.exit_at.astimezone(UTC) for entry in entries)
     drawdown = max_drawdown(curve, curve_times)
 
-    daily = daily_returns(
-        [
-            (entry.record.exit_at.astimezone(UTC).date(), fraction)
-            for entry, fraction in zip(entries, fractions, strict=True)
-        ],
-        start_day,
-        as_of_day,
+    closed = [
+        ClosedTrade(entry.record.exit_at.astimezone(UTC), entry.record.signal_id, fraction)
+        for entry, fraction in zip(entries, fractions, strict=True)
+    ]
+    summary = summarize_closed_trades(
+        closed,
+        initial_equity=config.initial_cash,
+        start=start_day,
+        end=as_of_day,
+        periods_per_year=config.periods_per_year,
+        rf_annual=config.rf_annual,
+        min_trades_for_ratios=config.min_trades_for_ratios,
     )
-    risk_free_per_period = config.rf_annual / config.periods_per_year
-    enough = len(entries) >= config.min_trades_for_ratios
-    sharpe = sharpe_ratio(daily, risk_free_per_period, config.periods_per_year) if enough else None
-    sortino = (
-        sortino_ratio(daily, risk_free_per_period, config.periods_per_year) if enough else None
-    )
+    sharpe = summary.sharpe
+    sortino = summary.sortino
 
     if not entries:
         status = STATUS_NO_TRADES
-    elif not enough:
+    elif summary.status == "insufficient_sample":
         status = STATUS_INSUFFICIENT_SAMPLE
     else:
         status = STATUS_OK
@@ -325,3 +325,35 @@ def _data_hash(records: Sequence[ResolutionRecord]) -> str:
 def _config_hash(parameters: dict[str, float | int | str]) -> str:
     text = json.dumps(parameters, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def build_portfolio_summary(
+    closed_trades: Sequence[ClosedTrade],
+    initial_cash: float,
+    *,
+    start: date,
+    end: date,
+    periods_per_year: float,
+    rf_annual: float,
+    min_trades_for_ratios: int,
+) -> dict[str, object]:
+    summary = summarize_closed_trades(
+        closed_trades,
+        initial_equity=initial_cash,
+        start=start,
+        end=end,
+        periods_per_year=periods_per_year,
+        rf_annual=rf_annual,
+        min_trades_for_ratios=min_trades_for_ratios,
+    )
+    return {
+        "equity_source": "paper_portfolio",
+        "status": summary.status,
+        "total_closed": summary.total_closed,
+        "initial_equity": float(initial_cash),
+        "final_equity": summary.final_equity,
+        "total_return": summary.total_return,
+        "max_drawdown": summary.max_drawdown,
+        "sharpe": summary.sharpe,
+        "sortino": summary.sortino,
+    }
