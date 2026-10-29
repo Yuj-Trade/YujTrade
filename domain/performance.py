@@ -60,8 +60,11 @@ class ResolutionRecord:
     exit_reason: str
     candles_used: int
     resolver_version: str
+    entry_quote_volume: float | None = None
 
     def __post_init__(self) -> None:
+        if self.entry_quote_volume is not None:
+            _require_positive(self.entry_quote_volume, "entry_quote_volume")
         if self.side not in SIDES:
             raise ValueError(f"side must be buy or sell, got {self.side!r}")
         if self.exit_reason not in EXIT_REASONS:

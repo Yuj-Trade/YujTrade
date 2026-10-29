@@ -3,6 +3,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from domain.costs import first_candle_quote_volume
+
 _NO_DATA = "no_data"
 EVENT_KINDS: frozenset[str] = frozenset({"target", "stop", "expired"})
 
@@ -20,6 +22,7 @@ class Resolution:
     exit_price: float | None
     exit_at: datetime | None
     candles_used: int
+    entry_quote_volume: float | None = None
 
 
 @dataclass(frozen=True)
@@ -111,22 +114,25 @@ def resolve_signal_outcome(
         raise ValueError("candle_duration must be positive")
 
     end_at = created_at + timedelta(hours=expiry_hours)
+    entry_volume = first_candle_quote_volume(candles, created_at)
     window = _window_candles(candles, created_at, end_at)
     if not window:
-        return Resolution(_NO_DATA, None, None, 0)
+        return Resolution(_NO_DATA, None, None, 0, entry_volume)
     if window[0][0] > created_at + candle_duration:
-        return Resolution(_NO_DATA, None, None, 0)
+        return Resolution(_NO_DATA, None, None, 0, entry_volume)
     if window[-1][0] + candle_duration < end_at:
-        return Resolution(_NO_DATA, None, None, 0)
+        return Resolution(_NO_DATA, None, None, 0, entry_volume)
 
     hit = _first_barrier_hit(window, normalized_side, stop, target)
     if hit is not None:
-        return hit
+        return Resolution(
+            hit.exit_reason, hit.exit_price, hit.exit_at, hit.candles_used, entry_volume
+        )
 
     for timestamp, _high, _low, close in reversed(window):
         if close is not None:
-            return Resolution("expired", close, timestamp, len(window))
-    return Resolution(_NO_DATA, None, None, 0)
+            return Resolution("expired", close, timestamp, len(window), entry_volume)
+    return Resolution(_NO_DATA, None, None, 0, entry_volume)
 
 
 def _first_barrier_hit(

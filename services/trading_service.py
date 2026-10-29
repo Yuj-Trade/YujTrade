@@ -751,6 +751,8 @@ class TradingService(ModelDataProvider):
             return False
         if await ledger.has_resolution(signal_id):
             return True
+        if resolution.entry_quote_volume is None and resolution.exit_price is not None:
+            raise ValueError(f"resolution {signal_id} is missing its entry quote volume")
         record = ResolutionRecord(
             signal_id=signal_id,
             symbol=symbol,
@@ -765,6 +767,7 @@ class TradingService(ModelDataProvider):
             exit_reason=resolution.exit_reason,
             candles_used=resolution.candles_used,
             resolver_version=RESOLVER_VERSION,
+            entry_quote_volume=resolution.entry_quote_volume,
         )
         try:
             return await ledger.record_resolution(record)

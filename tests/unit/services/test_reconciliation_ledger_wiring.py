@@ -69,7 +69,7 @@ async def test_the_ledger_is_written_before_the_tracker_is_synchronised():
         update_resolution_details=AsyncMock(),
         set_outcome_event=AsyncMock(return_value=True),
     )
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0), tracker)
 
     await service.reconcile_pending_signals()
 
@@ -84,7 +84,7 @@ async def test_an_existing_resolution_skips_the_write_and_syncs_the_tracker():
         update_resolution_details=AsyncMock(),
         set_outcome_event=AsyncMock(return_value=True),
     )
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0), tracker)
 
     resolved = await service.reconcile_pending_signals()
 
@@ -104,7 +104,7 @@ async def test_a_ledger_error_keeps_the_signal_pending():
         update_resolution_details=AsyncMock(),
         set_outcome_event=AsyncMock(return_value=True),
     )
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0), tracker)
 
     resolved = await service.reconcile_pending_signals()
 
@@ -121,7 +121,7 @@ async def test_a_duplicate_write_keeps_the_signal_pending():
         update_resolution_details=AsyncMock(),
         set_outcome_event=AsyncMock(return_value=True),
     )
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0), tracker)
 
     resolved = await service.reconcile_pending_signals()
 
@@ -156,7 +156,7 @@ async def test_the_ledger_is_not_touched_when_the_flag_is_off():
         update_resolution_details=AsyncMock(),
         set_outcome_event=AsyncMock(return_value=True),
     )
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3), tracker)
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0), tracker)
     service._performance_ledger_enabled = False
 
     resolved = await service.reconcile_pending_signals()
@@ -169,7 +169,7 @@ async def test_the_ledger_is_not_touched_when_the_flag_is_off():
 
 async def test_the_recorded_resolution_carries_the_signal_identity():
     ledger = _ledger()
-    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3))
+    service = _service(ledger, Resolution("target", 110.0, _CREATED_AT, 3, 500.0))
 
     await service.reconcile_pending_signals()
 

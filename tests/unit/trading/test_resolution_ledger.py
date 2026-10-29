@@ -257,3 +257,121 @@ async def test_loaded_records_round_trip_their_fields(tmp_path):
     assert stored.resolver_version == "paper-resolution-v1"
     assert stored.created_at == datetime(2026, 10, 1, 10, tzinfo=UTC)
     assert stored.exit_at == datetime(2026, 10, 1, 14, tzinfo=UTC)
+
+
+_OLD_SCHEMA = """
+CREATE TABLE signal_resolutions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+    entry REAL NOT NULL,
+    stop REAL NOT NULL,
+    target REAL NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    exit_at_utc TEXT,
+    exit_price REAL,
+    exit_reason TEXT NOT NULL CHECK (exit_reason IN ('stop', 'target', 'expired', 'no_data')),
+    candles_used INTEGER NOT NULL CHECK (candles_used >= 0),
+    resolver_version TEXT NOT NULL,
+    recorded_at_utc TEXT NOT NULL,
+    CHECK ((exit_reason = 'no_data') = (exit_price IS NULL)),
+    CHECK ((exit_reason = 'no_data') = (exit_at_utc IS NULL))
+);
+CREATE TRIGGER signal_resolutions_no_update
+BEFORE UPDATE ON signal_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'signal_resolutions is append-only');
+END;
+CREATE TRIGGER signal_resolutions_no_delete
+BEFORE DELETE ON signal_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'signal_resolutions is append-only');
+END;
+"""
+
+
+async def _build_old_schema(path) -> None:
+    async with aiosqlite.connect(path) as connection:
+        await connection.executescript(_OLD_SCHEMA)
+        await connection.execute(
+            "INSERT INTO signal_resolutions(signal_id, symbol, timeframe, side, entry, stop, "
+            "target, created_at_utc, exit_at_utc, exit_price, exit_reason, candles_used, "
+            "resolver_version, recorded_at_utc) "
+            "VALUES ('legacy-1', 'BTC/USDT', '1h', 'buy', 100, 90, 120, "
+            "'2026-10-01T10:00:00.000000+00:00', '2026-10-01T14:00:00.000000+00:00', "
+            "120, 'target', 4, 'paper-resolution-v1', '2026-10-01T15:00:00.000000+00:00')"
+        )
+        await connection.commit()
+
+
+async def test_an_old_schema_database_gains_the_quote_volume_column(tmp_path):
+    db = tmp_path / "paper_ledger.db"
+    await _build_old_schema(db)
+    ledger = PaperLedger(db)
+    await ledger.initialize()
+
+    async with aiosqlite.connect(db) as connection:
+        cursor = await connection.execute("PRAGMA table_info(signal_resolutions)")
+        columns = {str(row[1]) for row in await cursor.fetchall()}
+    assert "entry_quote_volume" in columns
+
+
+async def test_an_old_row_reads_back_with_a_null_quote_volume(tmp_path):
+    db = tmp_path / "paper_ledger.db"
+    await _build_old_schema(db)
+    ledger = PaperLedger(db)
+    await ledger.initialize()
+
+    records = await ledger.load_resolutions(
+        datetime(2026, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC)
+    )
+
+    assert len(records) == 1
+    assert records[0].signal_id == "legacy-1"
+    assert records[0].entry_quote_volume is None
+
+
+async def test_a_new_row_round_trips_the_quote_volume(tmp_path):
+    db = tmp_path / "paper_ledger.db"
+    ledger = PaperLedger(db)
+    record = ResolutionRecord(
+        signal_id="sig-q",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        side="buy",
+        entry=100.0,
+        stop=90.0,
+        target=120.0,
+        created_at=datetime(2026, 10, 1, 10, tzinfo=UTC),
+        exit_at=datetime(2026, 10, 1, 14, tzinfo=UTC),
+        exit_price=120.0,
+        exit_reason="target",
+        candles_used=4,
+        resolver_version="paper-resolution-v1",
+        entry_quote_volume=12345.5,
+    )
+    await ledger.record_resolution(record)
+
+    loaded = await ledger.load_resolutions(
+        datetime(2026, 1, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC)
+    )
+
+    assert loaded[0].entry_quote_volume == pytest.approx(12345.5)
+
+
+async def test_the_migrated_table_still_rejects_update_and_delete(tmp_path):
+    db = tmp_path / "paper_ledger.db"
+    await _build_old_schema(db)
+    ledger = PaperLedger(db)
+    await ledger.initialize()
+
+    async with aiosqlite.connect(db) as connection:
+        with pytest.raises(aiosqlite.IntegrityError):
+            await connection.execute(
+                "UPDATE signal_resolutions SET entry_quote_volume = 1 WHERE signal_id = 'legacy-1'"
+            )
+    async with aiosqlite.connect(db) as connection:
+        with pytest.raises(aiosqlite.IntegrityError):
+            await connection.execute("DELETE FROM signal_resolutions WHERE signal_id = 'legacy-1'")

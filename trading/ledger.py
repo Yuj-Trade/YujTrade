@@ -74,6 +74,8 @@ END;
 
 _POSITIONS_UPDATED_AT = "ALTER TABLE positions ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
 
+_ENTRY_QUOTE_VOLUME = "ALTER TABLE signal_resolutions ADD COLUMN entry_quote_volume REAL"
+
 _RESOLUTION_COLUMNS = (
     "signal_id, symbol, timeframe, side, entry, stop, target, created_at_utc, "
     "exit_at_utc, exit_price, exit_reason, candles_used, resolver_version"
@@ -93,8 +95,16 @@ class PaperLedger:
         except aiosqlite.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+        await self._ensure_entry_quote_volume(connection)
         await connection.commit()
         return connection
+
+    async def _ensure_entry_quote_volume(self, connection: aiosqlite.Connection) -> None:
+        cursor = await connection.execute("PRAGMA table_info(signal_resolutions)")
+        columns = {str(row[1]) for row in await cursor.fetchall()}
+        if "entry_quote_volume" in columns:
+            return
+        await connection.execute(_ENTRY_QUOTE_VOLUME)
 
     async def initialize(self) -> None:
         connection = await self._connect()
@@ -154,8 +164,8 @@ class PaperLedger:
             await connection.execute(
                 "INSERT INTO signal_resolutions(signal_id, symbol, timeframe, side, entry, stop, "
                 "target, created_at_utc, exit_at_utc, exit_price, exit_reason, candles_used, "
-                "resolver_version, recorded_at_utc) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "resolver_version, recorded_at_utc, entry_quote_volume) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     resolution.signal_id,
                     resolution.symbol,
@@ -173,6 +183,9 @@ class PaperLedger:
                     int(resolution.candles_used),
                     resolution.resolver_version,
                     format_utc_timestamp(datetime.now(UTC)),
+                    None
+                    if getattr(resolution, "entry_quote_volume", None) is None
+                    else float(resolution.entry_quote_volume),
                 ),
             )
             await connection.commit()
@@ -204,7 +217,7 @@ class PaperLedger:
         connection = await self._connect()
         try:
             cursor = await connection.execute(
-                f"SELECT {_RESOLUTION_COLUMNS} FROM signal_resolutions "
+                f"SELECT {_RESOLUTION_COLUMNS}, entry_quote_volume FROM signal_resolutions "
                 "WHERE COALESCE(exit_at_utc, created_at_utc) BETWEEN ? AND ? "
                 "ORDER BY (exit_at_utc IS NULL), exit_at_utc, signal_id",
                 (format_utc_timestamp(start_utc), format_utc_timestamp(end_utc)),
@@ -260,4 +273,5 @@ def _resolution_from_row(row: tuple[Any, ...]) -> ResolutionRecord:
         exit_reason=str(row[10]),
         candles_used=int(row[11]),
         resolver_version=str(row[12]),
+        entry_quote_volume=None if row[13] is None else float(row[13]),
     )

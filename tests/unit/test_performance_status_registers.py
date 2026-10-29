@@ -109,3 +109,26 @@ def test_paper_trading_engine_has_no_hard_coded_cost_defaults():
 
     assert parameters["fee_rate"].default is inspect.Parameter.empty
     assert parameters["slippage_rate"].default is inspect.Parameter.empty
+
+
+def _imported_names(path: Path) -> set[str]:
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            names.add(node.module or "")
+            for alias in node.names:
+                names.add(f"{node.module}.{alias.name}" if node.module else alias.name)
+    return names
+
+
+def test_the_three_metric_helpers_are_not_imported_anywhere():
+    for helper in METRIC_HELPERS:
+        for path in _tracked_python_files():
+            imported = _imported_names(path)
+            assert not any(name == helper or name.endswith(f".{helper}") for name in imported), (
+                f"{path.relative_to(ROOT)} imports {helper}"
+            )
