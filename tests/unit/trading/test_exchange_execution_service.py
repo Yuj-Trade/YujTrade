@@ -378,3 +378,19 @@ def test_snapshot_status_is_terminal():
     snapshot = OrderSnapshot("ex", "cid", FILLED, 0.0, 0.0, 0.0, "")
     assert snapshot.status == FILLED
     assert datetime.now(UTC).tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_shadow_never_calls_place_limit_order_counter(ledger):
+    gateway = FakeGateway()
+    service = _service(gateway, ledger, _settings(sandbox=False, shadow_mode=True))
+    for index in range(5):
+        result = await service.submit_signal(
+            "binance", f"sig-{index}", "BTC/USDT", "buy", 0.0005, 50_000.0
+        )
+        assert result.ok is True
+        assert result.mode == "shadow"
+    assert gateway.placed == 0
+    rows = await ledger.get_shadow_rows()
+    assert len(rows) == 5
+    assert all(row["status"] == SHADOW for row in rows)
