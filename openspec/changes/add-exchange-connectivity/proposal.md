@@ -11,17 +11,12 @@ The operator asked for exchange connectivity: 22 venues in a registry, spot
 limit orders only, long-only, paper and sandbox by default, and no live order
 without an explicit operator activation.
 
-Status: approved.
+Status: pending approval.
 
-Operator approval was recorded from the one-shot input of the run that created
-this proposal:
-
-- "I approve the add-exchange-connectivity proposal."
-- The 22-exchange list and the access profiles are approved.
-- The default risk values in section 12.4 of the playbook are approved with no
-  override.
-- The operator declared that the terms of use of the accounts in use were
-  reviewed by the operator. The application does not perform that review.
+The operator has not confirmed this proposal in writing. The status changes to
+approved only after an explicit written confirmation from the operator in the
+conversation. The earlier text that recorded a one-shot approval is withdrawn;
+the operator's chat contains no such statement.
 
 ## What Changes
 

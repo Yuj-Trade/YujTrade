@@ -432,3 +432,62 @@ blocked decision, not a silent assumption.
 - [ ] Venue sandbox support is unverified for every venue whose
   `sandbox_expected` is `None`. `scripts/probe_exchanges.py` records it;
   the field is updated in the registry in its own commit afterwards.
+
+
+## Exchange connectivity review 2026-10-29 - open
+
+Findings from `yujtrade_exchange_connectivity_review.md`. Each one is tracked
+until the remediation run closes it or states why it stays open.
+
+- [ ] G-01 live ledger is built without `initialize()`; every ledger call
+  raises `no such table` on a fresh database and `/exchange_halt` does not
+  work. Remediated in R3; see `docs/remediation/exchange-remediation-2026-10-29.md`.
+- [ ] G-02 `reconcile_once` has no production caller, so a `pending_submit`
+  or `submitted` row is never resolved and `unknown` is never detected.
+  Remediated in R5.
+- [ ] G-03 the live confirmation flow is not wired: `issue_confirmation` has no
+  caller and the code never reaches `submit_signal`. Remediated in R8.
+- [ ] G-04 `/exchange_execute` calls `portfolio.equity(entry, stop)` with two
+  arguments, so sizing fails and every order is refused with
+  `invalid_quantity`. Remediated in R6.
+- [ ] G-05 the 32-character client order id exceeds the Gate limit of 28 and the
+  Kraken `userref` receives a symbol fragment. Remediated in R4.
+- [ ] G-06 the shadow soak cannot be measured: no reference price, no stored
+  refusals. Remediated in R9.
+- [ ] G-07 the confirmation code is consumed before the risk checks. Remediated
+  in R8.
+- [ ] G-08 the key permission verdict is not cached and runs in sandbox and
+  shadow. Remediated in R10.
+- [ ] G-09 reconciliation only looks orders up by `clientOrderId`. Remediated
+  in R4.
+- [x] G-10 `mypy domain` failed with the pinned mypy because `domain` had no
+  `__init__.py`. Closed upstream before this run; `mypy domain` is clean.
+- [x] G-11 `TradingService.execute_signal` and `portfolio_snapshot` were
+  missing. Closed upstream before this run.
+- [ ] G-12 kucoin declares `sandbox_expected=True` but ccxt 4.5.90 cannot
+  enable it. Remediated in R11.
+- [ ] G-13 `secret_encoding` for coinbase and bullish is unverified. Operator
+  item; unchanged.
+- [ ] G-14 ADR-0011 and ADR-0012 were recorded as accepted without a written
+  operator confirmation. Remediated in R1; both are `proposed` until the
+  operator confirms in writing.
+- [ ] G-15 the OpenSpec proposal was marked approved without confirmation.
+  Remediated in R1.
+- [ ] G-16 the run report overstates phases 6, 7, 8 and 10. Remediated in R13.
+- [ ] G-17 `review_is_accepted` resolves `docs/adr` from the working
+  directory. Remediated in R12.
+- [ ] G-18 the sizing error is swallowed at debug level. Remediated in R6.
+- [ ] G-19 `_enable_sandbox` maps `AttributeError` to a sandbox error.
+  Remediated in R12.
+- [ ] G-20 dead helpers. Remediated in R12.
+- [ ] G-21 `exchange_reconcile_interval_seconds` is configured but unused.
+  Remediated in R5.
+- [ ] G-22 `scripts/seed_exchange_env_names.py` is outside the playbook.
+  Remediated in R12.
+- [ ] G-23 every ledger method opens a new connection. Accepted limitation, no
+  change planned.
+- [ ] G-24 halt does not cancel open orders. By design; documented in R13.
+- [ ] G-25 LBank never reaches live because the permission rule is undefined.
+  By design; documented in R13.
+- [ ] G-26 Ourbit stays blocked until official API documentation exists. By
+  design; documented in R13.

@@ -1,10 +1,13 @@
 # ADR-0012: Exchange access profiles
 
-Status: accepted
+Status: proposed
 
-Operator approval was recorded from the one-shot input of the run that created
-this ADR on 2026-10-29. The operator also declared that the terms of use of the
-accounts in use were reviewed by the operator.
+Approval: pending. The operator has not confirmed this ADR in writing. The
+status changes to accepted only after an explicit written confirmation from the
+operator in the conversation.
+
+Operator statement on terms of use: pending. The operator has not yet declared
+this in writing.
 
 ## Context
 

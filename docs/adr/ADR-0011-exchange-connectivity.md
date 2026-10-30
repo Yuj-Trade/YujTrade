@@ -1,9 +1,10 @@
 # ADR-0011: Exchange connectivity for spot limit orders
 
-Status: accepted
+Status: proposed
 
-Operator approval was recorded from the one-shot input of the run that created
-this ADR on 2026-10-29.
+Approval: pending. The operator has not confirmed this ADR in writing. The
+status changes to accepted only after an explicit written confirmation from the
+operator in the conversation.
 
 ## Context
 
