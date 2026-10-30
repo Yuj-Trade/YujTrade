@@ -137,12 +137,12 @@ in the open lists.
 8. Feature store for training reuse. The Phase 3 prediction trace records
    what the model saw at prediction time; a store that training can consume
    needs its own OpenSpec proposal (`add-feature-store`) before it is built.
-9. Performance report â€” legacy resolutions. Signals that the tracker resolved
-   with the pre-phase-3 logic (the current-price fallback) are not written to
-   `signal_resolutions` and are therefore not part of the report. The report
-   only covers resolutions recorded from the phase-3 resolution path onwards.
-   Backfilling them would require re-running the old fallback, which is
-   exactly the non-reproducible behaviour this work removed.
+9. **Documented as a limitation, 2026-10-29** (`835e677`). Signals the
+   tracker resolved with the pre-phase-3 logic are not part of the report.
+   Backfilling them would need the non-reproducible current-price fallback,
+   so they stay excluded and are not backfilled. The report states the
+   exclusion in `legacy_resolutions_note` and counts it in the `coverage`
+   block (decision G8).
 10. ~~Performance report — data provider windowing.~~ **Resolved 2026-10-29**
     (`870d0c4`). `MarketDataProvider.fetch_ohlcv_range` pages the candles by
     time window, and `_resolve_signal_outcome` fetches the expiry window
@@ -153,18 +153,19 @@ in the open lists.
     check for a monthly signal is therefore approximate. A per-month
     duration derived from the candle timestamps themselves would remove the
     approximation.
-12. Sharpe in `scripts/run_holdout.py` is a different quantity from the
-    report Sharpe: it divides the mean pnl by `pstdev(pnl)` and multiplies by
-    the square root of the trade count, with no annualisation and no
-    risk-free rate. The holdout report schema is locked and the holdout
-    protocol is single-use, so the holdout path is left untouched. Unifying
-    the two definitions needs its own proposal.
-13. The report equity curve is a model, not the paper portfolio. It
-    compounds fixed fractions of the equity, while `PaperTradingEngine`
-    sizes its positions with the risk model and the portfolio exposure cap
-    and keeps the positions in the `PortfolioManager`. The two are
-    deliberately not reconciled in this phase; a reconciliation needs a
-    proposal because it changes the meaning of the reported equity.
+12. ~~Sharpe in `scripts/run_holdout.py` is a different quantity.~~ **Resolved 2026-10-29**
+    (`447b8bf`). The report is `holdout-v2`: the top-level `sharpe` is the
+    unified annualised value from `domain/performance.py`, and the previous
+    quantity is kept as `sharpe_legacy_pnl`. The single-use holdout protocol
+    is unchanged.
+13. **Documented as a decision, 2026-10-29** (`835e677`). The report
+    equity curve stays a model, not the paper portfolio: it compounds fixed
+    fractions of the signal model and carries
+    `equity_source: "signal_model"`. The executed paper portfolio is a
+    second, labelled view (`build_portfolio_summary`,
+    `equity_source: "paper_portfolio"`) that agrees with the report on the
+    same outcomes within `1e-9`. Merging them would change the meaning of
+    the reported equity, so they stay separate (decision G7).
 14. The reported cost model is flat per trade: no partial fill, no funding
     cost, no maker/taker distinction and no slippage model beyond the
     constant rate. The paper engine uses the same two rates, so the report

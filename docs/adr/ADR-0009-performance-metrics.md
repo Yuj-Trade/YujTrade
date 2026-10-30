@@ -173,3 +173,53 @@ is never re-resolved.
   risk-free rate. The holdout report schema is locked and the holdout
   protocol is single-use, so the holdout path is left untouched and the
   divergence is registered in `docs/open_issues.md`.
+
+## Amendment 2026-10-29 (P6)
+
+### One implementation
+
+The formulas above now have one implementation,
+`domain/performance.py:summarize_closed_trades`, which consumes
+`ClosedTrade` values (`exit_at`, `signal_id`, `return_fraction`).
+`fractions_from_pnl` converts a currency PnL series into return fractions
+against a sequential equity and raises when a trade drives the equity to
+zero or below. Every consumer uses it: the performance report, the paper
+portfolio summary (`application/performance_report.py:build_portfolio_summary`),
+the historical trade metrics, the holdout script and the walk-forward
+script. `backtesting/historical_signals.py:trade_metrics` keeps its legacy
+keys and returns `None` where a ratio is undefined.
+
+### Two labelled equity views
+
+The report equity, which compounds fixed fractions of the model, and the
+paper portfolio equity, which compounds the executed positions, stay two
+views. The report carries `equity_source: "signal_model"`; the paper
+portfolio summary carries `equity_source: "paper_portfolio"`. When the same
+R outcomes feed both, the Sharpe, the Sortino, the drawdown depth and the
+final equity agree within `1e-9`
+(`tests/unit/application/test_metrics_parity.py`).
+
+### Legacy exclusion
+
+Resolutions recorded before the phase-3 resolver stay excluded and are not
+backfilled. The report carries the fixed note
+`legacy_resolutions_note` and a `coverage` block:
+
+```json
+{
+  "legacy_resolutions_included": false,
+  "legacy_full_fill_records": 0,
+  "unfilled_trades": 0
+}
+```
+
+`legacy_full_fill_records` counts the rows without an entry quote volume
+(treated as a full fill); `unfilled_trades` counts the rows whose fill
+fraction is `0.0` (excluded from every statistic).
+
+### Cost model
+
+The cost section above describes the legacy report profile, which is still
+the default when no profile is supplied. The cost-model-v2 profile adds
+per-leg maker/taker fees, per-leg slippage, close-time funding and a
+partial fill; see `docs/performance-worked-example-v2.md`.
