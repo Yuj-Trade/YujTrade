@@ -222,6 +222,7 @@ class ModelManager:
         data: pd.DataFrame,
         promote: bool = True,
         warm_start: bool = False,
+        feature_frame: pd.DataFrame | None = None,
         **kwargs,
     ) -> TrainingOutcome | None:
         self._check_if_closed()
@@ -250,6 +251,7 @@ class ModelManager:
                 data,
                 executor_type="training",
                 warm_start=effective_warm_start,
+                feature_frame=feature_frame,
                 **kwargs,
             )
             if success:
@@ -474,6 +476,8 @@ class ModelManager:
                 "raw_confidence": raw_confidence,
                 "calibrated_confidence": calibrated_confidence,
                 "uncertainty": uncertainty,
+                "feature_vector": _model_input_vector(model, data, prediction_result),
+                "candle_time": data.index[-1],
             }
         except (ObjectClosedError, CancelledError) as e:
             self.logger.warning(
@@ -539,3 +543,14 @@ class ModelManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.shutdown()
+
+
+def _model_input_vector(model: Any, data: Any, prediction_result: Any) -> dict[str, float] | None:
+    try:
+        features = model.feature_engineer.create_features(data)
+        if features is None or features.empty:
+            return None
+        last = features.tail(1).iloc[0]
+        return {str(name): float(value) for name, value in last.items()}
+    except Exception:
+        return None

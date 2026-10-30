@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from application.learning_alerts import LearningEvent
 from config.logger import logger
 from modeling.drift import (
     DEFAULT_DRIFT_FEATURES,
@@ -29,6 +30,8 @@ class LearningSettings:
     drift_gate: bool = False
     max_interval_multiplier: int = 8
     live_window: int = 300
+    training_source: str = "ohlcv"
+    alert_drift_cooldown_hours: float = 24.0
 
     @classmethod
     def from_config(cls, config_manager: Any) -> "LearningSettings":
@@ -44,6 +47,8 @@ class LearningSettings:
             drift_gate=bool(raw.get("drift_gate", False)),
             max_interval_multiplier=max(1, int(raw.get("max_interval_multiplier", 8))),
             live_window=max(20, int(raw.get("live_window", 300))),
+            training_source=str(raw.get("training_source", "ohlcv")),
+            alert_drift_cooldown_hours=max(0.0, float(raw.get("alert_drift_cooldown_hours", 24))),
         )
 
 
@@ -76,6 +81,9 @@ class ModelLearner:
         self._tasks: set[asyncio.Task] = set()
         self._semaphore = asyncio.Semaphore(self.settings.max_concurrency)
         self.outcomes: dict[str, LearningOutcome] = {}
+        self.alert_sink: Any | None = None
+        self.feature_store: Any | None = None
+        self._drift_alert_at: dict[str, float] = {}
 
     @staticmethod
     def key_for(model_type: str, symbol: str, timeframe: str) -> str:
@@ -142,6 +150,7 @@ class ModelLearner:
         self._last_attempt[key] = self._clock()
 
         baseline = self._baseline_metrics(model_type, symbol, timeframe)
+        feature_frame = await self._store_training_frame(model_type, symbol, timeframe)
         outcome = await self.model_manager.train_model(
             model_type,
             symbol,
@@ -149,9 +158,14 @@ class ModelLearner:
             data,
             promote=False,
             warm_start=True,
+            feature_frame=feature_frame,
         )
         if outcome is None:
             self.outcomes[key] = LearningOutcome(key=key, status="failed")
+            if self.alert_sink is not None:
+                await self._emit(
+                    LearningEvent("failed", key, model_type, symbol, timeframe, "", ())
+                )
             return
 
         self._last_rows[key] = len(data)
@@ -227,3 +241,53 @@ class ModelLearner:
         await self.drain()
         self._tasks.clear()
         self._inflight.clear()
+
+    async def _store_training_frame(
+        self, model_type: str, symbol: str, timeframe: str
+    ) -> Any | None:
+        store = self.feature_store
+        if store is None or self.settings.training_source != "feature_store":
+            return None
+        try:
+            metadata = self.model_manager.artifacts.read_metadata(model_type, symbol, timeframe)
+        except (OSError, ValueError):
+            metadata = None
+        feature_list = metadata.get("feature_list") if isinstance(metadata, dict) else None
+        if not feature_list:
+            logger.info("Feature-store training unavailable: no artifact feature list.")
+            return None
+        try:
+            count = await store.count_labeled(symbol, timeframe, feature_list)
+        except Exception as exc:
+            logger.warning(f"Feature-store row count failed for {symbol}-{timeframe}: {exc}")
+            return None
+        minimum = int(self.config_manager.get("feature_store_min_rows", 500))
+        if count < minimum:
+            logger.info(
+                f"Feature-store training skipped for {symbol}-{timeframe}: "
+                f"{count} labeled rows < {minimum}."
+            )
+            return None
+        frame = await store.training_frame(
+            symbol, timeframe, feature_list, label_before=pd.Timestamp.now(tz="UTC")
+        )
+        if frame is None or frame.empty:
+            logger.info(f"Feature-store training skipped for {symbol}-{timeframe}: empty frame.")
+            return None
+        return frame
+
+    async def _emit(self, event: Any) -> None:
+        sink = self.alert_sink
+        if sink is None:
+            return
+        try:
+            await sink.send(event)
+        except Exception as exc:
+            logger.warning(f"Learning alert not delivered: {exc}")
+
+    def _drift_within_cooldown(self, key: str) -> bool:
+        last = self._drift_alert_at.get(key)
+        if last is None:
+            return False
+        cooldown = self.settings.alert_drift_cooldown_hours * 3600.0
+        return (self._clock() - last) < cooldown

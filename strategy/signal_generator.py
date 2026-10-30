@@ -56,11 +56,13 @@ class SignalGenerator:
         model_manager: ModelManager,
         config_manager: ConfigManager,
         trace_recorder: PredictionTraceRecorder | None = None,
+        feature_store: Any | None = None,
     ):
         self.data_provider = data_provider
         self.model_manager = model_manager
         self.config_manager = config_manager
         self.trace_recorder = trace_recorder
+        self.feature_store = feature_store
 
         history_path = self.config_manager.get(
             "indicator_history_path", "runs/indicator_history.db"
@@ -382,7 +384,33 @@ class SignalGenerator:
         for i, res in enumerate(results):
             if res:
                 predictions[model_types[i]] = res
+        await self._record_feature_vectors(symbol, timeframe, predictions)
         return predictions
+
+    async def _record_feature_vectors(
+        self, symbol: str, timeframe: str, predictions: dict[str, dict]
+    ) -> None:
+        store = self.feature_store
+        if store is None:
+            return
+        recorded: set[tuple[str, object]] = set()
+        for prediction in predictions.values():
+            vector = prediction.get("feature_vector") if isinstance(prediction, dict) else None
+            candle_time = prediction.get("candle_time") if isinstance(prediction, dict) else None
+            if not vector or candle_time is None:
+                continue
+            moment = candle_time
+            if hasattr(moment, "to_pydatetime"):
+                moment = moment.to_pydatetime()
+            feature_list = sorted(vector)
+            key = (symbol, moment)
+            if key in recorded:
+                continue
+            recorded.add(key)
+            try:
+                await store.record_vector(symbol, timeframe, moment, feature_list, vector)
+            except Exception as exc:
+                logger.warning(f"Feature vector not recorded for {symbol}-{timeframe}: {exc}")
 
     def determine_signal_type(self, score: float, threshold: float = None) -> SignalType:
         if threshold is None:

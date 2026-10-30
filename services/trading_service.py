@@ -168,6 +168,18 @@ def _build_exchange_service(config_manager: ConfigManager):
     )
 
 
+def _build_feature_store(config_manager: ConfigManager):
+    if not bool(config_manager.get("feature_store_enabled", False)):
+        return None
+    from features.feature_store import FeatureStore
+
+    return FeatureStore(
+        path=config_manager.get(
+            "feature_store_path", ConfigManager.DEFAULT_CONFIG["feature_store_path"]
+        )
+    )
+
+
 async def create_trading_stack(
     config_manager: ConfigManager | None = None,
     resource_manager: ResourceManager | None = None,
@@ -196,6 +208,7 @@ async def create_trading_stack(
         config_manager=config_manager,
         resource_manager=resource_manager,
         exchange_service=_build_exchange_service(config_manager),
+        feature_store=_build_feature_store(config_manager),
     )
     await trading_service.initialize()
 
@@ -212,6 +225,7 @@ class TradingService(ModelDataProvider):
         config_manager: ConfigManager,
         resource_manager: ResourceManager,
         exchange_service: Any | None = None,
+        feature_store: Any | None = None,
     ):
         self.market_data_provider = market_data_provider
         self.config_manager = config_manager
@@ -236,6 +250,7 @@ class TradingService(ModelDataProvider):
             data_provider=self,
             config_manager=self.config_manager,
         )
+        self.learner.feature_store = feature_store
 
         self.trace_recorder = PredictionTraceRecorder(
             directory=str(self.config_manager.get("prediction_trace_dir", "runs/feature_vectors")),
@@ -247,6 +262,7 @@ class TradingService(ModelDataProvider):
             model_manager=self.model_manager,
             config_manager=self.config_manager,
             trace_recorder=self.trace_recorder,
+            feature_store=feature_store,
         )
 
         self.multi_tf_analyzer = MultiTimeframeAnalyzer(
@@ -303,6 +319,13 @@ class TradingService(ModelDataProvider):
         self.model_manager.redis_client = redis_client
         self.multi_tf_analyzer.redis = redis_client
         await self.rehydrate_paper_positions()
+        if self.signal_generator.feature_store is not None:
+            try:
+                await self.signal_generator.feature_store.initialize()
+            except Exception as e:
+                logger.warning(f"Feature store unavailable: {e}")
+                self.signal_generator.feature_store = None
+                self.learner.feature_store = None
         self._initialized = True
 
     async def get_data_for_model(

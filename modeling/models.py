@@ -461,9 +461,17 @@ class XGBoostModel(BaseModel):
         self.params = default_params
         self.model = xgb.XGBRegressor(**self.params)
 
-    def fit(self, data: pd.DataFrame, validation_split=0.2, warm_start=False) -> bool:
+    def fit(
+        self,
+        data: pd.DataFrame,
+        validation_split=0.2,
+        warm_start=False,
+        feature_frame: pd.DataFrame | None = None,
+    ) -> bool:
         self._check_if_closed()
         try:
+            if feature_frame is not None and not feature_frame.empty:
+                return self._fit_from_feature_frame(feature_frame, validation_split, warm_start)
             if data is None or data.empty or len(data) < 50:
                 self.logger.warning(f"Insufficient data for XGBoost {self.symbol}-{self.timeframe}")
                 return False
@@ -556,6 +564,50 @@ class XGBoostModel(BaseModel):
             )
             self.is_trained = False
             return False
+
+    def _fit_from_feature_frame(
+        self,
+        frame: pd.DataFrame,
+        validation_split: float,
+        warm_start: bool,
+    ) -> bool:
+        if "label_close" not in frame.columns or len(frame) < 50:
+            self.logger.warning(
+                f"Insufficient feature-store rows for XGBoost {self.symbol}-{self.timeframe}"
+            )
+            return False
+        features = frame.drop(columns=["label_close"])
+        target = frame["label_close"].astype(float)
+        scaled_features = self.feature_engineer.scale_features(
+            features, fit=self._should_fit_scaler(warm_start)
+        )
+        if scaled_features is None:
+            self.logger.warning(
+                f"Feature scaling failed for the store frame {self.symbol}-{self.timeframe}"
+            )
+            return False
+        scaled_features_df = pd.DataFrame(
+            scaled_features, index=features.index, columns=features.columns
+        )
+        split_index = max(1, int(len(scaled_features_df) * (1 - validation_split)))
+        X_train, X_val = scaled_features_df[:split_index], scaled_features_df[split_index:]
+        y_train, y_val = target[:split_index], target[split_index:]
+        if len(X_train) == 0 or len(X_val) == 0:
+            return False
+        fit_kwargs = {"eval_set": [(X_val.values, y_val.values)], "verbose": False}
+        if warm_start and self.is_trained and self.model is not None:
+            fit_kwargs["xgb_model"] = self.model
+        try:
+            self.model.fit(X_train.values, y_train.values, early_stopping_rounds=10, **fit_kwargs)
+        except TypeError as exc:
+            if "early_stopping_rounds" not in str(exc):
+                raise
+            self.model.fit(X_train.values, y_train.values, **fit_kwargs)
+        self.is_trained = True
+        self.last_training_date = pd.Timestamp.now(tz="UTC")
+        self.save()
+        self.logger.info(f"XGBoost model for {self.symbol}-{self.timeframe} trained from the store")
+        return True
 
     def predict(self, data: pd.DataFrame) -> tuple[np.ndarray, float] | None:
         self._check_if_closed()
