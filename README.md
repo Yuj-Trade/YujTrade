@@ -97,6 +97,23 @@ decrypted via `KeyEncryptor` (see `scripts/encrypt_keys.py`):
 | `outcome_notification_max_attempts` | `3` | Delivery attempts before the notification is abandoned |
 | `outcome_claim_ttl_seconds` | `300` | How long a claimed notification stays claimed before it can be claimed again |
 | `outcome_watch_concurrency` | `4` | How many symbol and timeframe groups are observed at the same time |
+| `paper_execution_enabled` | `true` | Kill switch for the `/paper` execution path |
+| `paper_cost_model` | see below | Cost-model-v2 profile used by the paper engine, the report and the simulator |
+| `feature_store_enabled` | `false` | Records the model input vector at prediction time |
+| `feature_store_path` | `runs/feature_store.db` | SQLite file of the feature store |
+| `feature_store_min_rows` | `500` | Minimum labelled rows before store-based training |
+| `model_learning.training_source` | `"ohlcv"` | `"ohlcv"` or `"feature_store"` |
+| `model_learning.alert_drift_cooldown_hours` | `24` | Minimum hours between drift alerts for one key |
+
+`paper_cost_model` (`version`, `maker_fee_rate`, `taker_fee_rate`,
+`entry_liquidity`, `target_exit_liquidity`, `stop_exit_liquidity`,
+`expiry_exit_liquidity`, `entry_slippage_rate`, `market_exit_slippage_rate`,
+`target_exit_slippage_rate`, `funding_rate_per_period`,
+`funding_period_hours`, `max_volume_participation`) defaults to a
+venue-neutral `cost-model-v2` placeholder. The fee and the funding defaults
+are placeholders; set the venue values before trusting the numbers (see
+`docs/runbook.md`). `paper_fee_rate` and `paper_slippage_rate` still exist
+and feed the legacy report profile.
 
 Runtime overrides live in `config.json` (untracked, created at runtime).
 Indicator weights live in `indicator_weights.json` (tracked).
@@ -136,7 +153,8 @@ See `docs/runbook.md` for the daily checks and
 | `python scripts/encrypt_keys.py` | none | Encrypt `.env` secrets to `ENCRYPTED_*` |
 | `python scripts/run_holdout.py <csv>` | `--symbol`, `--timeframe`, `--state PATH` (default `runs/holdout_used.json`), `--out PATH`, `--confirm`, `--force-rerun`, `--with-ml` | Strategy-level protected holdout on a local CSV; writes a full metrics report; never fetches |
 | `python scripts/generate_reports.py` | `--output PATH` (default `runs/environment-baseline.json`) | Environment report |
-| `python scripts/record_backtest.py` | none | Re-record backtest golden baseline |
+| `python scripts/record_backtest.py` | none | Re-record the legacy backtest golden baseline (unchanged) |
+| `python scripts/review_learning_artifacts.py` | `[artifact-root] [out]` | Read-only learning artifact review; exit `0` only when every current artifact verifies |
 | `python tests/golden/record_signals.py` | none | Re-record signals golden baseline |
 | `python -m pytest -m "not slow and not ml" -q` | — | Default gate (298 tests) |
 | `python -m pytest -m slow -q` | — | Determinism proof (byte-identical goldens) |
@@ -148,11 +166,28 @@ and is restricted to the configured administrator.
 
 ## Paper trading and risk
 
-Default mode is paper via `TradingService.execute_signal(signal, mode="paper")`.
+Default mode is paper via `TradingService.execute_signal(signal, mode="paper")`,
+which `/paper` calls. The path is paper-only: `/paper` never reaches the
+exchange layer, `paper_execution_enabled` (default `true`) is the kill switch,
+and the open positions are persisted in the append-only
+`paper_positions_opened` / `paper_positions_closed` tables so they survive a
+restart and close through the shared resolver on a time-range candle fetch.
 Risk model: fixed fractional + volatility cap + Kelly ceiling, portfolio
 exposure limits, daily/weekly/drawdown halts (`LONG_TERM_CONFIG` in
 `common/constants.py`: per-timeframe `min_confidence_threshold`, `min_risk_reward_ratio`
 2.8, `max_signals_per_run` 3).
+
+## Feature store and continuous learning
+
+`feature_store_enabled` (default `false`) records the exact model input
+vector at prediction time and labels it with the next closed candle. The
+learner can train from the store (`model_learning.training_source =
+"feature_store"`) once the store holds `feature_store_min_rows` labelled rows
+with the current artifact's feature list; otherwise it trains from the OHLCV
+frame. Learning outcomes and feature-drift notices go to the administrator
+through `application/learning_alerts.py`. `model_learning.enabled` stays
+`false` in the committed defaults; see `docs/runbook.md` for the local
+enablement gate.
 
 ## Quality gates
 

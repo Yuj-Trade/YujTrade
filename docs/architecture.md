@@ -273,3 +273,110 @@ submit_signal
 Reconciliation reads the venue through the client order id, applies
 `next_status` and stops at `unknown` for a human decision. It never sends an
 order and never creates a second row.
+
+## Cost model (P3, P5)
+
+```
+domain/costs.py
+  CostProfile                 frozen: per-leg maker/taker fee, per-leg slippage,
+                              funding rate per period, max volume participation
+  legacy_report_profile       the previous two-rate report formula, frozen
+  legacy_simulator_profile    selects the frozen simulator branch
+  cost_per_unit               entry fee+slippage, exit fee+slippage, funding
+  net_r                       fill_fraction * (gross_unit - cost_unit) / risk
+  fill_fraction               min(1, p * quote_volume / notional)
+  first_candle_quote_volume   the first candle at or after created_at
+  cost_profile_from_config    {**defaults, **raw}, strict over the documented keys
+```
+
+The report, the paper engine and the simulator's v2 branch all charge that
+one model. The report derives the fill fraction from a reference notional
+(`initial_cash * risk_pct / 100 * entry / risk`) so it does not depend on the
+equity path; the simulator uses the actual sized notional; the paper engine
+uses `qty * market_price`. `SimulatorConfig.effective_profile()` falls back to
+`legacy_simulator_profile(commission_rate, slippage_rate)`, so a caller that
+passes no profile keeps the frozen branch and the legacy golden stays
+byte-identical. The v2 golden is `tests/golden/backtest_cost_v2_baseline.json`,
+written once by `scripts/record_backtest.py:record_cost_v2_baseline`.
+
+## Paper execution path (P4)
+
+```
+app/telegram_bot.py:/paper
+  -> TradingService.execute_signal(signal, mode="paper")
+       1. mode whitelist                 unsupported_mode
+       2. paper_execution_enabled        paper_execution_disabled
+       3. PaperLedger.has_order          duplicate_signal
+       4. last closed candle             no_mark_price
+       5. PortfolioManager.equity        no_mark_price when a mark is missing
+       6. PaperTradingEngine.submit_signal  risk_rejected
+       7. PaperTradingEngine.fill_order  unfilled
+       8. PaperLedger.append_order + append_position_opened
+  -> main.py:_paper_resolution_loop (paper_execution_enabled, interval = outcome_watch_interval_minutes)
+       -> TradingService.resolve_open_paper_positions(now)
+            -> fetch_ohlcv_range / domain.outcome / PaperTradingEngine
+            -> append_position_closed
+```
+
+`paper_positions_opened` and `paper_positions_closed` are append-only; the
+open book is opened minus closed, and `TradingService.initialize()`
+rehydrates it. The path never imports `trading/exchanges/`,
+`ExchangeAdapter` or `ExecutionEngine`; `tests/unit/trading/test_paper_execution_guard.py`
+enforces it. The kill switch `paper_execution_enabled` (default `true`)
+disables the whole path.
+
+## Feature store (P7)
+
+```
+features/feature_store.py
+  feature_vectors  (symbol, timeframe, candle_time, feature_set_hash) UNIQUE
+  feature_labels   (feature_vector_id PRIMARY KEY, label_candle_time, label_close)
+  both append-only by trigger
+
+ModelManager.predict_with_confidence -> feature_vector + candle_time
+  -> strategy/signal_generator.py:get_ml_predictions
+       -> FeatureStore.record_vector   (only when feature_store_enabled)
+ModelLearner._run_job
+  -> FeatureStore.count_labeled / training_frame(label_before=now)
+       -> ModelManager.train_model(feature_frame=...)
+```
+
+The store is built only in `create_trading_stack()` and only when
+`feature_store_enabled`; the default is `false`. `training_frame` never
+returns a label candle after `label_before`, and a row whose feature-set hash
+differs from the artifact's feature list is excluded, so the store cannot
+leak. Prediction and training windows still differ (F11); the store removes
+the skew only for captured rows.
+
+## Learning alerts (P8)
+
+```
+ModelLearner._run_job
+  -> LearningEvent(promoted | rejected | failed | promotion_failed | drift_detected)
+  -> AlertBuffer.send -> TelegramOutcomeNotifier.send   (attached once by MainApp.run)
+scripts/review_learning_artifacts.py  (read-only gate)
+  -> exit 0 only when every current artifact verifies and at least one exists
+```
+
+Drift is computed on every eligible job whether or not `drift_gate` is on,
+and at most one `drift_detected` per key per `alert_drift_cooldown_hours`.
+A sink failure is logged and never stops learning. The committed
+`model_learning.enabled` stays `false`; local enablement is an operator step
+behind the gate.
+
+## Intrabar outcome port (P9)
+
+`application/outcome_ports.py:IntrabarPriceFeed` and
+`data/intrabar_feed.py:NullIntrabarPriceFeed` reserve the seam. The outcome
+watch is not wired, so the detection stays on closed candles; see the
+ADR-0010 amendment.
+
+## Performance metrics (P6)
+
+`domain/performance.py:summarize_closed_trades` is the one implementation of
+the Sharpe, Sortino and drawdown formulas. Every consumer uses it: the
+report, the paper portfolio summary (`equity_source: "paper_portfolio"`), the
+historical trade metrics, the holdout script and the walk-forward script. The
+report carries `equity_source: "signal_model"`; the two views are separate by
+decision and agree on the same outcomes within `1e-9`. See the ADR-0009
+amendment.

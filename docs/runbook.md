@@ -441,3 +441,87 @@ assert that an account is eligible.
 | `getaddrinfo failed` for `api.coindesk.com` | The host does not resolve (verified 2026-10-23). CoinDesk news is off by default via `coindesk_news_enabled`; leave it off unless the host resolves |
 | `Protocol not found` from `api.llama.fi` | The chain TVL endpoint is `/v2/chains`, not `/tvl/chains` |
 | Messari 404 on every asset | `data.messari.io` returned 404 for the API root as well as every asset slug on 2026-10-23. Treat as an unavailable provider, not a slug bug |
+
+## 14. Paper execution path (2026-10-29)
+
+`/paper` now executes end to end in paper mode. The path never reaches the
+exchange layer.
+
+- **Kill switch**: `paper_execution_enabled` (default `true`). Set it to
+  `false` in `config.json` and restart to disable `/paper` and the paper
+  resolution loop. `execute_signal` then returns
+  `{"ok": false, "reason": "paper_execution_disabled"}`.
+- **Persistence**: `paper_positions_opened` and `paper_positions_closed` in
+  `runs/paper_ledger.db` are append-only. The open book is the opened rows
+  minus the closed rows; it is rehydrated in `TradingService.initialize()`.
+- **Resolution**: `main.py:_paper_resolution_loop` runs every
+  `outcome_watch_interval_minutes` and closes the open positions through the
+  domain resolver on `fetch_ohlcv_range`. A `no_data` window keeps a
+  position open.
+- **Rejection reasons** in the log / command reply: `unsupported_mode`,
+  `paper_execution_disabled`, `duplicate_signal`, `no_mark_price`,
+  `risk_rejected`, `unfilled`.
+- **Backup before upgrade**: the first run of the new code adds the
+  `entry_quote_volume` column to `signal_resolutions`. Copy
+  `runs/paper_ledger.db` to `runs/backup/paper_ledger-<UTC timestamp>.db`
+  first. The migration is idempotent and touches no trigger or CHECK.
+
+### Cost model v2
+
+`paper_cost_model` in `ConfigManager.DEFAULT_CONFIG` is a placeholder. The
+fee (`maker_fee_rate` / `taker_fee_rate`) and the funding
+(`funding_rate_per_period`) defaults are venue-neutral and must be replaced
+with the operator's venue values in `config.json` before the report numbers
+are trusted. `docs/performance-worked-example-v2.md` shows the arithmetic.
+
+## 15. Feature store and continuous learning
+
+### Feature store
+
+- `feature_store_enabled` (default `false`), `feature_store_path`
+  (`runs/feature_store.db`), `feature_store_min_rows` (`500`).
+- Both tables are append-only. A vector is keyed by
+  `(symbol, timeframe, candle_time, feature_set_hash)`, so the same candle is
+  never written twice and a changed feature list starts a new series.
+- Training from the store is opt-in: `model_learning.training_source =
+  "feature_store"`. The learner falls back to the OHLCV frame and logs why
+  when the store is unavailable, the row count is below the minimum, or the
+  artifact has no feature list.
+
+### Enabling continuous learning locally (behind the gate)
+
+1. Train the artifacts on the operator machine:
+   `python scripts/train_models.py` (network required).
+2. Run the review: `python scripts/review_learning_artifacts.py`. It writes
+   `docs/remediation/learning-review-2026-10-29.md` and exits `0` only when
+   every current artifact verifies and at least one exists.
+3. **Only on exit `0`**, set `model_learning.enabled` to `true` in the
+   untracked `config.json`, keeping every other `model_learning` key. Never
+   write a secret.
+4. On exit `1`, leave `config.json` unchanged. The blocker is recorded in
+   `docs/operator_pending.md` (item 10).
+
+The committed default stays `false`. Learning outcomes (`promoted`,
+`rejected`, `failed`, `promotion_failed`) and `drift_detected` notices go to
+the administrator through the Telegram notifier attached once in
+`MainApp.run`. The drift notice is rate limited by
+`model_learning.alert_drift_cooldown_hours` (default `24`).
+
+## 16. Outcome notification delay
+
+The outcome notification is still raised on a closed candle, so the delay is
+the candle duration plus `outcome_watch_interval_minutes`. The intrabar seam
+is reserved (`application/outcome_ports.py:IntrabarPriceFeed`,
+`data/intrabar_feed.py:NullIntrabarPriceFeed`) and nothing is wired; see
+`docs/adr/ADR-0010-signal-outcome-notifications.md`.
+
+## 17. Golden baselines (updated)
+
+`tests/golden/backtest_cost_v2_baseline.json` is the cost-model-v2 baseline,
+written once by `record_cost_v2_baseline()` and never re-recorded for
+convenience. The two legacy files are unchanged. The slow suite proves all
+three:
+
+```bash
+python -m pytest -m slow -q
+```
