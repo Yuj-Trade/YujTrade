@@ -8,6 +8,7 @@ import pandas as pd
 
 from application import performance_report
 from application.gate_config import build_gate_config
+from application.learning_alerts import AlertBuffer
 from application.outcome_policy import NotificationPolicy
 from application.performance_report import PerformanceConfig, PerformanceReport
 from common import metrics
@@ -251,6 +252,8 @@ class TradingService(ModelDataProvider):
             config_manager=self.config_manager,
         )
         self.learner.feature_store = feature_store
+        self.learning_alerts = AlertBuffer()
+        self.learner.alert_sink = self.learning_alerts
 
         self.trace_recorder = PredictionTraceRecorder(
             directory=str(self.config_manager.get("prediction_trace_dir", "runs/feature_vectors")),

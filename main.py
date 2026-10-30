@@ -193,6 +193,12 @@ class MainApp:
 
                 logger.info("Telegram bot started successfully.")
 
+                self.trading_service.learning_alerts.attach(
+                    TelegramOutcomeNotifier(
+                        self.bot_handler.application.bot, self.bot_handler.admin_chat_id
+                    ).send
+                )
+
                 if config_manager.get("enable_scheduled_analysis", False):
                     self.background_tasks_manager.create_task(
                         self._scheduled_analysis_loop(config_manager),

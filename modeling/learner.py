@@ -140,14 +140,27 @@ class ModelLearner:
             )
             return
 
-        if self.settings.drift_gate and not self._has_drift(data, timeframe):
-            self._last_attempt[key] = self._clock()
+        self._last_attempt[key] = self._clock()
+
+        drift = self._drift_report(data, timeframe)
+        if drift["drifted"] and not self._drift_within_cooldown(key):
+            self._drift_alert_at[key] = self._clock()
+            await self._emit(
+                LearningEvent(
+                    "drift_detected",
+                    key,
+                    model_type,
+                    symbol,
+                    timeframe,
+                    "",
+                    tuple(drift["features"]),
+                )
+            )
+        if self.settings.drift_gate and not drift["drifted"]:
             self._last_rows[key] = len(data)
             self.outcomes[key] = LearningOutcome(key=key, status="no_drift")
             logger.debug(f"Learning skipped for {key}: no feature drift")
             return
-
-        self._last_attempt[key] = self._clock()
 
         baseline = self._baseline_metrics(model_type, symbol, timeframe)
         feature_frame = await self._store_training_frame(model_type, symbol, timeframe)
@@ -162,10 +175,7 @@ class ModelLearner:
         )
         if outcome is None:
             self.outcomes[key] = LearningOutcome(key=key, status="failed")
-            if self.alert_sink is not None:
-                await self._emit(
-                    LearningEvent("failed", key, model_type, symbol, timeframe, "", ())
-                )
+            await self._emit(LearningEvent("failed", key, model_type, symbol, timeframe, "", ()))
             return
 
         self._last_rows[key] = len(data)
@@ -180,6 +190,17 @@ class ModelLearner:
                 f"Rejected learned {model_type} version {outcome.version} "
                 f"for {symbol}-{timeframe}; reasons={decision.reasons}"
             )
+            await self._emit(
+                LearningEvent(
+                    "rejected",
+                    key,
+                    model_type,
+                    symbol,
+                    timeframe,
+                    outcome.version,
+                    tuple(decision.reasons),
+                )
+            )
             return
 
         try:
@@ -191,6 +212,17 @@ class ModelLearner:
                 key=key, status="promotion_failed", version=outcome.version
             )
             logger.error(f"Promotion of learned {key} version {outcome.version} failed: {exc}")
+            await self._emit(
+                LearningEvent(
+                    "promotion_failed",
+                    key,
+                    model_type,
+                    symbol,
+                    timeframe,
+                    outcome.version,
+                    (str(exc),),
+                )
+            )
             return
 
         self._rejections[key] = 0
@@ -199,6 +231,17 @@ class ModelLearner:
         )
         logger.info(
             f"Promoted learned {model_type} version {outcome.version} for {symbol}-{timeframe}"
+        )
+        await self._emit(
+            LearningEvent(
+                "promoted",
+                key,
+                model_type,
+                symbol,
+                timeframe,
+                outcome.version,
+                tuple(decision.reasons),
+            )
         )
 
     def _baseline_metrics(self, model_type: str, symbol: str, timeframe: str) -> dict[str, float]:
@@ -209,10 +252,10 @@ class ModelLearner:
         metrics = metadata.get("oos_metrics") if isinstance(metadata, dict) else None
         return metrics if isinstance(metrics, dict) else {}
 
-    def _has_drift(self, data: pd.DataFrame, timeframe: str) -> bool:
+    def _drift_report(self, data: pd.DataFrame, timeframe: str) -> dict:
         reference, live = split_windows(data, self.settings.live_window)
         if reference.empty or live.empty:
-            return False
+            return {"drifted": False, "features": []}
         reports = detect_feature_drift(
             build_drift_features(reference),
             build_drift_features(live),
@@ -225,7 +268,10 @@ class ModelLearner:
             float(self.config_manager.get("drift_alpha", 0.05)),
             int(self.config_manager.get("drift_min_window", 100)),
         )
-        return bool(summary.get("drifted"))
+        return {
+            "drifted": bool(summary.get("drifted")),
+            "features": list(summary.get("drifted_features") or []),
+        }
 
     @property
     def pending(self) -> int:

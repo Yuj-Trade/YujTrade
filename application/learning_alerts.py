@@ -1,3 +1,4 @@
+import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -56,8 +57,12 @@ class AlertBuffer:
 
     def attach(self, sender: Callable[[str], Awaitable[None]]) -> None:
         self._sender = sender
-        while self._buffer:
-            self._buffer.popleft()
+        if self._buffer:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            loop.create_task(self.flush())
 
     async def send(self, event: LearningEvent) -> None:
         text = render_learning_event(event)
