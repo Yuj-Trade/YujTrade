@@ -297,3 +297,39 @@ that `FeatureEngineer.create_features` produces at one candle with the value
 the store persisted, to `1e-9`. The prediction window and the training
 window still differ (F11); the store removes the skew only for captured
 rows, which the ADR-0010 amendment records.
+
+## P8 - continuous learning alerts and the enablement gate [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit 1 | `011ce24 fix: alert on learning outcomes and feature drift [behavior-change]` |
+| Commit 2 | `f6647de chore: add read-only learning artifact review script` |
+| Commit 3 | `04bcf09 docs: record learning review evidence and enablement status` |
+| Files | `application/learning_alerts.py`, `modeling/learner.py`, `services/trading_service.py`, `main.py`, `scripts/review_learning_artifacts.py` (new) |
+| Tests | `tests/unit/application/test_learning_alerts.py` (new, 7), `tests/unit/modeling/test_learner_alerts.py` (new, 9), `tests/unit/scripts/test_review_learning_artifacts.py` (new, 7) |
+| Gate | default 2040 passed; ruff, format, `mypy domain` pass |
+| Golden | unchanged |
+
+### Enablement gate result (G4)
+
+```
+python scripts/review_learning_artifacts.py
+{"exit_code": 1, "artifacts": 0}
+```
+
+There is no `artifacts/` tree on this machine, so the gate exits `1`,
+`config.json` is left unchanged, and the committed
+`model_learning.enabled` stays `false`. The blocker and the operator
+procedure are recorded in `docs/operator_pending.md` (item 10) and the
+review document is `docs/remediation/learning-review-2026-10-29.md`.
+
+### Deviation
+
+The spec lists `ruff` BLE001 as a lint rule with per-file allowances in
+`pyproject.toml`; `scripts/review_learning_artifacts.py` is added to that
+list because it must report each artifact failure instead of aborting the
+whole review. The allowance is scoped to that file.
+
+`AlertBuffer.attach` flushes the buffered texts through an asyncio task when
+a running loop exists (the startup call site), so the synchronous attach in
+`MainApp.run` keeps its signature; `flush()` remains explicit for tests.
