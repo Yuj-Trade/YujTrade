@@ -85,3 +85,20 @@ by `/exchange_confirm <code>` within 60 seconds.
   `secret_encoding` from `base64` to `plain` in the registry and update
   `ADR-0011`.
 - Why blocked: the agent never sees a key.
+
+## 10. Continuous learning enablement (2026-10-29)
+
+- Status: `blocked_by_operator`.
+- Action: run `python scripts/train_models.py` on the operator machine (it
+  needs market data), then run
+  `python scripts/review_learning_artifacts.py`. It writes
+  `docs/remediation/learning-review-2026-10-29.md` and exits `0` only when
+  every current artifact verifies and at least one exists.
+- Then: enable learning locally by setting `model_learning.enabled` to
+  `true` in the untracked `config.json` (keep every other `model_learning`
+  key; never write a secret). `config.json` is gitignored and is never
+  committed.
+- Why blocked: this machine has no `artifacts/` tree, so the review exits
+  `1` and the committed default stays `false` (decision G4).
+- Evidence: `{"exit_code": 1, "artifacts": 0}` from
+  `python scripts/review_learning_artifacts.py`.
