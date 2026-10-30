@@ -124,3 +124,8 @@ def test_no_blocking_sqlite_connect_in_production_code():
             if "sqlite3.connect" in path.read_text(encoding="utf-8", errors="ignore"):
                 offenders.append(str(path.relative_to(ROOT)))
     assert offenders == []
+
+
+def test_domain_and_application_are_packages_for_mypy():
+    assert (ROOT / "domain" / "__init__.py").is_file()
+    assert (ROOT / "application" / "__init__.py").is_file()

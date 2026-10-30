@@ -113,6 +113,7 @@ def _service(ledger, settings, gateway, dry_run=False):
         gateway_factory=factory,
         execution_dry_run=dry_run,
         permission_check=permission_check,
+        review_ok=True,
     )
 
 

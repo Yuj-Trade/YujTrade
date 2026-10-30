@@ -67,3 +67,32 @@ Re-check against the current tree:
 | G-24 | open — halt does not cancel open orders, documentation item |
 | G-25 | open — LBank never live, by design |
 | G-26 | open — Ourbit blocked, by design |
+
+## R1: governance (G-14, G-15)
+
+`ADR-0011` and `ADR-0012` were recorded as accepted on the strength of a
+one-shot approval the operator never wrote. Both are now `proposed`, with an
+explicit `Approval: pending.` line. The terms-of-use statement in ADR-0012 is
+recorded as pending. The OpenSpec proposal is `pending approval`.
+
+The live gate is unchanged: `review_is_accepted` still reads the `Status:` line,
+so both venues now fail with `review_not_accepted`. This is the intended
+fail-closed result.
+
+- Commit: `ffb1351` docs(governance): return ADR-0011 and ADR-0012 to proposed
+- Tests: `tests/unit/docs/test_exchange_governance.py` (8 tests), including a
+  live-gate test that proves the proposed status keeps live closed.
+- Two older confirmation tests assumed the accepted status; they now pass an
+  explicit `review_ok=True` override so the confirmation logic stays covered
+  independently of the governance state.
+
+## R2: gate and domain packaging (G-10)
+
+Closed upstream before this run: `domain/__init__.py` exists (added in
+`322007a`) and `mypy domain` is clean with the pinned `mypy==1.18.2`.
+
+- Added a regression guard in `tests/unit/test_architecture.py` so `domain` and
+  `application` cannot lose their package markers again.
+- Gate: `mypy domain` clean, architecture and purity tests green, golden
+  unchanged.
+- No commit of its own; the guard rode with the R1 commit.

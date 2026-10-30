@@ -108,12 +108,14 @@ class ExchangeExecutionService:
         notify: Notify | None = None,
         execution_dry_run: bool | None = None,
         permission_check: PermissionCheck | None = None,
+        review_ok: bool | None = None,
     ) -> None:
         self.settings = settings
         self.ledger = ledger
         self.gateway_factory = gateway_factory
         self.notify = notify
         self.permission_check = permission_check
+        self.review_ok = review_ok
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
             if execution_dry_run is None
@@ -156,6 +158,7 @@ class ExchangeExecutionService:
             halted=halted,
             sandbox_mode_flag=use_sandbox,
             execution_dry_run=self.execution_dry_run,
+            review_ok=self.review_ok,
         )
         mode, reason = submission_mode(gate)
         return mode, reason, use_sandbox, secrets, halted
