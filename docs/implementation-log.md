@@ -263,3 +263,37 @@ files were not re-recorded.
 not finite, because an undefined ratio legitimately serialises as `null` in
 a fold. A fold whose ratios are undefined is reported and fails validation,
 as before for a non-finite number; no threshold was lowered.
+
+## P7 - feature store [new capability; disabled by default]
+
+| Item | Result |
+|---|---|
+| Commit | `8e2013b chore: add feature store schema, writer and labeler` (training source and capture are in the same commit; the second commit was empty and is omitted, see deviation) |
+| Files | `features/feature_store.py` (new), `application/learning_alerts.py` (new, the event type the learner uses), `modeling/model_manager.py`, `modeling/models.py`, `modeling/learner.py`, `strategy/signal_generator.py`, `services/trading_service.py`, `config/settings.py` |
+| Tests | `tests/unit/features/test_feature_store.py` (new, 17), `tests/unit/modeling/test_feature_store_capture.py` (new, 10) |
+| Gate | default 2017 passed; ruff, format, `mypy domain` pass |
+| Golden | unchanged (`d17e604f...`, `a533b2ad...`, `8f7173b7...`) |
+
+### Defaults and isolation
+
+`feature_store_enabled` is `false`; the store is built only inside
+`create_trading_stack()` and injected into the generator and the learner.
+With the store off, the signal for a fixture is identical; the capture test
+proves a store exception never changes the returned prediction.
+
+### Deviation
+
+The spec schedules two code commits (schema/writer, then the training
+source). The learner needs both the alert event type and the store helper,
+so the pieces landed together and the planner planned one commit; a second,
+empty commit would have violated the "one concern, real change" rule. The
+change is recorded as one `chore:` commit with no tag, because the default
+is off and no existing test expectation moved.
+
+### Parity
+
+`test_the_feature_engineer_matches_the_stored_vector` compares the vector
+that `FeatureEngineer.create_features` produces at one candle with the value
+the store persisted, to `1e-9`. The prediction window and the training
+window still differ (F11); the store removes the skew only for captured
+rows, which the ADR-0010 amendment records.
