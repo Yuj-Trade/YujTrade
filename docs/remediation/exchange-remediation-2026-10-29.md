@@ -1,0 +1,69 @@
+# Exchange connectivity remediation, 2026-10-29
+
+Input: `yujtrade_exchange_connectivity_review.md`, findings G-01 to G-26, and the
+remediation playbook version 3.
+
+All work on `main`. No branch, worktree, tag or stash created. Every commit was
+made after the gate was green. Nothing in this run enables live trading: no live
+value is written to a tracked file or to a default.
+
+## R0: preparation and baseline
+
+Starting point: `main` at `6018b29`, working tree clean. Python 3.13.15.
+Pinned tools: `ccxt==4.5.90`, `ruff==0.13.1`, `mypy==1.18.2`.
+
+The review was taken against a bundle built from an earlier `main`. Since then
+32 commits landed on `main` that touch `services/trading_service.py` and
+`app/telegram_bot.py`. Each finding was re-checked against the current tree
+before remediation; G-11 was already fixed upstream and is recorded as such.
+
+| Gate | Result |
+|---|---|
+| `python -m pytest -m "not slow and not ml" -q` | 2043 passed, 13 skipped, 19 deselected |
+| `ruff check .` | clean |
+| `ruff format --check .` | clean (294 files) |
+| `mypy domain` | clean (10 source files) |
+| `git diff --check` | clean |
+
+Golden hashes at baseline:
+
+```text
+d17e604f011a94909796c907321eafb9bd2558e07b50f3d3e5d4e1b4a9c6a512  tests/golden/backtest_baseline.json
+a533b2ad45ccb28c52d051a1c982d303c996eb16c150a081c05dfa57c8c09011  tests/golden/backtest_cost_v2_baseline.json
+8f7173b71a7cb9bf503a4363542f7319425a3717d0296239d25088d0d75d265a  tests/golden/signals_baseline.json
+```
+
+A third golden file (`backtest_cost_v2_baseline.json`) exists that the earlier
+run did not record. It is part of the current baseline and must not change
+either.
+
+Re-check against the current tree:
+
+| Finding | State before remediation |
+|---|---|
+| G-01 | open — `LiveLedger` built without `initialize()`, no lazy schema |
+| G-02 | open — `reconcile_once` has no production caller |
+| G-03 | open — `issue_confirmation` unused, code never reaches `submit_signal` |
+| G-04 | open — `portfolio.equity(entry, stop)` called with two arguments |
+| G-05 | open — 32-character id, `userref = signal_id[:8]` for Kraken |
+| G-06 | open — shadow rows carry no reference price, refusals not stored |
+| G-07 | open — code consumed before the risk checks |
+| G-08 | open — permission check on every call, no cache, runs in sandbox |
+| G-09 | open — order lookup only by `clientOrderId` |
+| G-10 | closed upstream — `domain/__init__.py` exists, `mypy domain` clean |
+| G-11 | closed upstream — `execute_signal` and `portfolio_snapshot` exist |
+| G-12 | open — kucoin `sandbox_expected=True` |
+| G-13 | open — operator item, unchanged |
+| G-14 | open — ADR-0011/0012 accepted without written confirmation |
+| G-15 | open — proposal status is `approved` |
+| G-16 | open — run report overstates phases 6, 7, 8, 10 |
+| G-17 | open — ADR path depends on the working directory |
+| G-18 | open — sizing error swallowed at debug level |
+| G-19 | open — `TypeError` and `AttributeError` both mapped to sandbox error |
+| G-20 | open — dead helpers |
+| G-21 | open — reconcile interval configured, never used |
+| G-22 | open — env seed script outside the playbook |
+| G-23 | open — connection per ledger call, accepted limitation |
+| G-24 | open — halt does not cancel open orders, documentation item |
+| G-25 | open — LBank never live, by design |
+| G-26 | open — Ourbit blocked, by design |
