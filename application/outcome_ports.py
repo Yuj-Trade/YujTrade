@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class NotificationDeliveryError(Exception):
@@ -9,3 +9,8 @@ class NotificationDeliveryError(Exception):
 
 class OutcomeNotifier(Protocol):
     async def send(self, text: str) -> None: ...
+
+
+@runtime_checkable
+class IntrabarPriceFeed(Protocol):
+    async def last_price(self, symbol: str) -> float | None: ...
