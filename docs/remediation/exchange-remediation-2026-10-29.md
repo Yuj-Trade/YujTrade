@@ -96,3 +96,20 @@ Closed upstream before this run: `domain/__init__.py` exists (added in
 - Gate: `mypy domain` clean, architecture and purity tests green, golden
   unchanged.
 - No commit of its own; the guard rode with the R1 commit.
+
+## R3: ledger schema on first use (G-01)
+
+Reproduced first: `tests/unit/trading/test_live_ledger_lazy_schema.py` on a fresh
+`LiveLedger` without `initialize()` gave 7 failures with
+``sqlite3.OperationalError: no such table: live_control`` and
+``live_orders``. ``/exchange_halt`` therefore failed, so the emergency stop did
+not work.
+
+Fix: ``_schema_ready`` flag plus ``_ensure_schema``; ``_connect`` now creates the
+schema on the first connection. ``initialize()`` stays public and idempotent.
+
+- Commit: `5174c26` fix(exchange): create the live ledger schema on first use
+- Tests: the same file now passes (8 tests), including "halt records the flag on
+  a fresh ledger" and "halt blocks submission on a fresh ledger".
+- Gate: 2060 passed; architecture test green (still no ``sqlite3.connect`` in
+  runtime); golden unchanged.

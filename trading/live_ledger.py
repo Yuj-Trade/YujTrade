@@ -65,17 +65,25 @@ class LiveLedger:
     def __init__(self, path: str | Path = "runs/live_ledger.db") -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._schema_ready = False
+
+    async def _ensure_schema(self, connection: aiosqlite.Connection) -> None:
+        if self._schema_ready:
+            return
+        await connection.executescript(_SCHEMA)
+        await connection.commit()
+        self._schema_ready = True
 
     async def _connect(self) -> aiosqlite.Connection:
         connection = await aiosqlite.connect(self.path, timeout=30.0)
         await connection.execute("PRAGMA journal_mode=WAL")
+        await self._ensure_schema(connection)
         return connection
 
     async def initialize(self) -> None:
         connection = await self._connect()
         try:
-            await connection.executescript(_SCHEMA)
-            await connection.commit()
+            await self._ensure_schema(connection)
         finally:
             await connection.close()
 
