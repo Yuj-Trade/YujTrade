@@ -233,3 +233,33 @@ reproduces it byte for byte.
 lists only the two legacy files, so the new file is not added to that list;
 the v2 file has its own sorted-key and determinism test instead. The legacy
 files were not re-recorded.
+
+## P6 - one source of performance metrics [behavior-change]
+
+| Item | Result |
+|---|---|
+| Commit 1 | `835e677 fix: derive performance ratios from one domain implementation [behavior-change]` |
+| Commit 2 | `447b8bf fix: holdout report schema v2 with unified sharpe [behavior-change]` |
+| Commit 3 | `5703f3c docs: amend ADR-0005 and ADR-0009` |
+| Files | `domain/performance.py`, `application/performance_report.py`, `backtesting/historical_signals.py`, `scripts/run_holdout.py`, `scripts/run_walk_forward.py`, `scripts/generate_performance_report.py`, `trading/ledger.py` |
+| Tests | `tests/unit/domain/test_performance_summary.py` (new, 13), `tests/unit/application/test_metrics_parity.py` (new, 3), 4 new holdout schema cases, `test_historical_signals.py` updated |
+| Gate | default 1990 passed; slow (holdout, golden) pass; ruff, format, `mypy domain` pass |
+| Golden | unchanged (`d17e604f...`, `a533b2ad...`, `8f7173b7...`) |
+
+### Expected test changes (named in the spec)
+
+`tests/unit/backtesting/test_historical_signals.py`:
+
+| Case | Before | After | Why |
+|---|---|---|---|
+| empty trades | `win_rate 0.0`, `profit_factor 0.0`, `sharpe 0.0` | `None`, `None`, `None` | D8: an undefined ratio is `None` |
+| single trade | `sharpe 0.0` | `None` | fewer than two periods has no spread |
+| 3 trades | `profit_factor 30/5` | `(0.01 + 20/1005) / (5/1010)` | the ratio is on return fractions |
+| no losses | `profit_factor 0.0` | `None` | ADR-0009: `null` without losses |
+
+### Operational note
+
+`scripts/run_walk_forward.py::_finite` now accepts `None` and treats it as
+not finite, because an undefined ratio legitimately serialises as `null` in
+a fold. A fold whose ratios are undefined is reported and fails validation,
+as before for a non-finite number; no threshold was lowered.
