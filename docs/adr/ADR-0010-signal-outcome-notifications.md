@@ -128,3 +128,23 @@ request would be retried instead of being abandoned.
   not observed.
 - The delivery channel is Telegram. Another channel needs a new
   `OutcomeNotifier` implementation, nothing else.
+
+## Amendment 2026-10-29 (P9): the faster notification is deferred
+
+The delay documented above (the candle duration plus the watch interval) is
+accepted for now. The data provider exposes no intrabar price stream, and a
+spot last-price call would not reproduce the stop-first, closed-candle
+semantics the resolver depends on, so no faster path is wired.
+
+The seam is reserved instead:
+
+- `application/outcome_ports.py:IntrabarPriceFeed` is a runtime-checkable
+  protocol with `async last_price(symbol) -> float | None`.
+- `data/intrabar_feed.py:NullIntrabarPriceFeed` returns `None`.
+- The outcome watch is not wired to the port; the detection still uses the
+  closed candles only, so the behaviour of this ADR is unchanged.
+
+When a venue or provider exposes an intrabar stream, a feed implementation
+and a resolver that keeps the stop-first rule can be added behind the same
+protocol without touching the domain or the loop. Open issue 15 is marked
+deferred (decision G5).

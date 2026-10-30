@@ -170,12 +170,13 @@ in the open lists.
     cost, no maker/taker distinction and no slippage model beyond the
     constant rate. The paper engine uses the same two rates, so the report
     and the paper engine agree on the cost, but neither models the fill.
-15. The outcome notification is only raised on a **closed** candle, so the
-    inherent delay is the duration of the candle plus the watch interval.
-    A target that is touched inside a one-hour candle is reported after
-    that candle closes, and a `1d` signal is reported up to a day later.
-    An intrabar feed would remove the delay, but the data provider does
-    not offer one. See `docs/adr/ADR-0010-signal-outcome-notifications.md`.
+15. **Deferred 2026-10-29** (`198f5ca`, decision G5). The outcome
+    notification is only raised on a closed candle, so the delay is the candle
+    duration plus the watch interval. The intrabar seam is reserved
+    (`application/outcome_ports.py:IntrabarPriceFeed`,
+    `data/intrabar_feed.py:NullIntrabarPriceFeed`) and nothing is wired: the
+    data provider offers no intrabar stream. See
+    `docs/adr/ADR-0010-signal-outcome-notifications.md`.
 16. `app/tasks.py` and the `TaskServiceContainer` build a second stack and
     a second `SignalTracker` over the same `signal_history.json`. They must
     never run at the same time as the main tracker: the two trackers would
