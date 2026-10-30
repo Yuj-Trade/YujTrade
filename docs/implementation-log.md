@@ -333,3 +333,18 @@ whole review. The allowance is scoped to that file.
 `AlertBuffer.attach` flushes the buffered texts through an asyncio task when
 a running loop exists (the startup call site), so the synchronous attach in
 `MainApp.run` keeps its signature; `flush()` remains explicit for tests.
+
+## P9 - intrabar price port (no behaviour change)
+
+| Item | Result |
+|---|---|
+| Commit 1 | `198f5ca chore: reserve intrabar price port with null implementation` |
+| Commit 2 | `ed2df2a docs: amend ADR-0010 with deferral of faster notification` |
+| Files | `application/outcome_ports.py`, `data/intrabar_feed.py` (new) |
+| Tests | `tests/unit/data/test_intrabar_feed.py` (new, 3) |
+| Gate | default 2043 passed; ruff, format, `mypy domain` pass |
+| Behaviour | none; the outcome watch still uses closed candles |
+
+`IntrabarPriceFeed` is runtime-checkable, so a future feed implementation can
+be verified against the protocol without a new dependency. Open issue 15 is
+marked deferred (G5).
