@@ -348,3 +348,27 @@ a running loop exists (the startup call site), so the synchronous attach in
 `IntrabarPriceFeed` is runtime-checkable, so a future feed implementation can
 be verified against the protocol without a new dependency. Open issue 15 is
 marked deferred (G5).
+
+## P10 - closure and evidence
+
+| Item | Result |
+|---|---|
+| Full gate | default 2043 passed; slow 19 passed; coverage 97.17 %; ruff, format, `mypy domain` pass |
+| Golden audit | `d17e604f...` (backtest), `8f7173b7...` (signals) unchanged; `a533b2ad...` (v2) recorded once |
+| Behavior-change audit | 8 commits, each lists test files |
+| Documentation | `docs/architecture.md` (new modules and flows), `README.md` (keys and the paper section), `docs/runbook.md` (paper path, cost profile, feature store, learning gate, notification delay, v2 golden) |
+| OpenSpec | seven proposals marked complete, revalidated with `--strict`, archived as `2026-10-30-<id>`; `openspec validate --specs --strict` passes 7/7 |
+| Final report | `runs/implementation/final-report.md` (gitignored) |
+
+### Suggested commit list
+
+`docs: archive openspec changes for phased trading work`,
+`docs: document the phased implementation in README, architecture and runbook`,
+`docs: close phased implementation log`.
+
+### Status
+
+Every acceptance criterion in section 10 has evidence in the final report.
+The only open blocker is the learning enablement gate (item 10 of
+`docs/operator_pending.md`), which needs artifacts trained on the operator
+machine.
