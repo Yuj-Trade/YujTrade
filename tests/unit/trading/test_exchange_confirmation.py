@@ -107,7 +107,7 @@ def _service(ledger, settings, gateway, dry_run=False):
     async def permission_check(spec):
         return True
 
-    return ExchangeExecutionService(
+    service = ExchangeExecutionService(
         settings=settings,
         ledger=ledger,
         gateway_factory=factory,
@@ -115,6 +115,8 @@ def _service(ledger, settings, gateway, dry_run=False):
         permission_check=permission_check,
         review_ok=True,
     )
+    service.reconciled = True
+    return service
 
 
 @pytest.mark.asyncio

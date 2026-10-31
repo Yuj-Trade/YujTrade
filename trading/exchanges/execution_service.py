@@ -117,6 +117,7 @@ class ExchangeExecutionService:
         self.notify = notify
         self.permission_check = permission_check
         self.review_ok = review_ok
+        self.reconciled = False
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
             if execution_dry_run is None
@@ -183,6 +184,8 @@ class ExchangeExecutionService:
         mode, reason, use_sandbox, secrets, _halted = await self._evaluate_gate(spec)
         if mode is None:
             return self._refuse(reason)
+        if mode in {"sandbox", "live"} and not self.reconciled:
+            return self._refuse("reconciliation_pending")
         if mode == "live":
             allowed, code_reason = await consume_confirmation(
                 self.ledger, confirmation_code, exchange_id, signal_id
@@ -337,6 +340,59 @@ class ExchangeExecutionService:
         return SubmitResult(
             ok=False, mode=mode, reason=cleaned, status=REJECTED, client_order_id=cid
         )
+
+    async def reconcile(self) -> list[str]:
+        from trading.exchanges.credentials import load_exchange_credentials
+        from trading.exchanges.registry import get_spec
+        from trading.reconciliation import reconcile_once
+
+        gateways: dict[str, Any] = {}
+        usable = 0
+        failures = 0
+        for exchange_id in self.settings.enabled:
+            try:
+                spec = get_spec(exchange_id)
+            except KeyError:
+                logger.warning(f"Reconciliation skipped unknown exchange {exchange_id}")
+                failures += 1
+                continue
+            if spec.ccxt_id is None:
+                continue
+            credentials = load_exchange_credentials(spec, self.settings.sandbox)
+            if credentials is None:
+                logger.warning(f"Reconciliation has no credentials for {exchange_id}")
+                failures += 1
+                continue
+            try:
+                gateways[exchange_id] = self.gateway_factory(
+                    spec, self.settings.sandbox, credentials
+                )
+                usable += 1
+            except ExchangeConfigError as exc:
+                logger.warning(f"Reconciliation gateway unavailable for {exchange_id}: {exc}")
+                failures += 1
+            except Exception as exc:
+                logger.error(f"Reconciliation gateway failed for {exchange_id}: {exc}")
+                failures += 1
+        changed: list[str] = []
+        try:
+            changed = await reconcile_once(
+                self.ledger,
+                gateways,
+                self.settings.unknown_after_seconds,
+                notify=self._announce,
+            )
+        except Exception as exc:
+            logger.error(f"Reconciliation pass failed: {exc}")
+            failures += 1
+        finally:
+            for gateway in gateways.values():
+                try:
+                    await gateway.close()
+                except Exception as exc:
+                    logger.debug(f"Reconciliation gateway close failed: {exc}")
+        self.reconciled = failures == 0 and usable > 0
+        return changed
 
     async def halt(self, reason: str = "operator_halt") -> None:
         await self.ledger.set_control("halted", "1")

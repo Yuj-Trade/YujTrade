@@ -137,13 +137,15 @@ def fake_credentials(monkeypatch):
 
 
 def _service(gateway, ledger, settings=None, notify=None):
-    return ExchangeExecutionService(
+    service = ExchangeExecutionService(
         settings=settings or _settings(),
         ledger=ledger,
         gateway_factory=Factory(gateway),
         notify=notify,
         execution_dry_run=True,
     )
+    service.reconciled = True
+    return service
 
 
 @pytest.mark.asyncio

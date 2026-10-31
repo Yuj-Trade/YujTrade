@@ -137,3 +137,27 @@ Fix:
   Gate cap, no identifier for unverified venues, lookup order, and the unknown
   transition when neither lookup is possible.
 - No venue is marked `client_id_supported` yet; that stays an operator step.
+
+## R5: reconciliation at startup and on a loop (G-02, G-21)
+
+Reproduced: `reconcile_once` had no production caller, so a `pending_submit` row
+after a timeout was never resolved and `unknown` was never detected.
+
+Fix:
+
+- `ExchangeExecutionService.reconcile()` builds one gateway per enabled venue,
+  runs `reconcile_once`, closes every gateway, and sets `self.reconciled` only
+  when every venue was processed without an exception.
+- `submit_signal` refuses with `reconciliation_pending` for sandbox and live
+  while `reconciled` is false. Shadow is not blocked.
+- `main.py` runs one pass before polling starts and starts
+  `_exchange_reconcile_loop`, which uses `exchange_reconcile_interval_seconds`.
+- The unknown notice is emitted once, because a row that reached `unknown` no
+  longer appears in `get_non_terminal`.
+
+- Commit: `0a74b78` feat(exchange): run reconciliation at startup and on a
+  periodic loop
+- Tests: `tests/unit/trading/test_exchange_reconciliation_wiring.py` (11 tests),
+  including the gate, the startup pass, the loop and the single unknown notice.
+- Older submission tests set `reconciled = True` explicitly, so they exercise
+  submission rather than the gate.

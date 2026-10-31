@@ -116,6 +116,33 @@ class MainApp:
                 "outcome_watch", started, started, datetime.now(UTC), status, error
             )
 
+    async def _exchange_reconcile_loop(self, interval_seconds: float | None = None) -> None:
+        service = getattr(self.trading_service, "exchange_service", None)
+        if service is None:
+            return
+        settings = getattr(self, "exchange_settings", None)
+        if settings is None:
+            return
+        configured = (
+            float(settings.reconcile_interval_seconds)
+            if interval_seconds is None
+            else float(interval_seconds)
+        )
+        interval = max(0.01, configured)
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=interval)
+            except TimeoutError:
+                pass
+            if self.shutdown_event.is_set():
+                break
+            try:
+                changed = await service.reconcile()
+                if changed:
+                    logger.info(f"Exchange reconciliation updated {len(changed)} order(s).")
+            except Exception as exc:
+                logger.opt(exception=True).error(f"Exchange reconciliation tick failed: {exc}")
+
     async def _paper_resolution_loop(self, config_manager) -> None:
         interval = float(config_manager.get("outcome_watch_interval_minutes", 15)) * 60.0
         while not self.shutdown_event.is_set():
@@ -208,6 +235,20 @@ class MainApp:
                     self.background_tasks_manager.create_task(
                         self._outcome_watch_loop(policy),
                         name="OutcomeWatch",
+                    )
+                if getattr(self.trading_service, "exchange_service", None) is not None:
+                    from trading.exchanges.gate_inputs import load_exchange_settings
+
+                    self.exchange_settings = load_exchange_settings(config_manager)
+                    try:
+                        await self.trading_service.exchange_service.reconcile()
+                    except Exception as exc:
+                        logger.opt(exception=True).error(
+                            f"Startup exchange reconciliation failed: {exc}"
+                        )
+                    self.background_tasks_manager.create_task(
+                        self._exchange_reconcile_loop(),
+                        name="ExchangeReconcile",
                     )
                 paper_default = ConfigManager.DEFAULT_CONFIG["paper_execution_enabled"]
                 if config_manager.get("paper_execution_enabled", paper_default):
