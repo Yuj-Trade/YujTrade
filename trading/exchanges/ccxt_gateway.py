@@ -154,18 +154,9 @@ class CcxtGateway:
         )
 
     def _order_params(self, intent: OrderIntent) -> dict[str, Any]:
-        params: dict[str, Any] = {}
-        if self.exchange_id == "kraken":
-            params["userref"] = intent.signal_id[:8]
-            return params
-        if self.exchange_id == "lbank":
-            params["custom_id"] = intent.client_order_id
-            return params
-        if self.exchange_id == "bitvavo":
-            params["clientOrderId"] = intent.client_order_id
-            return params
-        params["clientOrderId"] = intent.client_order_id
-        return params
+        if not self.spec.client_id_supported:
+            return {}
+        return {"clientOrderId": intent.client_order_id}
 
     async def fetch_order_by_client_id(
         self, symbol: str, client_order_id: str
@@ -173,6 +164,15 @@ class CcxtGateway:
         from trading.exchanges.authenticated import AuthenticatedQueries
 
         return await AuthenticatedQueries(self).fetch_order_by_client_id(symbol, client_order_id)
+
+    async def fetch_order_by_exchange_id(
+        self, symbol: str, exchange_order_id: str
+    ) -> OrderSnapshot | None:
+        from trading.exchanges.authenticated import AuthenticatedQueries
+
+        return await AuthenticatedQueries(self).fetch_order_by_exchange_id(
+            symbol, exchange_order_id
+        )
 
     async def fetch_free_balance(self, currency: str) -> float:
         from trading.exchanges.authenticated import AuthenticatedQueries

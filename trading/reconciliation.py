@@ -21,6 +21,23 @@ def _age_seconds(created_at: str, now_utc: datetime) -> float:
     return (now_utc - created).total_seconds()
 
 
+async def _fetch_snapshot(gateway: Any, row: dict[str, Any]):
+    symbol = str(row["symbol"])
+    exchange_order_id = str(row.get("exchange_order_id") or "")
+    if exchange_order_id:
+        fetcher = getattr(gateway, "fetch_order_by_exchange_id", None)
+        if callable(fetcher):
+            return await fetcher(symbol, exchange_order_id)
+    spec = getattr(gateway, "spec", None)
+    supports_client_id = bool(getattr(spec, "client_id_supported", False))
+    if not supports_client_id:
+        return None
+    fetcher = getattr(gateway, "fetch_order_by_client_id", None)
+    if not callable(fetcher):
+        return None
+    return await fetcher(symbol, str(row["client_order_id"]))
+
+
 async def reconcile_once(
     ledger: LiveLedger,
     gateways_by_exchange: dict[str, Any],
@@ -38,9 +55,7 @@ async def reconcile_once(
             continue
         snapshot = None
         try:
-            snapshot = await gateway.fetch_order_by_client_id(
-                str(row["symbol"]), str(row["client_order_id"])
-            )
+            snapshot = await _fetch_snapshot(gateway, row)
         except Exception as exc:
             text = gateway.error_text(exc) if hasattr(gateway, "error_text") else str(exc)
             logger.error(f"Reconciliation read failed for {exchange_id}: {text}")

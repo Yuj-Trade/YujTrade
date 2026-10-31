@@ -113,3 +113,27 @@ schema on the first connection. ``initialize()`` stays public and idempotent.
   a fresh ledger" and "halt blocks submission on a fresh ledger".
 - Gate: 2060 passed; architecture test green (still no ``sqlite3.connect`` in
   runtime); golden unchanged.
+
+## R4: order identifiers and lookup (G-05, G-09)
+
+Reproduced: the Gate limit was confirmed in the pinned source
+(`ccxt/gate.py`: "no longer than 28 bytes without t- prefix"). The old code sent
+a 32-character id to every venue and a symbol fragment as Kraken `userref`.
+
+Fix:
+
+- `ExchangeSpec` gains `client_id_supported: bool = False` and
+  `client_id_max_len: int = 32`; Gate is the only venue with 28.
+- `make_client_order_id(exchange_id, signal_id, max_len)` truncates the digest.
+- `_order_params` sends `clientOrderId` only when the venue is verified. Kraken,
+  LBank, Bitvavo and Gate send nothing until their documentation is confirmed.
+- `fetch_order_by_exchange_id` added to the gateway and to the
+  `ExchangeGateway` protocol; `_fetch_snapshot` prefers the stored venue id and
+  falls back to the client id only for a verified venue.
+
+- Commit: `4c0f3f0` fix(exchange): send client order ids only where the venue
+  limit is verified and look orders up by venue id
+- Tests: `tests/unit/trading/test_order_identifiers.py` (14 tests) covering the
+  Gate cap, no identifier for unverified venues, lookup order, and the unknown
+  transition when neither lookup is possible.
+- No venue is marked `client_id_supported` yet; that stays an operator step.

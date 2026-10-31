@@ -20,6 +20,8 @@ class ExchangeSpec:
     secret_encoding: str
     sandbox_expected: bool | None
     permission_endpoint: str | None
+    client_id_supported: bool = False
+    client_id_max_len: int = 32
 
     @property
     def env_prefix(self) -> str:
@@ -93,7 +95,17 @@ EXCHANGE_REGISTRY: tuple[ExchangeSpec, ...] = (
         "bitget", "Bitget", "bitget", SCOPE_GENERAL, STATUS_READY, True, True, "plain", None, None
     ),
     ExchangeSpec(
-        "gate", "Gate", "gate", SCOPE_GENERAL, STATUS_READY, True, False, "plain", None, None
+        "gate",
+        "Gate",
+        "gate",
+        SCOPE_GENERAL,
+        STATUS_READY,
+        True,
+        False,
+        "plain",
+        None,
+        None,
+        client_id_max_len=28,
     ),
     ExchangeSpec(
         "gemini", "Gemini", "gemini", SCOPE_GENERAL, STATUS_READY, True, False, "plain", None, None

@@ -68,8 +68,9 @@ class SubmitResult:
         }
 
 
-def make_client_order_id(exchange_id: str, signal_id: str) -> str:
-    return hashlib.sha256(f"{exchange_id}:{signal_id}".encode()).hexdigest()[:32]
+def make_client_order_id(exchange_id: str, signal_id: str, max_len: int = 32) -> str:
+    digest = hashlib.sha256(f"{exchange_id}:{signal_id}".encode()).hexdigest()
+    return digest[: max(8, int(max_len))]
 
 
 def is_network_error(exc: BaseException) -> bool:
@@ -188,7 +189,7 @@ class ExchangeExecutionService:
             )
             if not allowed:
                 return self._refuse(code_reason, mode)
-        cid = make_client_order_id(exchange_id, signal_id)
+        cid = make_client_order_id(exchange_id, signal_id, spec.client_id_max_len)
         intent = OrderIntent(
             exchange_id=exchange_id,
             signal_id=signal_id,

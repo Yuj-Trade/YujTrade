@@ -319,7 +319,7 @@ async def test_place_limit_order_returns_exchange_id(monkeypatch):
     sent = client.create_args[0]
     assert sent["order_type"] == "limit"
     assert sent["side"] == "buy"
-    assert sent["params"]["clientOrderId"] == "abcdef0123456789abcdef0123456789"
+    assert sent["params"] == {}
     await gateway.close()
 
 
@@ -383,18 +383,10 @@ async def test_place_limit_order_rejects_sandbox_mismatch(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_kraken_uses_userref(monkeypatch):
-    gateway, client = _create_gateway(monkeypatch, spec_id="kraken")
-    await gateway.load_markets()
-    await gateway.place_limit_order(_intent(exchange_id="kraken", signal_id="signal12345678"))
-    assert client.create_args[0]["params"] == {"userref": "signal12"}
-    await gateway.close()
-
-
-@pytest.mark.asyncio
-async def test_lbank_uses_custom_id(monkeypatch):
-    gateway, client = _create_gateway(monkeypatch, spec_id="lbank")
-    await gateway.load_markets()
-    await gateway.place_limit_order(_intent(exchange_id="lbank"))
-    assert client.create_args[0]["params"] == {"custom_id": "abcdef0123456789abcdef0123456789"}
-    await gateway.close()
+async def test_unverified_venues_send_no_client_identifier(monkeypatch):
+    for exchange_id in ("kraken", "lbank", "gate", "binance"):
+        gateway, client = _create_gateway(monkeypatch, spec_id=exchange_id)
+        await gateway.load_markets()
+        await gateway.place_limit_order(_intent(exchange_id=exchange_id))
+        assert client.create_args[0]["params"] == {}, exchange_id
+        await gateway.close()

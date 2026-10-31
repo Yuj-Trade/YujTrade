@@ -12,6 +12,7 @@ from domain.exchange_types import (
     OrderIntent,
     OrderSnapshot,
 )
+from trading.exchanges.registry import ExchangeSpec
 from trading.live_ledger import LiveLedger
 from trading.reconciliation import reconcile_once
 
@@ -143,11 +144,31 @@ async def test_control_roundtrip(ledger):
 
 
 class FakeGateway:
-    def __init__(self, snapshot=None, error=None, exchange_id="binance"):
+    def __init__(self, snapshot=None, error=None, exchange_id="binance", client_id_supported=True):
         self.snapshot = snapshot
         self.error = error
         self.exchange_id = exchange_id
         self.calls = 0
+        self.exchange_id_calls = 0
+        self.spec = ExchangeSpec(
+            exchange_id=exchange_id,
+            display_name=exchange_id.title(),
+            ccxt_id=exchange_id,
+            access_scope="general",
+            status="ready",
+            spot_supported=True,
+            needs_passphrase=False,
+            secret_encoding="plain",
+            sandbox_expected=None,
+            permission_endpoint=None,
+            client_id_supported=client_id_supported,
+        )
+
+    async def fetch_order_by_exchange_id(self, symbol, exchange_order_id):
+        self.exchange_id_calls += 1
+        if self.error is not None:
+            raise self.error
+        return self.snapshot
 
     async def fetch_order_by_client_id(self, symbol, client_order_id):
         self.calls += 1
