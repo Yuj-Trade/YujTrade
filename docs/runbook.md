@@ -306,6 +306,15 @@ Sandbox names: `<PREFIX>_SANDBOX_API_KEY`, `<PREFIX>_SANDBOX_API_SECRET`, and
 `OURBIT`, ...). `python -c "from trading.exchanges.registry import
 all_secret_names; print('\n'.join(all_secret_names()))"` prints the full list.
 
+The names can be seeded into `.env` with empty values:
+
+```text
+python scripts/seed_exchange_env_names.py
+```
+
+The script appends only missing names, never rewrites an existing line, and
+never writes a value. Running it twice changes nothing.
+
 `trading/exchanges/credentials.py` reads only `ENCRYPTED_<NAME>`. A plaintext
 value in `.env` makes the credentials unavailable and is reported by name only;
 it never silently works and its value never reaches a log.
@@ -332,6 +341,15 @@ it never silently works and its value never reaches a log.
    `exchange_live_enabled` true. The live mode additionally needs the
    one-time code the bot issues on the first execution request.
 
+### 12.2b Reconciliation
+
+`main.py` runs one reconciliation pass before polling starts and then one
+pass every `exchange_reconcile_interval_seconds` (default 60). A pass reads
+every non-terminal row, prefers the stored venue order id, falls back to the
+client order id only for a venue whose limit is verified, and never re-sends.
+While the first pass has not succeeded, sandbox and live submissions are
+refused with `reconciliation_pending`; shadow rows are unaffected.
+
 ### 12.3 Emergency stop
 1. Send `/exchange_halt`. The control row `halted=1` in
    `runs/live_ledger.db` refuses every new submission, including shadow rows.
@@ -351,6 +369,18 @@ Every 90 days, or immediately after an incident:
 3. Replace the value in `.env`, then run `python scripts/encrypt_keys.py`.
 4. Restart the bot and repeat the attestation step: update
    `exchange_attested_keys` in `config.json`.
+
+### 12.4b Known limitations
+
+- Every ledger method opens its own connection. Fine at the current volume;
+  a pooled connection is a future change. (G-23)
+- `halt` stops new submissions; it does not cancel open orders at the venue.
+  Cancel those manually in the venue interface. (G-24)
+- LBank never reaches live: the key-permission rule for
+  `supplement/api_Restrictions` is not defined, so the check returns
+  `lbank_rule_not_defined`. (G-25)
+- Ourbit stays blocked until official API documentation exists; the factory
+  raises `OurbitNotReady` and no request leaves the process. (G-26)
 
 ### 12.5 Backups
 

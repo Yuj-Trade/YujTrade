@@ -21,8 +21,6 @@ PROFILE_IRAN = "iran"
 STATUS_READY = "ready"
 STATUS_PENDING_DOCS = "pending_docs_verification"
 
-MODES_WITHOUT_CREDENTIALS = ("shadow",)
-
 
 @dataclass(frozen=True)
 class GateInput:

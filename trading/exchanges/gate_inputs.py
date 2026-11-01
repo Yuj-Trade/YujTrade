@@ -73,10 +73,14 @@ def load_exchange_settings(config_manager: ConfigManager) -> ExchangeSettings:
     )
 
 
-def review_is_accepted(review_id: str, adr_dir: Path | str = Path("docs/adr")) -> bool:
+def _default_adr_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "docs" / "adr"
+
+
+def review_is_accepted(review_id: str, adr_dir: Path | str | None = None) -> bool:
     if not review_id or not _REVIEW_ID_PATTERN.match(review_id):
         return False
-    directory = Path(adr_dir)
+    directory = Path(adr_dir) if adr_dir is not None else _default_adr_dir()
     if not directory.is_dir():
         return False
     matches = sorted(directory.glob(f"{review_id}-*.md"))

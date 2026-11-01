@@ -110,6 +110,7 @@ def test_sandbox_expectation_is_tristate():
     for spec in EXCHANGE_REGISTRY:
         assert spec.sandbox_expected in {True, False, None}
 
+
 def test_kucoin_sandbox_expectation_matches_pinned_ccxt():
     assert get_spec("kucoin").sandbox_expected is False
 

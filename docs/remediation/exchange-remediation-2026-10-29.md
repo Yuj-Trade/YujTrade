@@ -274,3 +274,21 @@ inspects a real key. Recorded in `docs/open_issues.md`.
   4.5.90
 - Tests: two new registry tests pin the sandbox expectations for the verified
   venues.
+
+## R12: cleanup (G-17, G-19, G-20, G-22, G-23)
+
+- G-17: `review_is_accepted` resolves `docs/adr` from the package location, not
+  the working directory. Tested from a different directory.
+- G-19: `_enable_sandbox` no longer maps `AttributeError` to a sandbox error;
+  `TypeError` is still reported as `sandbox_not_supported` with the cause logged
+  at debug level. `_close_quietly` removed.
+- G-20: removed `status_from_order`, `MODES_WITHOUT_CREDENTIALS`,
+  `_close_quietly` and `_pending_confirmation`. `issue_confirmation` is now used
+  by the bot flow.
+- G-22: `scripts/seed_exchange_env_names.py` is documented in the runbook and has
+  tests proving it adds empty names only, never rewrites a line and is
+  idempotent.
+- G-23: no change; recorded in the runbook as an accepted limitation.
+
+- Commit: `2b7e0c5` chore(exchange): remove dead helpers, narrow sandbox error
+  handling and document the env seed script

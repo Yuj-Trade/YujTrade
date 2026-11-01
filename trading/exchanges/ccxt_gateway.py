@@ -2,7 +2,6 @@ from typing import Any
 
 import ccxt.async_support as ccxt_async
 
-from application.exchange_policy import map_ccxt_status
 from config.logger import logger
 from domain.exchange_types import OrderIntent, OrderSnapshot, PlacementResult
 from trading.exchanges.credentials import ExchangeCredentials
@@ -51,14 +50,10 @@ class CcxtGateway:
         try:
             self.client.set_sandbox_mode(True)
         except ccxt_async.NotSupported as exc:
-            self._close_quietly()
             raise ExchangeConfigError("sandbox_not_supported") from exc
-        except (TypeError, AttributeError) as exc:
-            self._close_quietly()
+        except TypeError as exc:
+            logger.debug(f"Sandbox mode unavailable for {self.spec.exchange_id}: {exc}")
             raise ExchangeConfigError("sandbox_not_supported") from exc
-
-    def _close_quietly(self) -> None:
-        return None
 
     def error_text(self, exc: BaseException) -> str:
         return sanitize(str(exc), self._secrets)
@@ -190,12 +185,6 @@ class CcxtGateway:
         if not isinstance(capabilities, dict):
             return False
         return bool(capabilities.get(name))
-
-    def status_from_order(self, order: dict[str, Any]) -> str:
-        amount = float(order.get("amount") or 0.0)
-        filled = float(order.get("filled") or 0.0)
-        raw = order.get("status")
-        return map_ccxt_status(raw if raw is not None else None, filled, amount)
 
     async def close(self) -> None:
         try:
