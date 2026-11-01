@@ -491,3 +491,12 @@ until the remediation run closes it or states why it stays open.
   By design; documented in R13.
 - [ ] G-26 Ourbit stays blocked until official API documentation exists. By
   design; documented in R13.
+
+## Exchange remediation 2026-10-29 - open
+
+- [ ] G-27 pre-existing test isolation defect: ``tests/unit/strategy/test_signal_tracker.py``
+  and ``tests/unit/strategy/test_signal_tracker_summary.py`` fail when the whole
+  default suite runs, and pass when their file runs alone. Reproduced on a clean
+  ``main`` with the remediation work stashed, so it is not caused by the exchange
+  remediation. Cause: a shared ``signal_history.json`` path or singleton tracker
+  state leaks between tests. Not fixed here; recorded per section 0.1.
