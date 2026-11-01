@@ -75,9 +75,67 @@ def test_summarize_computes_mean_deviation():
     from scripts.exchange_shadow_report import summarize_shadow_rows
 
     rows = [
-        {"exchange_id": "binance", "reason": "shadow", "price": 100.0, "average_price": 101.0},
-        {"exchange_id": "binance", "reason": "shadow", "price": 100.0, "average_price": 99.0},
+        {
+            "exchange_id": "binance",
+            "reason": "shadow",
+            "price": 101.0,
+            "average_price": 0.0,
+            "reference_price": 100.0,
+        },
+        {
+            "exchange_id": "binance",
+            "reason": "shadow",
+            "price": 99.0,
+            "average_price": 0.0,
+            "reference_price": 100.0,
+        },
     ]
     summary = summarize_shadow_rows(rows)
     assert summary["mean_deviation_pct"] == pytest.approx(1.0)
+    assert summary["max_deviation_pct"] == pytest.approx(1.0)
     assert summary["deviation_samples"] == 2
+    assert summary["rows_without_reference"] == 0
+
+
+def test_rows_without_reference_are_counted_not_averaged():
+    from scripts.exchange_shadow_report import summarize_shadow_rows
+
+    rows = [{"exchange_id": "binance", "reason": "shadow", "price": 101.0, "reference_price": 0.0}]
+    summary = summarize_shadow_rows(rows)
+    assert summary["deviation_samples"] == 0
+    assert summary["rows_without_reference"] == 1
+    assert summary["mean_deviation_pct"] == 0.0
+
+
+def test_refusals_are_merged_into_reasons():
+    from scripts.exchange_shadow_report import summarize_shadow_rows
+
+    rows = [
+        {"exchange_id": "binance", "reason": "shadow", "reference_price": 100.0, "price": 100.0}
+    ]
+    summary = summarize_shadow_rows(rows, {"exchange_not_ready": 3, "key_not_attested": 1})
+    assert summary["reasons"]["shadow"] == 1
+    assert summary["reasons"]["exchange_not_ready"] == 3
+    assert summary["refusals"] == {"exchange_not_ready": 3, "key_not_attested": 1}
+
+
+def test_soak_exit_criteria():
+    from scripts.exchange_shadow_report import soak_exit_criteria
+
+    clean = {
+        "reasons": {"shadow": 4},
+        "max_deviation_pct": 0.4,
+        "deviation_samples": 4,
+    }
+    assert all(soak_exit_criteria(clean, 2.0).values())
+
+    blocked = {
+        "reasons": {"exchange_not_ready": 1, "key_not_attested": 1},
+        "max_deviation_pct": 5.0,
+        "deviation_samples": 0,
+    }
+    result = soak_exit_criteria(blocked, 2.0)
+    assert result["no_exchange_not_ready"] is False
+    assert result["no_key_not_attested"] is False
+    assert result["deviation_within_limit"] is False
+    assert result["has_samples"] is False

@@ -215,3 +215,31 @@ Fix:
   resubmit with the code, and zero size.
 - Gate: 2103 passed. `grep -rn exchange_confirm` now only appears in a test that
   asserts the command is gone.
+
+## R9: measurable shadow soak (G-06)
+
+Reproduced: shadow rows carried no reference price, so the deviation was always
+zero, and every refusal returned before `append_pending`, so
+``exchange_not_ready`` and ``key_not_attested`` were never stored.
+
+Fix:
+
+- New ``exchange_refusals`` table and a ``reference_price`` column added with
+  ``ALTER TABLE`` inside ``_ensure_schema``, so an existing operator database is
+  migrated with no data loss.
+- ``record_refusal`` and ``refusal_counts`` on the ledger.
+- ``_refuse`` is now async and records the refusal for a known venue; the gate
+  reasons reach the report.
+- Shadow submissions store the last price as ``reference_price``.
+- ``scripts/exchange_shadow_report.py`` computes mean and max deviation from
+  ``reference_price``, merges refusal counts into the reason table, and reports
+  ``soak_exit`` against the configured deviation limit.
+
+Also fixed a defect introduced while converting ``_refuse`` to a coroutine: the
+``unknown_exchange`` path returned an unawaited coroutine. Caught by the new
+tests.
+
+- Commit: `f6bb9cf` feat(exchange): record shadow reference prices and refusals
+  so the soak can be measured
+- Tests: `tests/unit/trading/test_exchange_shadow_measurability.py` (7 tests,
+  including a real legacy database migration) and the updated report tests.

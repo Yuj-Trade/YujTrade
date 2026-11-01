@@ -136,9 +136,20 @@ class ExchangeExecutionService:
         except Exception as exc:
             logger.error(f"Exchange notification failed: {exc}")
 
-    @staticmethod
-    def _refuse(reason: str, mode: str = "", cid: str = "") -> SubmitResult:
+    async def _refuse(
+        self,
+        reason: str,
+        mode: str = "",
+        cid: str = "",
+        exchange_id: str = "",
+        signal_id: str = "",
+    ) -> SubmitResult:
         logger.warning(f"Exchange submission refused: {reason}")
+        if exchange_id and signal_id and reason != "unknown_exchange":
+            try:
+                await self.ledger.record_refusal(exchange_id, signal_id, reason)
+            except Exception as exc:
+                logger.debug(f"Refusal recording skipped: {exc}")
         return SubmitResult(ok=False, mode=mode, reason=reason, client_order_id=cid)
 
     async def _evaluate_gate(
@@ -182,20 +193,26 @@ class ExchangeExecutionService:
         try:
             spec = get_spec(exchange_id)
         except KeyError:
-            return self._refuse("unknown_exchange")
+            return await self._refuse("unknown_exchange")
         if not profile_accepts(self.settings.access_profile, spec):
-            return self._refuse("scope_mismatch")
+            return await self._refuse(
+                "scope_mismatch", exchange_id=exchange_id, signal_id=signal_id
+            )
         mode, reason, use_sandbox, secrets, _halted = await self._evaluate_gate(spec)
         if mode is None:
-            return self._refuse(reason)
+            return await self._refuse(reason, exchange_id=exchange_id, signal_id=signal_id)
         if mode in {"sandbox", "live"} and not self.reconciled:
-            return self._refuse("reconciliation_pending")
+            return await self._refuse(
+                "reconciliation_pending", exchange_id=exchange_id, signal_id=signal_id
+            )
         if mode == "live":
             allowed, code_reason = await check_confirmation(
                 self.ledger, confirmation_code, exchange_id, signal_id
             )
             if not allowed:
-                return self._refuse(code_reason, mode)
+                return await self._refuse(
+                    code_reason, mode, exchange_id=exchange_id, signal_id=signal_id
+                )
         cid = make_client_order_id(exchange_id, signal_id, spec.client_id_max_len)
         intent = OrderIntent(
             exchange_id=exchange_id,
@@ -211,10 +228,12 @@ class ExchangeExecutionService:
         try:
             gateway = self.gateway_factory(spec, use_sandbox, credentials)
         except ExchangeConfigError as exc:
-            return self._refuse(str(exc), mode)
+            return await self._refuse(str(exc), mode, exchange_id=exchange_id, signal_id=signal_id)
         except Exception as exc:
             logger.error(f"Gateway construction failed for {exchange_id}: {exc}")
-            return self._refuse("gateway_unavailable", mode)
+            return await self._refuse(
+                "gateway_unavailable", mode, exchange_id=exchange_id, signal_id=signal_id
+            )
         try:
             return await self._submit_with_gateway(
                 gateway=gateway,
@@ -261,7 +280,13 @@ class ExchangeExecutionService:
             if side == "sell" and mode != "shadow":
                 held = await gateway.fetch_free_balance(intent.symbol.split("/")[0])
         except ExchangeConfigError as exc:
-            return self._refuse(sanitize(str(exc), secrets), mode, cid)
+            return await self._refuse(
+                sanitize(str(exc), secrets),
+                mode,
+                cid,
+                exchange_id=exchange_id,
+                signal_id=signal_id,
+            )
         except Exception as exc:
             return self._fail_unresolved(cid, exchange_id, mode, secrets, exc)
         accepted, why = risk_check(
@@ -283,16 +308,20 @@ class ExchangeExecutionService:
             max_spread_pct=self.settings.max_spread_pct,
         )
         if not accepted:
-            return self._refuse(why, mode, cid)
-        if not await self.ledger.append_pending(intent, mode, mode):
-            return self._refuse("duplicate_signal", mode, cid)
+            return await self._refuse(why, mode, cid, exchange_id=exchange_id, signal_id=signal_id)
+        if not await self.ledger.append_pending(intent, mode, mode, reference_price=last):
+            return await self._refuse(
+                "duplicate_signal", mode, cid, exchange_id=exchange_id, signal_id=signal_id
+            )
         if mode == "live":
             consumed, consume_reason = await consume_confirmation(
                 self.ledger, confirmation_code, exchange_id, signal_id
             )
             if not consumed:
                 await self.ledger.set_status(cid, exchange_id, REJECTED, consume_reason)
-                return self._refuse(consume_reason, mode, cid)
+                return await self._refuse(
+                    consume_reason, mode, cid, exchange_id=exchange_id, signal_id=signal_id
+                )
         if mode == "shadow":
             await self._announce(
                 f"Shadow signal {signal_id} on {exchange_id}: {intent.symbol} {side} "

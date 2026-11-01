@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS live_orders (
     updated_at_utc TEXT NOT NULL,
     UNIQUE (exchange_id, client_order_id)
 );
+CREATE TABLE IF NOT EXISTS exchange_refusals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exchange_id TEXT NOT NULL,
+    signal_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at_utc TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS live_control (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -46,7 +53,7 @@ CREATE TABLE IF NOT EXISTS live_control (
 _COLUMNS = (
     "signal_id, exchange_id, client_order_id, exchange_order_id, symbol, side, amount, price, "
     "filled, average_price, fee_cost, fee_currency, status, mode, reason, created_at_utc, "
-    "updated_at_utc"
+    "updated_at_utc, reference_price"
 )
 
 _NON_TERMINAL_SQL = ", ".join(f"'{status}'" for status in sorted(NON_TERMINAL_STATUSES))
@@ -71,6 +78,12 @@ class LiveLedger:
         if self._schema_ready:
             return
         await connection.executescript(_SCHEMA)
+        cursor = await connection.execute("PRAGMA table_info(live_orders)")
+        columns = {str(row[1]) for row in await cursor.fetchall()}
+        if "reference_price" not in columns:
+            await connection.execute(
+                "ALTER TABLE live_orders ADD COLUMN reference_price REAL NOT NULL DEFAULT 0"
+            )
         await connection.commit()
         self._schema_ready = True
 
@@ -87,15 +100,22 @@ class LiveLedger:
         finally:
             await connection.close()
 
-    async def append_pending(self, intent: OrderIntent, mode: str, reason: str = "") -> bool:
+    async def append_pending(
+        self,
+        intent: OrderIntent,
+        mode: str,
+        reason: str = "",
+        reference_price: float = 0.0,
+    ) -> bool:
         status = SHADOW if mode == "shadow" else PENDING_SUBMIT
         moment = _now_iso()
         connection = await self._connect()
         try:
             await connection.execute(
                 "INSERT INTO live_orders(signal_id, exchange_id, client_order_id, symbol, side, "
-                "amount, price, status, mode, reason, created_at_utc, updated_at_utc) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "amount, price, status, mode, reason, created_at_utc, updated_at_utc, "
+                "reference_price) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     intent.signal_id,
                     intent.exchange_id,
@@ -109,6 +129,7 @@ class LiveLedger:
                     reason,
                     moment,
                     moment,
+                    float(reference_price),
                 ),
             )
             await connection.commit()
@@ -221,6 +242,33 @@ class LiveLedger:
             cursor = await connection.execute(query, params)
             rows = await cursor.fetchall()
             return [_row_to_dict(row) for row in rows]
+        finally:
+            await connection.close()
+
+    async def record_refusal(self, exchange_id: str, signal_id: str, reason: str) -> None:
+        connection = await self._connect()
+        try:
+            await connection.execute(
+                "INSERT INTO exchange_refusals(exchange_id, signal_id, reason, created_at_utc) "
+                "VALUES (?, ?, ?, ?)",
+                (exchange_id, signal_id, reason, _now_iso()),
+            )
+            await connection.commit()
+        finally:
+            await connection.close()
+
+    async def refusal_counts(self, exchange_id: str | None = None) -> dict[str, int]:
+        connection = await self._connect()
+        try:
+            query = "SELECT reason, COUNT(*) FROM exchange_refusals"
+            params: tuple[Any, ...] = ()
+            if exchange_id is not None:
+                query += " WHERE exchange_id = ?"
+                params = (exchange_id,)
+            query += " GROUP BY reason"
+            cursor = await connection.execute(query, params)
+            rows = await cursor.fetchall()
+            return {str(row[0]): int(row[1]) for row in rows}
         finally:
             await connection.close()
 
