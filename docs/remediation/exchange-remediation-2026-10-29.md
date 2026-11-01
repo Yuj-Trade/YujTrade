@@ -292,3 +292,101 @@ inspects a real key. Recorded in `docs/open_issues.md`.
 
 - Commit: `2b7e0c5` chore(exchange): remove dead helpers, narrow sandbox error
   handling and document the env seed script
+
+## R14: end-to-end coverage and final gate
+
+`tests/unit/trading/test_exchange_e2e.py` (7 tests) drives the real
+`LiveLedger` on a temporary path, the real `ExchangeExecutionService` and a fake
+venue:
+
+- sandbox: gate refusal before reconciliation, accepted order, reconcile to
+  `filled`, halt blocks, resume reopens;
+- live: `preview_mode`, no code refuses, code places one order, the code cannot
+  be reused;
+- shadow: reference price stored, refusal recorded, report computes the
+  deviation and the reason counts;
+- unknown: a stored venue id that the venue cannot find becomes `unknown` after
+  the threshold and notifies once;
+- terminal: a `rejected` row cannot move again;
+- telegram: `/exchange_halt` writes `halted=1` on a real ledger and blocks
+  submission.
+
+## Final gate
+
+| Gate | Result |
+|---|---|
+| `python -m pytest -m "not slow and not ml" -q` | 2136 passed, 13 skipped, 21 deselected |
+| `ruff check .` | clean |
+| `ruff format --check .` | clean (305 files) |
+| `mypy domain` | clean |
+| `git diff --check` | clean |
+| Golden hashes | identical to the R0 baseline |
+| `git branch --list` | `main` only, plus the pre-existing `baseline/pre-agent` |
+
+Two tests are deselected, not fixed: `G-27` fails identically on a clean `main`
+and at the R0 baseline commit. They are not caused by this work and were left
+untouched rather than edited to pass.
+
+## Commit list
+
+| Commit | Message |
+|---|---|
+| `b63f2ee` | docs(exchange): record remediation baseline for the connectivity review |
+| `ffb1351` | docs(governance): return ADR-0011 and ADR-0012 to proposed until operator confirmation |
+| `2ff2e62` | chore(gate): allow an explicit review override and guard domain packaging |
+| `93e5707` | fix(exchange): create the live ledger schema on first use |
+| `4032709` | fix(exchange): send client order ids only where the venue limit is verified and look orders up by venue id |
+| `9064f1a` | feat(exchange): run reconciliation at startup and on a periodic loop |
+| `84281e3` | fix(exchange): size exchange orders through the same risk path as paper trading |
+| `5dc5e18` | docs(exchange): record the pre-existing tracker test isolation defect |
+| `7f91a7d` | feat(exchange): live confirmation issued by the bot and consumed only after risk checks |
+| `025897f` | feat(exchange): record shadow reference prices and refusals so the soak can be measured |
+| `e9076f1` | fix(exchange): cache key-permission verdicts and check them only for live submissions |
+| `eca6bf1` | docs(exchange): align kucoin sandbox expectation with ccxt 4.5.90 |
+| `8cbf769` | chore(exchange): remove dead helpers, narrow sandbox error handling and document the env seed script |
+| `aa9806b` | docs(exchange): align runbook, ADR, architecture and run report with the remediated behaviour |
+
+## Finding status
+
+| Finding | Status |
+|---|---|
+| G-01 | fixed in R3 |
+| G-02 | fixed in R5 |
+| G-03 | fixed in R8 |
+| G-04 | fixed in R6 |
+| G-05 | fixed in R4 |
+| G-06 | fixed in R9 |
+| G-07 | fixed in R8 |
+| G-08 | fixed in R10 |
+| G-09 | fixed in R4 |
+| G-10 | already closed upstream |
+| G-11 | already closed upstream |
+| G-12 | fixed in R11 |
+| G-13 | open, operator must inspect a real key |
+| G-14 | fixed in R1 |
+| G-15 | fixed in R1 |
+| G-16 | fixed in R13 |
+| G-17 | fixed in R12 |
+| G-18 | fixed in R6 |
+| G-19 | fixed in R12 |
+| G-20 | fixed in R12 |
+| G-21 | fixed in R5 |
+| G-22 | fixed in R12 |
+| G-23 | open by design |
+| G-24 | open by design |
+| G-25 | open by design |
+| G-26 | open by design |
+| G-27 | open, pre-existing |
+
+## Live state
+
+Unchanged and closed. `exchange_live_enabled` is `false`, `exchange_sandbox` is
+`true`, `execution_dry_run` is `true`, `exchange_live_review_id` is empty and
+`exchange_attested_keys` is empty in `ConfigManager.DEFAULT_CONFIG`. Both ADRs
+are `proposed`, so `review_is_accepted` returns false and the gate refuses with
+`review_not_accepted` even if an operator filled every other live value.
+
+## Push
+
+Not run. `origin/main` is behind the local branch by 14 commits; the operator
+should confirm and push. Recorded as blocked for this run.
