@@ -123,7 +123,7 @@ EXCHANGE_REGISTRY: tuple[ExchangeSpec, ...] = (
         None,
     ),
     ExchangeSpec(
-        "kucoin", "KuCoin", "kucoin", SCOPE_GENERAL, STATUS_READY, True, True, "plain", True, None
+        "kucoin", "KuCoin", "kucoin", SCOPE_GENERAL, STATUS_READY, True, True, "plain", False, None
     ),
     ExchangeSpec(
         "mexc", "MEXC", "mexc", SCOPE_GENERAL, STATUS_READY, True, False, "plain", None, None

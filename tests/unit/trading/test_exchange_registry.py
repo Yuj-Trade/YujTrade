@@ -109,3 +109,22 @@ def test_secret_encoding_values_are_valid():
 def test_sandbox_expectation_is_tristate():
     for spec in EXCHANGE_REGISTRY:
         assert spec.sandbox_expected in {True, False, None}
+
+def test_kucoin_sandbox_expectation_matches_pinned_ccxt():
+    assert get_spec("kucoin").sandbox_expected is False
+
+
+def test_sandbox_expectations_for_verified_venues():
+    expected = {
+        "binance": True,
+        "bybit": True,
+        "okx": True,
+        "phemex": True,
+        "bullish": True,
+        "deribit": True,
+        "kucoin": False,
+        "kraken": False,
+        "lbank": False,
+    }
+    for exchange_id, value in expected.items():
+        assert get_spec(exchange_id).sandbox_expected is value, exchange_id

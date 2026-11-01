@@ -31,7 +31,7 @@ record what the sandbox switch does without contacting a venue.
 | phemex | supported | True | `testnet.phemex.com` |
 | bullish | supported | True | `api.simnext.bullish-test.com` |
 | deribit | supported | True | `test.deribit.com`, derivatives only |
-| kucoin | raises `TypeError` | True | no `urls.test` entry in this version |
+| kucoin | raises `TypeError` | False | no `urls.test` entry in this version |
 | kraken | n/a | False | spot has no testnet; only the order `validate` parameter |
 | lbank | n/a | False | `supplement/create_order_test` only, not a sandbox |
 | coinbase | not verified | None | probe required |

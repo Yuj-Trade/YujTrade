@@ -260,3 +260,17 @@ hammered.
 - Tests: `tests/unit/trading/test_exchange_permission_cache.py` (7 tests) with a
   fake clock.
 - No live default changed.
+
+## R11: registry alignment (G-12, G-13)
+
+`kucoin` declared `sandbox_expected=True` while ccxt 4.5.90 raises `TypeError`
+from `set_sandbox_mode(True)`. The registry, ADR-0011 and the probe results table
+now say `False`.
+
+G-13 is unchanged: `coinbase` and `bullish` stay `base64` until the operator
+inspects a real key. Recorded in `docs/open_issues.md`.
+
+- Commit: `8b1a4fb` docs(exchange): align kucoin sandbox expectation with ccxt
+  4.5.90
+- Tests: two new registry tests pin the sandbox expectations for the verified
+  venues.

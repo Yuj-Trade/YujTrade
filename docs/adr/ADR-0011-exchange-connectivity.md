@@ -75,7 +75,7 @@ The pinned version was probed for `set_sandbox_mode(True)` support:
 | phemex | supported | `True` |
 | bullish | supported | `True` |
 | deribit | supported (`test.deribit.com`) | `True` |
-| kucoin | raises `TypeError` (no `urls.test` entry) | `True` |
+| kucoin | raises `TypeError` (no `urls.test` entry) | `False` after this review |
 | kraken | spot has no testnet; only the `validate` order parameter | `False` |
 | lbank | sandbox absent; `supplement/create_order_test` exists | `False` |
 | coinbase | not verified | `None` |

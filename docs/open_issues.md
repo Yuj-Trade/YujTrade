@@ -500,3 +500,7 @@ until the remediation run closes it or states why it stays open.
   ``main`` with the remediation work stashed, so it is not caused by the exchange
   remediation. Cause: a shared ``signal_history.json`` path or singleton tracker
   state leaks between tests. Not fixed here; recorded per section 0.1.
+
+- [ ] G-13 ``secret_encoding`` for coinbase and bullish is still ``base64``
+  without a real key check. Operator step: inspect a key and switch to ``plain``
+  in the registry if it is single-line.
