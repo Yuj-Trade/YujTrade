@@ -66,22 +66,32 @@ Recorded as blocked in this report rather than retried.
 
 ## Phase status
 
+Status reflects the connectivity review of 2026-10-29. Phases 6, 7, 8 and 10 were
+not functional as delivered; see
+`docs/remediation/exchange-remediation-2026-10-29.md`.
+
 | Phase | Status |
 |---|---|
-| 0. Governance | done |
+| 0. Governance | partial (ADR accepted without confirmation; corrected to proposed) |
 | 1. Baseline and adapter fixes | done |
 | 2. Domain, ports, policy, registry | done |
 | 3. Encrypted secrets | done |
 | 4. Read-only market data | done (network probe `blocked_by_operator`) |
 | 5. Authenticated reads and permission check | done (LBank rule `blocked_by_operator`) |
-| 6. Live ledger and reconciliation | done |
-| 7. Sandbox submission | done (real sandbox test `blocked_by_operator`) |
-| 8. Telegram controls | done |
+| 6. Live ledger and reconciliation | partial (no schema init, no run loop; fixed in R3 and R5) |
+| 7. Sandbox submission | partial (sizing broken; fixed in R6) |
+| 8. Telegram controls | partial (halt failed, execute refused; fixed in R3 and R6) |
 | 9. Shadow mode | done (14-day soak `blocked_by_operator`) |
-| 10. Live activation mechanism | done (activation `blocked_by_operator`) |
+| 10. Live activation mechanism | partial (confirmation not wired; fixed in R8) |
 | 11. Further general venues | done as code + documented procedure (probe `blocked_by_operator`) |
 | 12. Iran profile | done for LBank; Ourbit `blocked_by_operator` |
 | 13. Operations | done |
+
+## Remediation of 2026-10-29
+
+`docs/remediation/exchange-remediation-2026-10-29.md` records R0 to R14. Each
+finding from `yujtrade_exchange_connectivity_review.md` is either fixed with
+its commit or left open with a reason in `docs/open_issues.md`.
 
 ## Verified environment findings
 

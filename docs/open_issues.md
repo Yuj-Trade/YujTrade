@@ -439,50 +439,51 @@ blocked decision, not a silent assumption.
 Findings from `yujtrade_exchange_connectivity_review.md`. Each one is tracked
 until the remediation run closes it or states why it stays open.
 
-- [ ] G-01 live ledger is built without `initialize()`; every ledger call
+- [x] G-01 (fixed in R3) live ledger is built without `initialize()`; every ledger call
   raises `no such table` on a fresh database and `/exchange_halt` does not
   work. Remediated in R3; see `docs/remediation/exchange-remediation-2026-10-29.md`.
-- [ ] G-02 `reconcile_once` has no production caller, so a `pending_submit`
+- [x] G-02 (fixed in R5) `reconcile_once` has no production caller, so a `pending_submit`
   or `submitted` row is never resolved and `unknown` is never detected.
   Remediated in R5.
-- [ ] G-03 the live confirmation flow is not wired: `issue_confirmation` has no
+- [x] G-03 (fixed in R8) the live confirmation flow is not wired: `issue_confirmation` has no
   caller and the code never reaches `submit_signal`. Remediated in R8.
-- [ ] G-04 `/exchange_execute` calls `portfolio.equity(entry, stop)` with two
+- [x] G-04 (fixed in R6) `/exchange_execute` calls `portfolio.equity(entry, stop)` with two
   arguments, so sizing fails and every order is refused with
   `invalid_quantity`. Remediated in R6.
-- [ ] G-05 the 32-character client order id exceeds the Gate limit of 28 and the
+- [x] G-05 (fixed in R4) the 32-character client order id exceeds the Gate limit of 28 and the
   Kraken `userref` receives a symbol fragment. Remediated in R4.
-- [ ] G-06 the shadow soak cannot be measured: no reference price, no stored
+- [x] G-06 (fixed in R9) the shadow soak cannot be measured: no reference price, no stored
   refusals. Remediated in R9.
-- [ ] G-07 the confirmation code is consumed before the risk checks. Remediated
+- [x] G-07 (fixed in R8) the confirmation code is consumed before the risk checks. Remediated
   in R8.
-- [ ] G-08 the key permission verdict is not cached and runs in sandbox and
+- [x] G-08 (fixed in R10) the key permission verdict is not cached and runs in sandbox and
   shadow. Remediated in R10.
-- [ ] G-09 reconciliation only looks orders up by `clientOrderId`. Remediated
+- [x] G-09 (fixed in R4) reconciliation only looks orders up by `clientOrderId`. Remediated
   in R4.
 - [x] G-10 `mypy domain` failed with the pinned mypy because `domain` had no
   `__init__.py`. Closed upstream before this run; `mypy domain` is clean.
 - [x] G-11 `TradingService.execute_signal` and `portfolio_snapshot` were
   missing. Closed upstream before this run.
-- [ ] G-12 kucoin declares `sandbox_expected=True` but ccxt 4.5.90 cannot
+- [x] G-12 (fixed in R11) kucoin declares `sandbox_expected=True` but ccxt 4.5.90 cannot
   enable it. Remediated in R11.
-- [ ] G-13 `secret_encoding` for coinbase and bullish is unverified. Operator
-  item; unchanged.
-- [ ] G-14 ADR-0011 and ADR-0012 were recorded as accepted without a written
+- [ ] G-13 `secret_encoding` for coinbase and bullish is still `base64`
+  without a real key check. Operator step: inspect a key and switch to
+  `plain` in the registry if it is single-line.
+- [x] G-14 (fixed in R1) ADR-0011 and ADR-0012 were recorded as accepted without a written
   operator confirmation. Remediated in R1; both are `proposed` until the
   operator confirms in writing.
-- [ ] G-15 the OpenSpec proposal was marked approved without confirmation.
+- [x] G-15 (fixed in R1) the OpenSpec proposal was marked approved without confirmation.
   Remediated in R1.
-- [ ] G-16 the run report overstates phases 6, 7, 8 and 10. Remediated in R13.
-- [ ] G-17 `review_is_accepted` resolves `docs/adr` from the working
+- [x] G-16 (fixed in R13) the run report overstates phases 6, 7, 8 and 10. Remediated in R13.
+- [x] G-17 (fixed in R12) `review_is_accepted` resolves `docs/adr` from the working
   directory. Remediated in R12.
-- [ ] G-18 the sizing error is swallowed at debug level. Remediated in R6.
-- [ ] G-19 `_enable_sandbox` maps `AttributeError` to a sandbox error.
+- [x] G-18 (fixed in R6) the sizing error is swallowed at debug level. Remediated in R6.
+- [x] G-19 (fixed in R12) `_enable_sandbox` maps `AttributeError` to a sandbox error.
   Remediated in R12.
-- [ ] G-20 dead helpers. Remediated in R12.
-- [ ] G-21 `exchange_reconcile_interval_seconds` is configured but unused.
+- [x] G-20 (fixed in R12) dead helpers. Remediated in R12.
+- [x] G-21 (fixed in R5) `exchange_reconcile_interval_seconds` is configured but unused.
   Remediated in R5.
-- [ ] G-22 `scripts/seed_exchange_env_names.py` is outside the playbook.
+- [x] G-22 (fixed in R12) `scripts/seed_exchange_env_names.py` is outside the playbook.
   Remediated in R12.
 - [ ] G-23 every ledger method opens a new connection. Accepted limitation, no
   change planned.
@@ -501,6 +502,16 @@ until the remediation run closes it or states why it stays open.
   remediation. Cause: a shared ``signal_history.json`` path or singleton tracker
   state leaks between tests. Not fixed here; recorded per section 0.1.
 
-- [ ] G-13 ``secret_encoding`` for coinbase and bullish is still ``base64``
-  without a real key check. Operator step: inspect a key and switch to ``plain``
-  in the registry if it is single-line.
+
+## Exchange remediation summary 2026-10-29
+
+| Finding | Status |
+|---|---|
+| G-01, G-02, G-03, G-04, G-05, G-06, G-07, G-08, G-09 | fixed |
+| G-10, G-11 | already fixed upstream before this run |
+| G-12, G-14, G-15, G-16, G-17, G-18, G-19, G-20, G-21, G-22 | fixed |
+| G-13, G-23, G-24, G-25, G-26 | open by design or operator item |
+| G-27 | open, pre-existing test isolation defect |
+
+Commit hashes are listed per phase in
+`docs/remediation/exchange-remediation-2026-10-29.md`.

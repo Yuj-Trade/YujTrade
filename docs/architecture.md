@@ -261,7 +261,7 @@ submit_signal
   -> credential load                absent or plaintext -> credentials_missing
   -> halt flag                      set -> halted
   -> submission_mode gate           any unmet condition -> refused with a reason
-  -> live mode                      one-time code required (60 s, single use)
+  -> live mode                      code checked, consumed only after risk passes
   -> market data + normalize        venue error -> refused, no row
   -> risk_check                     rejection -> refused, no row
   -> ledger.append_pending          duplicate -> refused, no second order
@@ -270,9 +270,24 @@ submit_signal
   -> terminal statuses             never rewritten by any path
 ```
 
-Reconciliation reads the venue through the client order id, applies
-`next_status` and stops at `unknown` for a human decision. It never sends an
-order and never creates a second row.
+Reconciliation runs once at startup and then every
+`exchange_reconcile_interval_seconds`. For each non-terminal row it prefers the
+stored venue order id and falls back to the client order id only for a venue
+whose limit is verified in the ADR. It applies `next_status` and stops at
+`unknown` for a human decision; it never sends an order and never creates a
+second row. While the first pass has not succeeded, sandbox and live
+submissions are refused with `reconciliation_pending`.
+
+The live confirmation is issued by the bot: a live request without a code
+records nothing and returns a one-time code valid for 60 seconds. The same
+command with the code validates it before the gateway and consumes it after the
+risk checks and the ledger insert accept the order, so a rejected order does not
+burn the code. The flip is a compare-and-set on the control row.
+
+Refusals are recorded in `exchange_refusals` with their reason, and shadow rows
+carry the reference price taken when the signal was produced. Together these
+make the shadow soak measurable: the report computes mean and maximum deviation
+and counts each refusal reason.
 
 ## Cost model (P3, P5)
 
