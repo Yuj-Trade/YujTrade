@@ -108,6 +108,24 @@ def _utc_moment(value: Any) -> datetime | None:
     return moment.astimezone(UTC)
 
 
+def size_signal_for(signal: TradingSignal, portfolio: Any, risk_manager: Any) -> tuple[float, str]:
+    entry = float(signal.entry_price or 0.0)
+    if entry <= 0:
+        return 0.0, "invalid_entry"
+    prices = {signal.symbol: entry}
+    try:
+        equity = float(portfolio.equity(prices))
+        exposure = float(portfolio.exposure_pct(prices))
+        open_count = len(portfolio.positions)
+    except Exception as exc:
+        logger.warning(f"Portfolio sizing inputs unavailable for {signal.symbol}: {exc}")
+        return 0.0, "portfolio_unavailable"
+    decision = risk_manager.evaluate(signal, equity, exposure, open_count)
+    if not decision.allowed or decision.position_size <= 0:
+        return 0.0, str(decision.reason or "risk_rejected")
+    return float(decision.position_size), "ok"
+
+
 def _frame_candles(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
@@ -896,6 +914,9 @@ class TradingService(ModelDataProvider):
                 "paper_execution_enabled", ConfigManager.DEFAULT_CONFIG["paper_execution_enabled"]
             )
         )
+
+    def size_signal(self, signal: TradingSignal) -> tuple[float, str]:
+        return size_signal_for(signal, self.portfolio, self.risk_manager)
 
     async def execute_signal(self, signal: TradingSignal, mode: str = "paper") -> dict[str, Any]:
         if mode != "paper":

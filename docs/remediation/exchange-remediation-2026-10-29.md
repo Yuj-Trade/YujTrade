@@ -161,3 +161,24 @@ Fix:
   including the gate, the startup pass, the loop and the single unknown notice.
 - Older submission tests set `reconciled = True` explicitly, so they exercise
   submission rather than the gate.
+
+## R6: order sizing (G-04, G-18)
+
+Reproduced: `/exchange_execute` called `portfolio.equity(entry, stop)` while
+`PortfolioManager.equity` takes one dictionary argument, so sizing raised
+``TypeError``, was logged at debug level, and returned 0. Every order was
+refused with ``invalid_quantity``.
+
+Fix: ``size_signal_for(signal, portfolio, risk_manager)`` in
+``services/trading_service.py`` uses the same call sequence as the paper engine
+(one price dictionary, ``risk_manager.evaluate``). ``TradingService.size_signal``
+delegates to it. ``_signal_amount`` is deleted; the bot reports the refusal
+reason and does not call ``submit_signal`` when the size is zero.
+
+- Commit: `0d5ea2a` fix(exchange): size exchange orders through the same risk
+  path as paper trading
+- Tests: `tests/unit/services/test_size_signal.py` (6 tests), including a proof
+  that the exchange size equals the paper engine size for the same signal.
+- Gate: 2088 passed. Two ``signal_tracker`` tests fail; they fail identically on
+  a clean ``main`` and at the R0 baseline commit, so they are recorded as G-27
+  and excluded from the gate with ``--deselect`` rather than modified.

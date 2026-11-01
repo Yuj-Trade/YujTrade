@@ -176,6 +176,7 @@ def test_exchange_execute_matches_signal_id():
     signal.stop_loss = 49_000.0
     signal.position_size = 0.001
     handler.trading_service.run_quick_analysis = AsyncMock(return_value=[signal])
+    handler.trading_service.size_signal = MagicMock(return_value=(0.001, "ok"))
     from strategy.signal_tracker import make_signal_id
 
     sid = make_signal_id("BTC/USDT", "1h", signal.timestamp, "buy")
@@ -188,6 +189,7 @@ def test_exchange_execute_matches_signal_id():
     assert sent["side"] == "buy"
     assert sent["amount"] == 0.001
     assert sent["price"] == 50_000.0
+    handler.trading_service.size_signal.assert_called_once_with(signal)
 
 
 def test_exchange_execute_non_admin_does_nothing():

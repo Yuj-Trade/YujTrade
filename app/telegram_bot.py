@@ -455,24 +455,6 @@ class TelegramBotHandler:
         )
         await self._reply(update, text)
 
-    def _signal_amount(self, signal) -> tuple[float, float]:
-        entry = float(signal.entry_price or 0.0)
-        stop = float(signal.stop_loss or 0.0)
-        quantity = signal.position_size
-        if quantity is None:
-            try:
-                decision = self.trading_service.risk_manager.evaluate(
-                    signal,
-                    float(self.trading_service.portfolio.equity(entry, stop)),
-                    float(self.trading_service.portfolio.exposure_pct({signal.symbol: entry})),
-                    len(self.trading_service.portfolio.positions),
-                )
-                quantity = decision.position_size
-            except Exception as e:
-                logger.opt(exception=True).debug(f"Position sizing unavailable: {e}")
-                quantity = 0.0
-        return float(quantity or 0.0), entry
-
     async def exchange_execute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update, context):
             return
@@ -506,7 +488,11 @@ class TelegramBotHandler:
         if signal is None:
             await self._reply(update, f"Signal {signal_id} not found.")
             return
-        amount, price = self._signal_amount(signal)
+        amount, size_reason = self.trading_service.size_signal(signal)
+        price = float(signal.entry_price or 0.0)
+        if amount <= 0:
+            await self._reply(update, f"Exchange execution refused: {size_reason}")
+            return
         side = "buy" if signal.signal_type.value == "buy" else "sell"
         result = await service.submit_signal(
             exchange_id=exchange_id,
