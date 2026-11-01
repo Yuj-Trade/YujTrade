@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -65,6 +66,12 @@ class FakeExchangeService:
     async def submit_signal(self, **kwargs):
         self.submitted.append(kwargs)
         return self.result
+
+    async def preview_mode(self, exchange_id):
+        return "sandbox"
+
+    async def request_confirmation(self, exchange_id, signal_id):
+        return "ABCD1234"
 
     async def halt(self):
         self.halted += 1
@@ -203,13 +210,71 @@ def test_exchange_execute_non_admin_does_nothing():
     assert service.submitted == []
 
 
-def test_exchange_confirm_records_code_without_live_activation():
-    handler = _handler(exchange_service=FakeExchangeService())
-    update, context = _update(["ABCD1234"])
+def test_live_without_code_issues_a_code_and_places_nothing():
+    service = FakeExchangeService()
+    service.preview_mode = AsyncMock(return_value="live")
+    handler = _handler(exchange_service=service)
+    signal = MagicMock()
+    signal.symbol = "BTC/USDT"
+    signal.timeframe = "1h"
+    signal.timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    signal.signal_type.value = "buy"
+    signal.entry_price = 50_000.0
+    handler.trading_service.run_quick_analysis = AsyncMock(return_value=[signal])
+    handler.trading_service.size_signal = MagicMock(return_value=(0.001, "ok"))
+    from strategy.signal_tracker import make_signal_id
+
+    sid = make_signal_id("BTC/USDT", "1h", signal.timestamp, "buy")
+    update, context = _update(["binance", sid])
     with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
-        asyncio.run(handler.exchange_confirm_command(update, context))
-    assert handler._pending_confirmation == "ABCD1234"
-    assert handler.config_manager.get("exchange_live_enabled", False) is False
+        asyncio.run(handler.exchange_execute_command(update, context))
+    assert service.submitted == []
+    text = "\n".join(_texts(update))
+    assert "ABCD1234" in text
+    assert "60 seconds" in text
+
+
+def test_live_with_code_submits_once():
+    service = FakeExchangeService()
+    service.preview_mode = AsyncMock(return_value="live")
+    handler = _handler(exchange_service=service)
+    signal = MagicMock()
+    signal.symbol = "BTC/USDT"
+    signal.timeframe = "1h"
+    signal.timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    signal.signal_type.value = "buy"
+    signal.entry_price = 50_000.0
+    handler.trading_service.run_quick_analysis = AsyncMock(return_value=[signal])
+    handler.trading_service.size_signal = MagicMock(return_value=(0.001, "ok"))
+    from strategy.signal_tracker import make_signal_id
+
+    sid = make_signal_id("BTC/USDT", "1h", signal.timestamp, "buy")
+    update, context = _update(["binance", sid, "ABCD1234"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_execute_command(update, context))
+    assert len(service.submitted) == 1
+    assert service.submitted[0]["confirmation_code"] == "ABCD1234"
+
+
+def test_zero_size_never_submits():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    signal = MagicMock()
+    signal.symbol = "BTC/USDT"
+    signal.timeframe = "1h"
+    signal.timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    signal.signal_type.value = "buy"
+    signal.entry_price = 50_000.0
+    handler.trading_service.run_quick_analysis = AsyncMock(return_value=[signal])
+    handler.trading_service.size_signal = MagicMock(return_value=(0.0, "limit:single_position"))
+    from strategy.signal_tracker import make_signal_id
+
+    sid = make_signal_id("BTC/USDT", "1h", signal.timestamp, "buy")
+    update, context = _update(["binance", sid])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_execute_command(update, context))
+    assert service.submitted == []
+    assert "single" in "\n".join(_texts(update))
 
 
 def test_exchange_commands_never_print_secret_values():
@@ -221,7 +286,6 @@ def test_exchange_commands_never_print_secret_values():
     handler = _handler(exchange_service=service)
     update, context = _update(["binance", "x"])
     with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
-        asyncio.run(handler.exchange_confirm_command(update, context))
         asyncio.run(handler.exchange_status_command(update, context))
     text = "\n".join(_texts(update))
     assert "API_KEY" not in text.upper()
@@ -242,8 +306,8 @@ def test_handlers_are_registered():
         "exchange_execute",
         "exchange_halt",
         "exchange_resume",
-        "exchange_confirm",
     } <= names
+    assert "exchange_confirm" not in names
 
 
 def test_shadow_result_does_not_enable_live():

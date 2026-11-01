@@ -135,9 +135,6 @@ class TelegramBotHandler:
         self.application.add_handler(
             CommandHandler("exchange_resume", self.exchange_resume_command)
         )
-        self.application.add_handler(
-            CommandHandler("exchange_confirm", self.exchange_confirm_command)
-        )
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
@@ -464,9 +461,13 @@ class TelegramBotHandler:
             return
         args = context.args or []
         if len(args) < 2:
-            await self._reply(update, "Usage: /exchange_execute <exchange_id> <signal_id>")
+            await self._reply(
+                update,
+                "Usage: /exchange_execute <exchange_id> <signal_id> [code]",
+            )
             return
         exchange_id, signal_id = args[0], args[1]
+        confirmation_code = args[2] if len(args) > 2 else ""
         try:
             from strategy.signal_tracker import make_signal_id
 
@@ -493,6 +494,15 @@ class TelegramBotHandler:
         if amount <= 0:
             await self._reply(update, f"Exchange execution refused: {size_reason}")
             return
+        mode = await service.preview_mode(exchange_id)
+        if mode == "live" and not confirmation_code:
+            code = await service.request_confirmation(exchange_id, signal_id)
+            await self._reply(
+                update,
+                f"Live execution needs a confirmation code: {code} "
+                "(valid 60 seconds). Repeat the command with the code.",
+            )
+            return
         side = "buy" if signal.signal_type.value == "buy" else "sell"
         result = await service.submit_signal(
             exchange_id=exchange_id,
@@ -501,6 +511,7 @@ class TelegramBotHandler:
             side=side,
             amount=amount,
             price=price,
+            confirmation_code=confirmation_code,
         )
         text = (
             f"Exchange execution {exchange_id}: ok={result.ok} mode={result.mode} "
@@ -527,23 +538,6 @@ class TelegramBotHandler:
             return
         await service.resume()
         await self._reply(update, "Exchange resumed.")
-
-    async def exchange_confirm_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self._is_admin(update, context):
-            return
-        service = self._exchange_service()
-        if service is None:
-            await self._reply(update, "Exchange execution is not configured.")
-            return
-        args = context.args or []
-        if not args:
-            await self._reply(update, "Usage: /exchange_confirm <code>")
-            return
-        self._pending_confirmation = args[0]
-        await self._reply(
-            update,
-            "Confirmation code received. Submit the live execution again to use it.",
-        )
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if not self.admin_chat_id:

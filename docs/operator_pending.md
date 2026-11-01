@@ -56,8 +56,9 @@ Seven conditions, all set by the operator in `config.json`:
    attestation covers it
 7. the venue scope matches `exchange_access_profile`
 
-Plus the runtime confirmation: `/exchange_execute <venue> <signal_id>` followed
-by `/exchange_confirm <code>` within 60 seconds.
+Plus the runtime confirmation: `/exchange_execute <venue> <signal_id>` returns a
+one-time code, and the same command repeated with that code within 60 seconds
+places the order. The code is consumed only after the risk checks pass.
 
 - Why blocked: this is the operator's explicit, manual activation. The agent
   writes no live value anywhere.

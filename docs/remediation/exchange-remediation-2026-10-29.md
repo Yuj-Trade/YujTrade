@@ -182,3 +182,36 @@ reason and does not call ``submit_signal`` when the size is zero.
 - Gate: 2088 passed. Two ``signal_tracker`` tests fail; they fail identically on
   a clean ``main`` and at the R0 baseline commit, so they are recorded as G-27
   and excluded from the gate with ``--deselect`` rather than modified.
+
+## R7: paper bridge (G-11)
+
+Closed upstream before this run: `TradingService.execute_signal` and
+`portfolio_snapshot` exist and return the keys the bot reads. Verified against
+`app/telegram_bot.py`. No change made.
+
+## R8: live confirmation flow (G-03, G-07, part of G-20)
+
+Reproduced: `issue_confirmation` had no caller, `/exchange_confirm` stored a code
+nothing read, `/exchange_execute` never passed a code, and the code was consumed
+before the risk checks.
+
+Fix:
+
+- `LiveLedger.compare_and_set_control` gives an atomic state flip.
+- `check_confirmation` validates without writing; `consume_confirmation` flips
+  `pending` to `used` with compare-and-set only.
+- `ExchangeExecutionService.preview_mode` and `request_confirmation` are new.
+  A live submission checks the code before the gateway, consumes it after
+  `append_pending`, and marks the row `rejected` if the consume loses a race.
+- `/exchange_execute <venue> <signal_id> [code]`: without a code in live mode the
+  bot issues one and places nothing. `/exchange_confirm` and
+  `_pending_confirmation` are removed from code and docs.
+
+- Commit: `7ee67c1` feat(exchange): live confirmation issued by the bot and
+  consumed only after risk checks
+- Tests: `tests/unit/trading/test_exchange_confirmation_flow.py` (13 tests)
+  covering no code, wrong code, expiry, single use, code survival after a risk
+  rejection, and sandbox/shadow needing none. The app tests cover issue,
+  resubmit with the code, and zero size.
+- Gate: 2103 passed. `grep -rn exchange_confirm` now only appears in a test that
+  asserts the command is gone.

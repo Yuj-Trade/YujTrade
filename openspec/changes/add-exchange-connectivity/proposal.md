@@ -41,8 +41,9 @@ the operator's chat contains no such statement.
   shadow mode, sandbox mode, dry-run, live enablement, review id and key
   attestation.
 - Adds administrator Telegram commands: `/exchanges`, `/exchange_status`,
-  `/exchange_execute`, `/exchange_halt`, `/exchange_resume`, and the live
-  confirmation `/exchange_confirm`.
+  `/exchange_execute`, `/exchange_halt` and `/exchange_resume`. A live execution
+  is confirmed by repeating `/exchange_execute` with the one-time code the bot
+  returns.
 - Fixes the fail-open `ExchangeAdapter` (missing exchange, missing order id,
   unknown fill, estimated fee, limit order recorded as `FILLED`).
 - Adds shadow mode and a shadow report script, so a venue can be observed for

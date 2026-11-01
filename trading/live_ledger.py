@@ -263,6 +263,28 @@ class LiveLedger:
         finally:
             await connection.close()
 
+    async def compare_and_set_control(self, key: str, expected: str, new: str) -> bool:
+        connection = await self._connect()
+        try:
+            cursor = await connection.execute(
+                "UPDATE live_control SET value = ?, updated_at_utc = ? WHERE key = ? AND value = ?",
+                (str(new), _now_iso(), key, str(expected)),
+            )
+            await connection.commit()
+            if cursor.rowcount == 1:
+                return True
+            if expected != "":
+                return False
+            insert = await connection.execute(
+                "INSERT INTO live_control(key, value, updated_at_utc) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO NOTHING",
+                (key, str(new), _now_iso()),
+            )
+            await connection.commit()
+            return insert.rowcount == 1
+        finally:
+            await connection.close()
+
     async def get_control(self, key: str, default: str = "") -> str:
         connection = await self._connect()
         try:

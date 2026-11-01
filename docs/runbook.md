@@ -330,7 +330,7 @@ it never silently works and its value never reaches a log.
    fill `exchange_live_review_id` with the accepted ADR id, set
    `exchange_sandbox` false, set `execution_dry_run` false and set
    `exchange_live_enabled` true. The live mode additionally needs the
-   one-time code from `/exchange_confirm`.
+   one-time code the bot issues on the first execution request.
 
 ### 12.3 Emergency stop
 1. Send `/exchange_halt`. The control row `halted=1` in
@@ -397,10 +397,12 @@ Manual order for the operator:
 2. Set the six live values in `config.json` (never in a tracked file).
 3. Restart `python main.py` and send `/exchanges` to confirm the venue reads
    `enabled`, `allowed` and `ready`.
-4. Run `/exchange_execute <venue> <signal_id>`.
-5. The bot refuses the live path and asks for a code. Run
-   `/exchange_confirm <code>` and repeat the execution request within 60
-   seconds. The code is single use.
+4. Run `/exchange_execute <venue> <signal_id>`. The bot places nothing and
+   replies with a one-time code valid for 60 seconds.
+5. Repeat the same command with the code:
+   `/exchange_execute <venue> <signal_id> <code>`. The code is checked before
+   the risk checks and consumed only after they pass, so a rejected order does
+   not burn the code. A code that already placed an order is refused.
 6. Watch `/exchange_status <client_order_id>` for the row, and
    `/exchange_halt` if anything looks wrong.
 
@@ -409,8 +411,7 @@ Manual order for the operator:
 This section records the operator statement; it is not a finding of the
 application.
 
-> 2026-10-29, operator: I have reviewed the terms of use of my accounts for
-> the venues I use.
+> Pending. The operator has not declared this in writing.
 
 The application does not verify the operator's identity, residence, or the
 sanction regime that applies to an account, and it implements no proxy, VPN, IP

@@ -117,8 +117,11 @@ older than `exchange_unknown_after_seconds`. The terminal statuses (`filled`,
 `exchange_live_enabled` is true, `exchange_live_review_id` names an ADR file
 whose `Status:` line says `accepted`, the venue is in
 `exchange_attested_keys`, `permissions_ok` is true, and the access profile
-matches. The request itself additionally needs a one-time code from
-`/exchange_confirm`, valid for 60 seconds and usable once.
+matches. The request itself additionally needs a one-time confirmation code:
+the bot issues it when a live execution is requested without one, the operator
+repeats the command with the code within 60 seconds, and the code is consumed
+only after the risk checks accept the order. A code that already placed an
+order is refused.
 
 ### 9. Shadow soak exit criteria
 

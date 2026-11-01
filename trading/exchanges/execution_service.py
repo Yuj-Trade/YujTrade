@@ -14,7 +14,11 @@ from domain.exchange_types import (
     SUBMITTED,
     OrderIntent,
 )
-from trading.exchanges.confirmation import consume_confirmation
+from trading.exchanges.confirmation import (
+    check_confirmation,
+    consume_confirmation,
+    issue_confirmation,
+)
 from trading.exchanges.credentials import credentials_usable, load_exchange_credentials
 from trading.exchanges.errors import ExchangeConfigError, sanitize
 from trading.exchanges.gate_inputs import ExchangeSettings, build_gate_input, profile_accepts
@@ -187,7 +191,7 @@ class ExchangeExecutionService:
         if mode in {"sandbox", "live"} and not self.reconciled:
             return self._refuse("reconciliation_pending")
         if mode == "live":
-            allowed, code_reason = await consume_confirmation(
+            allowed, code_reason = await check_confirmation(
                 self.ledger, confirmation_code, exchange_id, signal_id
             )
             if not allowed:
@@ -222,6 +226,7 @@ class ExchangeExecutionService:
                 signal_id=signal_id,
                 side=side,
                 exchange_id=exchange_id,
+                confirmation_code=confirmation_code,
             )
         finally:
             try:
@@ -240,6 +245,7 @@ class ExchangeExecutionService:
         signal_id: str,
         side: str,
         exchange_id: str,
+        confirmation_code: str = "",
     ) -> SubmitResult:
         cid = intent.client_order_id
         try:
@@ -280,6 +286,13 @@ class ExchangeExecutionService:
             return self._refuse(why, mode, cid)
         if not await self.ledger.append_pending(intent, mode, mode):
             return self._refuse("duplicate_signal", mode, cid)
+        if mode == "live":
+            consumed, consume_reason = await consume_confirmation(
+                self.ledger, confirmation_code, exchange_id, signal_id
+            )
+            if not consumed:
+                await self.ledger.set_status(cid, exchange_id, REJECTED, consume_reason)
+                return self._refuse(consume_reason, mode, cid)
         if mode == "shadow":
             await self._announce(
                 f"Shadow signal {signal_id} on {exchange_id}: {intent.symbol} {side} "
@@ -340,6 +353,19 @@ class ExchangeExecutionService:
         return SubmitResult(
             ok=False, mode=mode, reason=cleaned, status=REJECTED, client_order_id=cid
         )
+
+    async def preview_mode(self, exchange_id: str) -> str | None:
+        try:
+            spec = get_spec(exchange_id)
+        except KeyError:
+            return None
+        if not profile_accepts(self.settings.access_profile, spec):
+            return None
+        mode, _reason, _sandbox, _secrets, _halted = await self._evaluate_gate(spec)
+        return mode
+
+    async def request_confirmation(self, exchange_id: str, signal_id: str) -> str:
+        return await issue_confirmation(self.ledger, exchange_id, signal_id)
 
     async def reconcile(self) -> list[str]:
         from trading.exchanges.credentials import load_exchange_credentials
