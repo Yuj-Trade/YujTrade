@@ -1,4 +1,5 @@
 import hashlib
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -114,6 +115,7 @@ class ExchangeExecutionService:
         execution_dry_run: bool | None = None,
         permission_check: PermissionCheck | None = None,
         review_ok: bool | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self.settings = settings
         self.ledger = ledger
@@ -121,6 +123,8 @@ class ExchangeExecutionService:
         self.notify = notify
         self.permission_check = permission_check
         self.review_ok = review_ok
+        self._clock = clock or time.monotonic
+        self._permission_cache: dict[str, tuple[bool, float]] = {}
         self.reconciled = False
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
@@ -152,21 +156,32 @@ class ExchangeExecutionService:
                 logger.debug(f"Refusal recording skipped: {exc}")
         return SubmitResult(ok=False, mode=mode, reason=reason, client_order_id=cid)
 
+    async def _permissions_ok(self, spec: ExchangeSpec, use_sandbox: bool) -> bool:
+        if spec.permission_endpoint is None:
+            return True
+        if use_sandbox or self.settings.shadow_mode:
+            return True
+        cached = self._permission_cache.get(spec.exchange_id)
+        now = self._clock()
+        if cached is not None and now - cached[1] < self.settings.permission_cache_seconds:
+            return cached[0]
+        if self.permission_check is None:
+            return False
+        try:
+            verdict = bool(await self.permission_check(spec))
+        except Exception as exc:
+            logger.error(f"Permission verdict unavailable for {spec.exchange_id}: {exc}")
+            verdict = False
+        self._permission_cache[spec.exchange_id] = (verdict, now)
+        return verdict
+
     async def _evaluate_gate(
         self, spec: ExchangeSpec
     ) -> tuple[str | None, str, bool, list[str], bool]:
         use_sandbox = bool(self.settings.sandbox)
         creds_ok, secrets = credentials_usable(spec, use_sandbox)
         halted = (await self.ledger.get_control("halted", "0")) == "1"
-        permissions_ok = True
-        if spec.permission_endpoint is not None and self.permission_check is not None:
-            try:
-                permissions_ok = bool(await self.permission_check(spec))
-            except Exception as exc:
-                logger.error(f"Permission verdict unavailable for {spec.exchange_id}: {exc}")
-                permissions_ok = False
-        elif spec.permission_endpoint is not None:
-            permissions_ok = False
+        permissions_ok = await self._permissions_ok(spec, use_sandbox)
         gate = build_gate_input(
             spec=spec,
             settings=self.settings,

@@ -196,6 +196,7 @@ class ConfigManager:
         "exchange_reconcile_interval_seconds": 60,
         "exchange_unknown_after_seconds": 120,
         "exchange_request_timeout_ms": 15000,
+        "exchange_permission_cache_seconds": 600,
     }
 
     DEFAULT_WEIGHTS_CONFIG = {

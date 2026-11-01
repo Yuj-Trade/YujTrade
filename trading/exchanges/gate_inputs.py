@@ -35,6 +35,7 @@ class ExchangeSettings:
     reconcile_interval_seconds: float
     unknown_after_seconds: float
     request_timeout_ms: int
+    permission_cache_seconds: float = 600.0
 
 
 def _as_tuple(value: Any) -> tuple[str, ...]:
@@ -68,6 +69,7 @@ def load_exchange_settings(config_manager: ConfigManager) -> ExchangeSettings:
         reconcile_interval_seconds=float(value("exchange_reconcile_interval_seconds")),
         unknown_after_seconds=float(value("exchange_unknown_after_seconds")),
         request_timeout_ms=int(value("exchange_request_timeout_ms")),
+        permission_cache_seconds=float(value("exchange_permission_cache_seconds")),
     )
 
 

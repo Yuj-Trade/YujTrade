@@ -243,3 +243,20 @@ tests.
   so the soak can be measured
 - Tests: `tests/unit/trading/test_exchange_shadow_measurability.py` (7 tests,
   including a real legacy database migration) and the updated report tests.
+
+## R10: key-permission cache (G-08)
+
+Reproduced: `_evaluate_gate` called `permission_check` on every submission,
+including sandbox and shadow, so each request cost a venue call.
+
+Fix: `exchange_permission_cache_seconds` (default 600) in the defaults and in
+`ExchangeSettings`. `_permissions_ok` runs the check only for a live submission
+against a venue with a documented endpoint, caches the verdict with a monotonic
+clock, and caches failures and exceptions as `False` so a broken endpoint is not
+hammered.
+
+- Commit: `0c9f3cd` fix(exchange): cache key-permission verdicts and check them
+  only for live submissions
+- Tests: `tests/unit/trading/test_exchange_permission_cache.py` (7 tests) with a
+  fake clock.
+- No live default changed.
