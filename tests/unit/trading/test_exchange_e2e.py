@@ -132,7 +132,7 @@ async def test_end_to_end_sandbox_halt_reconcile(tmp_path):
     assert venue.placed == 0
 
     await service.reconcile()
-    assert service.reconciled is True
+    assert "binance" in service.reconciled_venues
     accepted = await service.submit_signal("binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
     assert accepted.ok is True
     assert accepted.mode == "sandbox"

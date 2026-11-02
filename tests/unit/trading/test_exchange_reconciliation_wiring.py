@@ -170,7 +170,7 @@ async def test_submission_allowed_after_successful_reconciliation(ledger):
     service = _service(ledger, gateway)
     changed = await service.reconcile()
     assert changed == []
-    assert service.reconciled is True
+    assert "binance" in service.reconciled_venues
     result = await service.submit_signal("binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
     assert result.ok is True
     assert result.mode == "sandbox"
@@ -188,7 +188,7 @@ async def test_gateway_failure_keeps_service_unreconciled(ledger, monkeypatch):
         gateway_factory=broken_factory,
     )
     await service.reconcile()
-    assert service.reconciled is False
+    assert "binance" not in service.reconciled_venues
 
 
 @pytest.mark.asyncio
@@ -212,7 +212,7 @@ async def test_reconciliation_moves_submitted_to_filled(ledger):
     service = _service(ledger, gateway)
     changed = await service.reconcile()
     assert changed == ["cid-1"]
-    assert service.reconciled is True
+    assert "binance" in service.reconciled_venues
     row = await ledger.get_row("cid-1", "binance")
     assert row["status"] == FILLED
     assert gateway.closed >= 1
@@ -300,11 +300,11 @@ async def test_reconciliation_blocker_names_the_missing_credentials(ledger, monk
 
     credentials_module.load_exchange_credentials = lambda spec, sandbox: None
     await service.reconcile()
-    assert service.reconciled is False
-    assert any("no_credentials:binance" in item for item in service.reconcile_blockers)
+    assert "binance" not in service.reconciled_venues
+    assert service.reconcile_blockers.get("binance") == "no_credentials:binance"
     result = await service.submit_signal("binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
     assert result.ok is False
-    assert "no_credentials:binance" in result.reason
+    assert result.reason == "reconciliation_pending:binance"
 
 
 @pytest.mark.asyncio
@@ -312,7 +312,7 @@ async def test_reconciliation_with_no_enabled_venue_reports_it(ledger):
     gateway = FakeGateway()
     service = _service(ledger, gateway, _settings(enabled=()))
     await service.reconcile()
-    assert service.reconciled is False
+    assert "binance" not in service.reconciled_venues
     assert "no_enabled_exchange" in service.reconcile_blockers
 
 
@@ -329,8 +329,8 @@ async def test_successful_pass_clears_the_blockers(ledger, monkeypatch):
         "trading.exchanges.credentials", fromlist=["ExchangeCredentials"]
     ).ExchangeCredentials(api_key="k", api_secret="s")
     await service.reconcile()
-    assert service.reconciled is True
-    assert service.reconcile_blockers == []
+    assert "binance" in service.reconciled_venues
+    assert service.reconcile_blockers == {}
 
 
 @pytest.mark.asyncio
@@ -346,8 +346,8 @@ async def test_config_error_on_gateway_construction_is_counted(ledger):
         gateway_factory=broken_factory,
     )
     await service.reconcile()
-    assert service.reconciled is False
-    assert "gateway_unavailable:binance" in service.reconcile_blockers
+    assert "binance" not in service.reconciled_venues
+    assert service.reconcile_blockers.get("binance") == "gateway_unavailable:binance"
 
 
 @pytest.mark.asyncio
@@ -361,8 +361,8 @@ async def test_generic_failure_on_gateway_construction_is_counted(ledger):
         gateway_factory=broken_factory,
     )
     await service.reconcile()
-    assert service.reconciled is False
-    assert "gateway_failed:binance" in service.reconcile_blockers
+    assert "binance" not in service.reconciled_venues
+    assert service.reconcile_blockers.get("binance") == "gateway_failed:binance"
 
 
 @pytest.mark.asyncio

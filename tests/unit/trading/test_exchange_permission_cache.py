@@ -105,7 +105,7 @@ def _service(ledger, settings, permission, clock):
         execution_dry_run=bool(settings.sandbox),
         clock=clock,
     )
-    service.reconciled = True
+    service.reconciled_venues = {"binance"}
     return service
 
 

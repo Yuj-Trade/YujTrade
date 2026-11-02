@@ -115,7 +115,7 @@ def _service(ledger, settings, gateway, dry_run=False):
         permission_check=permission_check,
         review_ok=True,
     )
-    service.reconciled = True
+    service.reconciled_venues = {"binance"}
     return service
 
 

@@ -104,7 +104,7 @@ def _service(ledger, gateway, settings=None):
         review_ok=True,
         execution_dry_run=bool(resolved.sandbox),
     )
-    service.reconciled = True
+    service.reconciled_venues = {"binance"}
     return service
 
 

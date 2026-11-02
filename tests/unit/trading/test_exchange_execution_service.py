@@ -144,7 +144,7 @@ def _service(gateway, ledger, settings=None, notify=None):
         notify=notify,
         execution_dry_run=True,
     )
-    service.reconciled = True
+    service.reconciled_venues = {"binance"}
     return service
 
 

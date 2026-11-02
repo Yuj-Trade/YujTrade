@@ -125,8 +125,8 @@ class ExchangeExecutionService:
         self.review_ok = review_ok
         self._clock = clock or time.monotonic
         self._permission_cache: dict[str, tuple[bool, float]] = {}
-        self.reconciled = False
-        self.reconcile_blockers: list[str] = []
+        self.reconciled_venues: set[str] = set()
+        self.reconcile_blockers: dict[str, str] = {}
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
             if execution_dry_run is None
@@ -213,10 +213,9 @@ class ExchangeExecutionService:
         mode, reason, use_sandbox, secrets, _halted = await self._evaluate_gate(spec)
         if mode is None:
             return await self._refuse(reason, exchange_id=exchange_id, signal_id=signal_id)
-        if mode in {"sandbox", "live"} and not self.reconciled:
-            blockers = ",".join(self.reconcile_blockers) or "unknown"
+        if mode in {"sandbox", "live"} and exchange_id not in self.reconciled_venues:
             return await self._refuse(
-                f"reconciliation_pending:{blockers}",
+                f"reconciliation_pending:{exchange_id}",
                 exchange_id=exchange_id,
                 signal_id=signal_id,
             )
@@ -420,40 +419,39 @@ class ExchangeExecutionService:
         from trading.reconciliation import reconcile_once
 
         gateways: dict[str, Any] = {}
-        usable = 0
-        failures = 0
+        blockers: dict[str, str] = {}
+        reconciled_now: set[str] = set()
+        if not self.settings.enabled:
+            blockers["no_enabled_exchange"] = "no_enabled_exchange"
         for exchange_id in self.settings.enabled:
             try:
                 spec = get_spec(exchange_id)
             except KeyError:
-                self.reconcile_blockers.append(f"unknown_exchange:{exchange_id}")
+                blockers[exchange_id] = f"unknown_exchange:{exchange_id}"
                 logger.warning(f"Reconciliation skipped unknown exchange {exchange_id}")
-                failures += 1
                 continue
             if spec.ccxt_id is None:
                 continue
             credentials = load_exchange_credentials(spec, self.settings.sandbox)
             if credentials is None:
-                self.reconcile_blockers.append(f"no_credentials:{exchange_id}")
+                blockers[exchange_id] = f"no_credentials:{exchange_id}"
                 logger.warning(
                     f"Reconciliation has no credentials for {exchange_id}; "
                     "sandbox and live submissions stay blocked."
                 )
-                failures += 1
                 continue
             try:
                 gateways[exchange_id] = self.gateway_factory(
                     spec, self.settings.sandbox, credentials
                 )
-                usable += 1
             except ExchangeConfigError as exc:
-                self.reconcile_blockers.append(f"gateway_unavailable:{exchange_id}")
+                blockers[exchange_id] = f"gateway_unavailable:{exchange_id}"
                 logger.warning(f"Reconciliation gateway unavailable for {exchange_id}: {exc}")
-                failures += 1
             except Exception as exc:
-                self.reconcile_blockers.append(f"gateway_failed:{exchange_id}")
+                blockers[exchange_id] = f"gateway_failed:{exchange_id}"
                 logger.error(f"Reconciliation gateway failed for {exchange_id}: {exc}")
-                failures += 1
+            else:
+                reconciled_now.add(exchange_id)
         changed: list[str] = []
         try:
             changed = await reconcile_once(
@@ -463,24 +461,21 @@ class ExchangeExecutionService:
                 notify=self._announce,
             )
         except Exception as exc:
-            self.reconcile_blockers.append("pass_failed")
+            blockers["pass_failed"] = "pass_failed"
+            reconciled_now.clear()
             logger.error(f"Reconciliation pass failed: {exc}")
-            failures += 1
         finally:
             for gateway in gateways.values():
                 try:
                     await gateway.close()
                 except Exception as exc:
                     logger.debug(f"Reconciliation gateway close failed: {exc}")
-        self.reconciled = failures == 0 and usable > 0
-        if self.reconciled:
-            self.reconcile_blockers = []
-        elif usable == 0 and "no_enabled_exchange" not in self.reconcile_blockers:
-            self.reconcile_blockers.append("no_enabled_exchange")
-        elif self.reconcile_blockers:
+        self.reconciled_venues = reconciled_now
+        self.reconcile_blockers = blockers
+        if self.reconcile_blockers:
             logger.warning(
                 "Exchange submissions stay blocked until reconciliation succeeds: "
-                + ", ".join(self.reconcile_blockers)
+                + ", ".join(sorted(self.reconcile_blockers.values()))
             )
         return changed
 
