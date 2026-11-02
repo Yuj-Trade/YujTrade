@@ -323,18 +323,19 @@ class ExchangeExecutionService:
         )
         if not accepted:
             return await self._refuse(why, mode, cid, exchange_id=exchange_id, signal_id=signal_id)
+        if not await self.ledger.append_pending(intent, mode, mode, reference_price=last):
+            return await self._refuse(
+                "duplicate_signal", mode, cid, exchange_id=exchange_id, signal_id=signal_id
+            )
         if mode == "live":
             consumed, consume_reason = await consume_confirmation(
                 self.ledger, confirmation_code, exchange_id, signal_id
             )
             if not consumed:
+                await self.ledger.set_status(cid, exchange_id, REJECTED, consume_reason)
                 return await self._refuse(
                     consume_reason, mode, cid, exchange_id=exchange_id, signal_id=signal_id
                 )
-        if not await self.ledger.append_pending(intent, mode, mode, reference_price=last):
-            return await self._refuse(
-                "duplicate_signal", mode, cid, exchange_id=exchange_id, signal_id=signal_id
-            )
         if mode == "shadow":
             await self._announce(
                 f"Shadow signal {signal_id} on {exchange_id}: {intent.symbol} {side} "

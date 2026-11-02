@@ -271,7 +271,7 @@ def test_utc_now_aware():
 
 
 @pytest.mark.asyncio
-async def test_code_is_consumed_before_the_row_is_written(ledger):
+async def test_the_row_is_written_before_the_code_is_consumed(ledger):
     gateway = CountingGateway()
     service = _service(ledger, gateway)
     code = await service.request_confirmation("binance", "sig-1")
@@ -294,8 +294,8 @@ async def test_code_is_consumed_before_the_row_is_written(ledger):
         "binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0, confirmation_code=code
     )
     assert result.ok is True
-    assert order and order[-1] == "append"
-    assert "control" in order
+    last_control = len(order) - 1 - order[::-1].index("control")
+    assert order.index("append") < last_control
 
 
 @pytest.mark.asyncio
