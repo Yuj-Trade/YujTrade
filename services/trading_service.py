@@ -152,15 +152,23 @@ def _frame_candles(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
 
 def _build_exchange_service(config_manager: ConfigManager):
     try:
+        from trading.exchanges.errors import ExchangeConfigError
         from trading.exchanges.execution_service import ExchangeExecutionService
         from trading.exchanges.factory import build_gateway
-        from trading.exchanges.gate_inputs import load_exchange_settings
+        from trading.exchanges.gate_inputs import load_exchange_settings, parse_bool
         from trading.exchanges.permissions import verify_key_permissions
         from trading.live_ledger import LiveLedger
     except ImportError as exc:
         logger.error(f"Exchange service unavailable: {exc}")
         return None
-    settings = load_exchange_settings(config_manager)
+    try:
+        settings = load_exchange_settings(config_manager)
+        execution_dry_run = parse_bool(
+            config_manager.get("execution_dry_run", True), "execution_dry_run"
+        )
+    except ExchangeConfigError as exc:
+        logger.error(f"Exchange configuration is invalid; exchanges are disabled: {exc}")
+        return None
     if not settings.enabled:
         return None
     ledger = LiveLedger(settings.ledger_path)
@@ -182,7 +190,7 @@ def _build_exchange_service(config_manager: ConfigManager):
         settings=settings,
         ledger=ledger,
         gateway_factory=build_gateway,
-        execution_dry_run=bool(config_manager.get("execution_dry_run", True)),
+        execution_dry_run=execution_dry_run,
         permission_check=permission_check,
     )
 

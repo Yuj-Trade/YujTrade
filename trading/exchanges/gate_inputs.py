@@ -12,9 +12,32 @@ from application.exchange_policy import (
 )
 from config.logger import logger
 from config.settings import ConfigManager
-from trading.exchanges.registry import ExchangeSpec
+from trading.exchanges.errors import ExchangeConfigError
+from trading.exchanges.registry import EXCHANGE_REGISTRY, ExchangeSpec
 
 _REVIEW_ID_PATTERN = re.compile(r"^ADR-\d{4}$")
+
+_TRUE_STRINGS = frozenset({"true", "1", "yes", "on"})
+_FALSE_STRINGS = frozenset({"false", "0", "no", "off"})
+
+
+def parse_bool(value: Any, key: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        raise ExchangeConfigError(f"invalid_boolean:{key}")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_STRINGS:
+            return True
+        if normalized in _FALSE_STRINGS:
+            return False
+        raise ExchangeConfigError(f"invalid_boolean:{key}")
+    raise ExchangeConfigError(f"invalid_boolean:{key}")
 
 
 @dataclass(frozen=True)
@@ -42,8 +65,13 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, str):
-        return (value,) if value else ()
-    return tuple(str(item) for item in value)
+        parts = [item.strip() for item in value.split(",")]
+        return tuple(item for item in parts if item)
+    return tuple(str(item).strip() for item in value if str(item).strip())
+
+
+def _known_exchange_ids() -> frozenset[str]:
+    return frozenset(spec.exchange_id for spec in EXCHANGE_REGISTRY)
 
 
 def load_exchange_settings(config_manager: ConfigManager) -> ExchangeSettings:
@@ -52,12 +80,17 @@ def load_exchange_settings(config_manager: ConfigManager) -> ExchangeSettings:
     def value(key: str) -> Any:
         return config_manager.get(key, defaults.get(key))
 
+    enabled = _as_tuple(value("exchange_enabled"))
+    unknown = [name for name in enabled if name not in _known_exchange_ids()]
+    if unknown:
+        raise ExchangeConfigError(f"unknown_exchange_in_config:{unknown[0]}")
+
     return ExchangeSettings(
-        enabled=_as_tuple(value("exchange_enabled")),
+        enabled=enabled,
         access_profile=str(value("exchange_access_profile")),
-        sandbox=bool(value("exchange_sandbox")),
-        shadow_mode=bool(value("exchange_shadow_mode")),
-        live_enabled=bool(value("exchange_live_enabled")),
+        sandbox=parse_bool(value("exchange_sandbox"), "exchange_sandbox"),
+        shadow_mode=parse_bool(value("exchange_shadow_mode"), "exchange_shadow_mode"),
+        live_enabled=parse_bool(value("exchange_live_enabled"), "exchange_live_enabled"),
         live_review_id=str(value("exchange_live_review_id")),
         attested_keys=_as_tuple(value("exchange_attested_keys")),
         symbol_allowlist=_as_tuple(value("exchange_symbol_allowlist")),
