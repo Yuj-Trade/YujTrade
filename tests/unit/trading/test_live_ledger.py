@@ -261,3 +261,37 @@ async def test_reconcile_never_creates_a_second_row(ledger):
     await reconcile_once(ledger, {"binance": gateway}, 60.0)
     await reconcile_once(ledger, {"binance": gateway}, 60.0)
     assert await ledger.append_pending(_intent(), "sandbox") is False
+
+
+@pytest.mark.asyncio
+async def test_two_instances_migrate_the_same_database_once(tmp_path):
+    path = tmp_path / "shared.db"
+    first = LiveLedger(path)
+    second = LiveLedger(path)
+    await first.initialize()
+    await second.initialize()
+    await first.append_pending(_intent(), "sandbox", reference_price=50_000.0)
+    row = await second.get_row("cid-1", "binance")
+    assert row is not None
+    assert row["reference_price"] == pytest.approx(50_000.0)
+
+
+@pytest.mark.asyncio
+async def test_compare_and_set_rejects_an_empty_expected_value(ledger):
+    await ledger.set_control("k", "v")
+    with pytest.raises(ValueError):
+        await ledger.compare_and_set_control("k", "", "new")
+
+
+@pytest.mark.asyncio
+async def test_compare_and_set_is_one_statement(ledger):
+    await ledger.set_control("k", "a")
+    assert await ledger.compare_and_set_control("k", "a", "b") is True
+    assert await ledger.get_control("k", "") == "b"
+    assert await ledger.compare_and_set_control("k", "a", "c") is False
+    assert await ledger.get_control("k", "") == "b"
+
+
+@pytest.mark.asyncio
+async def test_compare_and_set_on_a_missing_key_returns_false(ledger):
+    assert await ledger.compare_and_set_control("absent", "x", "y") is False
