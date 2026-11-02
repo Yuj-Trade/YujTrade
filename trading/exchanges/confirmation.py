@@ -95,9 +95,10 @@ async def consume_confirmation(
     decoded = _decode(stored)
     if decoded is None:
         return False, "confirmation_unknown"
+    if decoded[3] != _PENDING:
+        return False, "confirmation_already_used"
     pending = _encode(decoded[0], decoded[1], decoded[2], _PENDING)
     used = _encode(decoded[0], decoded[1], decoded[2], _USED)
-    flipped = await ledger.compare_and_set_control(_key(code), pending, used)
-    if not flipped:
-        return False, "confirmation_already_used"
+    if not await ledger.compare_and_set_control(_key(code), pending, used):
+        return False, "confirmation_race_lost"
     return True, "ok"

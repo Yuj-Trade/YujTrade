@@ -268,3 +268,87 @@ async def test_non_live_rejection_status_is_recorded(ledger):
 def test_utc_now_aware():
     assert datetime.now(UTC).tzinfo is not None
     assert (datetime.now(UTC) + timedelta(seconds=60)).tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_code_is_consumed_before_the_row_is_written(ledger):
+    gateway = CountingGateway()
+    service = _service(ledger, gateway)
+    code = await service.request_confirmation("binance", "sig-1")
+    order: list[str] = []
+    original_append = ledger.append_pending
+    original_get = ledger.get_control
+
+    async def watching_append(intent, mode, reason="", reference_price=0.0):
+        order.append("append")
+        return await original_append(intent, mode, reason, reference_price=reference_price)
+
+    async def watching_get(key, default=""):
+        if key.startswith("confirm:"):
+            order.append("control")
+        return await original_get(key, default)
+
+    ledger.append_pending = watching_append
+    ledger.get_control = watching_get
+    result = await service.submit_signal(
+        "binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0, confirmation_code=code
+    )
+    assert result.ok is True
+    assert order and order[-1] == "append"
+    assert "control" in order
+
+
+@pytest.mark.asyncio
+async def test_lost_race_does_not_write_a_row(ledger):
+    gateway = CountingGateway()
+    service = _service(ledger, gateway)
+    code = await service.request_confirmation("binance", "sig-1")
+    first = await service.submit_signal(
+        "binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0, confirmation_code=code
+    )
+    assert first.ok is True
+    rows_before = len(await ledger.get_non_terminal())
+    second = await service.submit_signal(
+        "binance", "sig-2", "BTC/USDT", "buy", 0.0005, 50_000.0, confirmation_code=code
+    )
+    assert second.ok is False
+    assert second.reason == "confirmation_already_used"
+    rows_after = len(await ledger.get_non_terminal())
+    assert rows_after == rows_before
+    assert gateway.placed == 1
+
+
+@pytest.mark.asyncio
+async def test_race_lost_reason_is_distinct(ledger):
+    from trading.exchanges.confirmation import consume_confirmation
+
+    code = await issue_confirmation(ledger, "binance", "sig-1")
+    first_ok, _ = await consume_confirmation(ledger, code, "binance", "sig-1")
+    assert first_ok is True
+    second_ok, reason = await consume_confirmation(ledger, code, "binance", "sig-1")
+    assert second_ok is False
+    assert reason == "confirmation_already_used"
+
+
+@pytest.mark.asyncio
+async def test_consume_reports_race_lost_when_the_row_moves_underneath(ledger):
+    from trading.exchanges.confirmation import consume_confirmation
+
+    code = await issue_confirmation(ledger, "binance", "sig-1")
+    key = f"confirm:{code}"
+    stored = await ledger.get_control(key, "")
+    parts = stored.split("|")
+    parts[3] = "pending"
+    original = ledger.compare_and_set_control
+    calls = {"n": 0}
+
+    async def flaky(k, expected, new):
+        calls["n"] += 1
+        return False
+
+    ledger.compare_and_set_control = flaky
+    ok, reason = await consume_confirmation(ledger, code, "binance", "sig-1")
+    assert ok is False
+    assert reason == "confirmation_race_lost"
+    assert calls["n"] == 1
+    ledger.compare_and_set_control = original
