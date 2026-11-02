@@ -9,7 +9,7 @@ class ResilientRedis:
     def __init__(self, client: redis.Redis, report_interval: float = 300.0):
         self._client = client
         self._report_interval = report_interval
-        self._last_report = 0.0
+        self._last_report: float | None = None
         self.suppressed_errors = 0
 
     @property
@@ -18,7 +18,7 @@ class ResilientRedis:
 
     def _report(self, operation: str, exc: BaseException) -> None:
         now = time.monotonic()
-        if now - self._last_report < self._report_interval:
+        if self._last_report is not None and now - self._last_report < self._report_interval:
             self.suppressed_errors += 1
             return
         self._last_report = now
