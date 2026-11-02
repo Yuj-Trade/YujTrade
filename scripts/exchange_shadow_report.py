@@ -21,7 +21,7 @@ def _best_deviation(row: dict[str, Any]) -> float | None:
 
 
 def summarize_shadow_rows(
-    rows: list[dict[str, Any]], refusals: dict[str, int] | None = None
+    rows: list[dict[str, Any]], refusals: dict[str, int] | None = None, unknown_rows: int = 0
 ) -> dict[str, Any]:
     reasons = Counter(str(row.get("reason") or "") for row in rows)
     for reason, count in (refusals or {}).items():
@@ -38,6 +38,7 @@ def summarize_shadow_rows(
         "mean_deviation_pct": round(mean_deviation, 6),
         "max_deviation_pct": round(max_deviation, 6),
         "deviation_samples": len(deviations),
+        "unknown_rows": int(unknown_rows),
         "rows_without_reference": sum(
             1 for row in rows if not float(row.get("reference_price") or 0)
         ),
@@ -68,13 +69,16 @@ def soak_exit_criteria(summary: dict[str, Any], max_deviation_pct: float) -> dic
         "no_key_not_attested": int(reasons.get("key_not_attested", 0)) == 0,
         "deviation_within_limit": float(summary.get("max_deviation_pct", 0.0)) <= max_deviation_pct,
         "has_samples": int(summary.get("deviation_samples", 0)) > 0,
+        "no_unknown_rows": int(summary.get("unknown_rows", 0)) == 0,
     }
 
 
 async def build_report(ledger: LiveLedger) -> dict[str, Any]:
     rows = await ledger.get_shadow_rows()
     refusals = await ledger.refusal_counts()
-    return summarize_shadow_rows(rows, refusals)
+    non_terminal = await ledger.get_non_terminal()
+    unknown_rows = sum(1 for row in non_terminal if str(row.get("status")) == "unknown")
+    return summarize_shadow_rows(rows, refusals, unknown_rows=unknown_rows)
 
 
 async def run(output_path: Path) -> dict[str, Any]:

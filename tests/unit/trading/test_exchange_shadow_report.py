@@ -126,6 +126,7 @@ def test_soak_exit_criteria():
         "reasons": {"shadow": 4},
         "max_deviation_pct": 0.4,
         "deviation_samples": 4,
+        "unknown_rows": 0,
     }
     assert all(soak_exit_criteria(clean, 2.0).values())
 
@@ -133,9 +134,35 @@ def test_soak_exit_criteria():
         "reasons": {"exchange_not_ready": 1, "key_not_attested": 1},
         "max_deviation_pct": 5.0,
         "deviation_samples": 0,
+        "unknown_rows": 2,
     }
     result = soak_exit_criteria(blocked, 2.0)
     assert result["no_exchange_not_ready"] is False
     assert result["no_key_not_attested"] is False
     assert result["deviation_within_limit"] is False
     assert result["has_samples"] is False
+    assert result["no_unknown_rows"] is False
+
+
+@pytest.mark.asyncio
+async def test_unknown_rows_are_reported_and_fail_the_soak(ledger):
+    from scripts.exchange_shadow_report import build_report, soak_exit_criteria
+
+    await ledger.append_pending(_intent(), "sandbox")
+    await ledger.set_status("cid-1", "binance", "unknown", "reconcile_no_snapshot")
+
+    summary = await build_report(ledger)
+
+    assert summary["unknown_rows"] == 1
+    assert soak_exit_criteria(summary, 2.0)["no_unknown_rows"] is False
+
+
+@pytest.mark.asyncio
+async def test_no_unknown_rows_passes_the_soak(ledger):
+    from scripts.exchange_shadow_report import build_report
+
+    await ledger.append_pending(_intent(), "shadow", "shadow")
+
+    summary = await build_report(ledger)
+
+    assert summary["unknown_rows"] == 0
