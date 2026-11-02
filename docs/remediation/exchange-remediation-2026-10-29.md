@@ -213,7 +213,8 @@ Fix:
   covering no code, wrong code, expiry, single use, code survival after a risk
   rejection, and sandbox/shadow needing none. The app tests cover issue,
   resubmit with the code, and zero size.
-- Gate: 2103 passed. `grep -rn exchange_confirm` now only appears in a test that
+- Gate: 2103 passed. `exchange_confirm` no longer appears in production code
+  or the operator docs; it survives only in this history and in a test that
   asserts the command is gone.
 
 ## R9: measurable shadow soak (G-06)

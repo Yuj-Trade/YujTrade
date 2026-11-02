@@ -331,3 +331,59 @@ async def test_successful_pass_clears_the_blockers(ledger, monkeypatch):
     await service.reconcile()
     assert service.reconciled is True
     assert service.reconcile_blockers == []
+
+
+@pytest.mark.asyncio
+async def test_config_error_on_gateway_construction_is_counted(ledger):
+    from trading.exchanges.errors import ExchangeConfigError
+
+    def broken_factory(spec, sandbox, creds):
+        raise ExchangeConfigError("sandbox_not_supported")
+
+    service = ExchangeExecutionService(
+        settings=_settings(),
+        ledger=ledger,
+        gateway_factory=broken_factory,
+    )
+    await service.reconcile()
+    assert service.reconciled is False
+    assert "gateway_unavailable:binance" in service.reconcile_blockers
+
+
+@pytest.mark.asyncio
+async def test_generic_failure_on_gateway_construction_is_counted(ledger):
+    def broken_factory(spec, sandbox, creds):
+        raise RuntimeError("boom")
+
+    service = ExchangeExecutionService(
+        settings=_settings(),
+        ledger=ledger,
+        gateway_factory=broken_factory,
+    )
+    await service.reconcile()
+    assert service.reconciled is False
+    assert "gateway_failed:binance" in service.reconcile_blockers
+
+
+@pytest.mark.asyncio
+async def test_scope_mismatch_is_recorded_once(ledger):
+    gateway = FakeGateway()
+    service = _service(ledger, gateway, _settings(enabled=("lbank",)))
+    result = await service.submit_signal("lbank", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
+    assert result.reason == "scope_mismatch"
+    counts = await ledger.refusal_counts("lbank")
+    assert counts.get("scope_mismatch") == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_gate_returns_the_reason(ledger, monkeypatch):
+    gateway = FakeGateway()
+    service = _service(ledger, gateway)
+    assert await service.preview_gate("binance") == ("sandbox", "ok")
+    assert await service.preview_gate("not-a-venue") == (None, "unknown_exchange")
+    import trading.exchanges.execution_service as module
+
+    module.credentials_usable = lambda spec, sandbox: (False, [])
+    mode, reason = await service.preview_gate("binance")
+    assert mode is None
+    assert reason == "credentials_missing"

@@ -119,9 +119,13 @@ class MainApp:
     async def _exchange_reconcile_loop(self, interval_seconds: float | None = None) -> None:
         service = getattr(self.trading_service, "exchange_service", None)
         if service is None:
+            logger.debug("Exchange reconcile loop not started: no exchange service.")
             return
         settings = getattr(self, "exchange_settings", None)
         if settings is None:
+            logger.warning(
+                "Exchange reconcile loop stopped: exchange settings were not loaded at startup."
+            )
             return
         configured = (
             float(settings.reconcile_interval_seconds)

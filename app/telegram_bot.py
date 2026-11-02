@@ -494,7 +494,10 @@ class TelegramBotHandler:
         if amount <= 0:
             await self._reply(update, f"Exchange execution refused: {size_reason}")
             return
-        mode = await service.preview_mode(exchange_id)
+        mode, gate_reason = await service.preview_gate(exchange_id)
+        if mode is None:
+            await self._reply(update, f"Exchange execution refused: {gate_reason}")
+            return
         if mode == "live" and not confirmation_code:
             code = await service.request_confirmation(exchange_id, signal_id)
             await self._reply(

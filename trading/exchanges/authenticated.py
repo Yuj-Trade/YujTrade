@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import ccxt.async_support as ccxt_async
+
 from application.exchange_policy import map_ccxt_status
 from domain.exchange_types import OrderSnapshot
 from trading.exchanges.ccxt_gateway import CcxtGateway
@@ -43,8 +45,6 @@ class AuthenticatedQueries:
     ) -> OrderSnapshot | None:
         gateway = self.gateway
         gateway._market(symbol)
-        import ccxt.async_support as ccxt_async
-
         try:
             order = await gateway.client.fetch_order(exchange_order_id, symbol)
         except ccxt_async.OrderNotFound:

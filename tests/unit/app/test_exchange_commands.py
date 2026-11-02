@@ -70,6 +70,9 @@ class FakeExchangeService:
     async def preview_mode(self, exchange_id):
         return "sandbox"
 
+    async def preview_gate(self, exchange_id):
+        return "sandbox", "ok"
+
     async def request_confirmation(self, exchange_id, signal_id):
         return "ABCD1234"
 
@@ -212,7 +215,7 @@ def test_exchange_execute_non_admin_does_nothing():
 
 def test_live_without_code_issues_a_code_and_places_nothing():
     service = FakeExchangeService()
-    service.preview_mode = AsyncMock(return_value="live")
+    service.preview_gate = AsyncMock(return_value=("live", "ok"))
     handler = _handler(exchange_service=service)
     signal = MagicMock()
     signal.symbol = "BTC/USDT"
@@ -236,7 +239,7 @@ def test_live_without_code_issues_a_code_and_places_nothing():
 
 def test_live_with_code_submits_once():
     service = FakeExchangeService()
-    service.preview_mode = AsyncMock(return_value="live")
+    service.preview_gate = AsyncMock(return_value=("live", "ok"))
     handler = _handler(exchange_service=service)
     signal = MagicMock()
     signal.symbol = "BTC/USDT"
@@ -330,3 +333,26 @@ def test_halt_resume_require_admin(command):
             asyncio.run(handler.exchange_resume_command(update, context))
     assert service.halted == 0
     assert service.resumed == 0
+
+
+def test_preview_gate_reason_is_shown():
+    service = FakeExchangeService()
+    service.preview_gate = AsyncMock(return_value=(None, "credentials_missing"))
+    handler = _handler(exchange_service=service)
+    signal = MagicMock()
+    signal.symbol = "BTC/USDT"
+    signal.timeframe = "1h"
+    signal.timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    signal.signal_type.value = "buy"
+    signal.entry_price = 50_000.0
+    handler.trading_service.run_quick_analysis = AsyncMock(return_value=[signal])
+    handler.trading_service.size_signal = MagicMock(return_value=(0.001, "ok"))
+    from strategy.signal_tracker import make_signal_id
+
+    sid = make_signal_id("BTC/USDT", "1h", signal.timestamp, "buy")
+    update, context = _update(["binance", sid])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_execute_command(update, context))
+    assert service.submitted == []
+    text = "\n".join(_texts(update))
+    assert "credentials" in text

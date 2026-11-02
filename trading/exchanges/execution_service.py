@@ -210,10 +210,6 @@ class ExchangeExecutionService:
             spec = get_spec(exchange_id)
         except KeyError:
             return await self._refuse("unknown_exchange")
-        if not profile_accepts(self.settings.access_profile, spec):
-            return await self._refuse(
-                "scope_mismatch", exchange_id=exchange_id, signal_id=signal_id
-            )
         mode, reason, use_sandbox, secrets, _halted = await self._evaluate_gate(spec)
         if mode is None:
             return await self._refuse(reason, exchange_id=exchange_id, signal_id=signal_id)
@@ -402,14 +398,18 @@ class ExchangeExecutionService:
         )
 
     async def preview_mode(self, exchange_id: str) -> str | None:
+        mode, _reason = await self.preview_gate(exchange_id)
+        return mode
+
+    async def preview_gate(self, exchange_id: str) -> tuple[str | None, str]:
         try:
             spec = get_spec(exchange_id)
         except KeyError:
-            return None
+            return None, "unknown_exchange"
         if not profile_accepts(self.settings.access_profile, spec):
-            return None
-        mode, _reason, _sandbox, _secrets, _halted = await self._evaluate_gate(spec)
-        return mode
+            return None, "scope_mismatch"
+        mode, reason, _sandbox, _secrets, _halted = await self._evaluate_gate(spec)
+        return mode, reason
 
     async def request_confirmation(self, exchange_id: str, signal_id: str) -> str:
         return await issue_confirmation(self.ledger, exchange_id, signal_id)
