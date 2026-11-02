@@ -495,12 +495,11 @@ until the remediation run closes it or states why it stays open.
 
 ## Exchange remediation 2026-10-29 - open
 
-- [ ] G-27 pre-existing test isolation defect: ``tests/unit/strategy/test_signal_tracker.py``
-  and ``tests/unit/strategy/test_signal_tracker_summary.py`` fail when the whole
-  default suite runs, and pass when their file runs alone. Reproduced on a clean
-  ``main`` with the remediation work stashed, so it is not caused by the exchange
-  remediation. Cause: a shared ``signal_history.json`` path or singleton tracker
-  state leaks between tests. Not fixed here; recorded per section 0.1.
+- [x] G-27 clock-dependent test fixture: the signal tracker fixtures used fixed
+  dates (2026-10-01), so `_prune_expired` (ttl 30 days) deleted the rows once "now"
+  passed 2026-10-31. The tests failed regardless of isolation. Fixed in the v4 run
+  (P1) by making the fixtures relative to `datetime.now(UTC)`. The earlier label
+  (test isolation) was wrong.
 
 
 ## Exchange remediation summary 2026-10-29
@@ -511,7 +510,38 @@ until the remediation run closes it or states why it stays open.
 | G-10, G-11 | already fixed upstream before this run |
 | G-12, G-14, G-15, G-16, G-17, G-18, G-19, G-20, G-21, G-22 | fixed |
 | G-13, G-23, G-24, G-25, G-26 | open by design or operator item |
-| G-27 | open, pre-existing test isolation defect |
+| G-27 | fixed in v4 (clock-dependent fixture) |
 
 Commit hashes are listed per phase in
 `docs/remediation/exchange-remediation-2026-10-29.md`.
+
+## Exchange remediation v4 2026-11-02 - open
+
+Source: `yujtrade_exchange_review_v2_open_issues.md`. Full detail and per-phase
+gate output are in `docs/remediation/exchange-remediation-v4-2026-11-02.md`.
+
+| Finding | Status | Commit |
+|---|---|---|
+| H-01 read failure never reaches unknown | fixed | P3 |
+| H-02 clock-dependent tracker fixtures | fixed | P1 |
+| H-03 boolean config read with `bool()` | fixed | P6 |
+| M-01 duplicate signal consumed the code | fixed | P5 |
+| M-02 one venue blocked all venues | fixed | P4 |
+| M-03 first Redis failure suppressed at low uptime | fixed | P2 |
+| M-04 reconcile blocker list grew unbounded | fixed | P4 |
+| L-01 request timeout never applied | fixed | P7 |
+| L-02 soak report missing unknown criterion | fixed | P8 |
+| L-03 docs and reports inaccurate | fixed | P12 |
+| L-04 config keys undocumented | fixed | P11 |
+| I-01 no operator cancel command | fixed | P10 |
+| I-02 halt was global only | fixed | P9 |
+
+Open, blocked by an operator decision or official documentation:
+
+- [ ] I-03 balance and fee reconciliation baseline is undefined. Open decision.
+- [ ] I-04 client order id support is unverified for every venue.
+- [ ] I-05 LBank permission rule is undefined.
+- [ ] I-06 Ourbit endpoints are undocumented.
+- [ ] I-07 sandbox expectations and the probe need the operator machine.
+- [ ] L-05 sizing reference price (entry vs last close) is an open decision.
+- [ ] L-06 sending an older signal through `/exchange_execute` is an open decision.

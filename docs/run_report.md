@@ -110,3 +110,37 @@ registry or the plan are documented in
   `TradingService` at baseline. The exchange work does not add them; that gap
   is pre-existing and recorded in `docs/open_issues.md`.
 
+
+## Exchange remediation v4 (2026-11-02)
+
+Scope: the findings in `yujtrade_exchange_review_v2_open_issues.md`, executed
+under `yujtrade_exchange_remediation_playbook_v4.md`, one commit per phase on
+`main`. The review (V2) reported 5 failures on a reconstructed export: two
+clock-dependent tracker tests, one Redis uptime test, and two export artifacts
+(missing zero-byte `__init__` files and a missing `openspec/` tree). Only the
+first two are code defects and are fixed here; the export artifacts are
+environment, not code.
+
+Baseline gate (P0): `2164 passed, 13 skipped, 19 deselected` after P1 fixed the
+two tracker tests; `ruff` and `mypy domain` clean. Golden hashes recorded and
+unchanged at the end.
+
+| Phase | Finding | Commit |
+|---|---|---|
+| P1 | H-02 clock-dependent tracker fixtures | `eeafee3` |
+| P2 | M-03 first Redis failure suppressed | `09d5431` |
+| P3 | H-01 read failure escalates to unknown | `7269b23` |
+| P4 | M-02/M-04 per-venue reconciliation, bounded blockers | `e6f2f2c` |
+| P5 | M-01 duplicate signal must not consume the code | `27d2980` |
+| P6 | H-03 strict boolean and list parsing | `eac16fc` |
+| P7 | L-01 request timeout applied | `aa6830b` |
+| P8 | L-02 unknown rows in the soak report | `c901c2c` |
+| P9 | I-02 halt and resume per venue | `6c10cb8` |
+| P10 | I-01 operator cancel command | `486b452` |
+| P11 | L-04 configuration reference and procedures | `5d16da6` |
+| P12 | L-03 documentation and report corrections | this commit |
+
+Still open and blocked on an operator decision or official documentation:
+I-03, I-04, I-05, I-06, I-07, L-05, L-06. Recorded in `docs/open_issues.md` and
+`docs/operator_pending.md`. Live stays disabled: every live-activation default
+is unchanged.

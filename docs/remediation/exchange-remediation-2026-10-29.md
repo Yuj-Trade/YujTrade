@@ -152,8 +152,12 @@ Fix:
   while `reconciled` is false. Shadow is not blocked.
 - `main.py` runs one pass before polling starts and starts
   `_exchange_reconcile_loop`, which uses `exchange_reconcile_interval_seconds`.
-- The unknown notice is emitted once, because a row that reached `unknown` no
-  longer appears in `get_non_terminal`.
+- The unknown notice is emitted once per changed row, because the status only
+  moves once and a later pass sees the target equal the current status.
+  Correction (2026-11-02, v4 P12): the earlier claim that `unknown` rows leave
+  `get_non_terminal` was wrong. `UNKNOWN` is in `NON_TERMINAL_STATUSES`, so the
+  row stays in the scan; the notice is single only because the status does not
+  change again.
 
 - Commit: `0a74b78` feat(exchange): run reconciliation at startup and on a
   periodic loop
@@ -201,8 +205,11 @@ Fix:
 - `check_confirmation` validates without writing; `consume_confirmation` flips
   `pending` to `used` with compare-and-set only.
 - `ExchangeExecutionService.preview_mode` and `request_confirmation` are new.
-  A live submission checks the code before the gateway, consumes it after
-  `append_pending`, and marks the row `rejected` if the consume loses a race.
+  Correction (2026-11-02, v4 P12): the earlier text said the code was consumed
+  after `append_pending`. In this build it was consumed before `append_pending`,
+  so a duplicate signal burned the code. The v4 run (P5) moved the insert before
+  the consume: the row is written first, then the code is consumed, and a lost
+  race marks the row `rejected`.
 - `/exchange_execute <venue> <signal_id> [code]`: without a code in live mode the
   bot issues one and places nothing. `/exchange_confirm` and
   `_pending_confirmation` are removed from code and docs.

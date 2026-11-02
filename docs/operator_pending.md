@@ -103,3 +103,25 @@ places the order. The code is consumed only after the risk checks pass.
   `1` and the committed default stays `false` (decision G4).
 - Evidence: `{"exit_code": 1, "artifacts": 0}` from
   `python scripts/review_learning_artifacts.py`.
+
+## 11. Exchange remediation v4 open items (2026-11-02)
+
+Status: `blocked_by_operator`. None of these were implemented in the v4 run.
+
+- I-03 balance and fee reconciliation: define the comparison baseline (starting
+  balance or a change report) then wire it. Not implemented.
+- I-04 client order id support: verify each venue's official documentation for
+  the length and format of the client order id before setting
+  `client_id_supported=True` for any venue.
+- I-05 LBank permission rule: still undefined (see section 8).
+- I-06 Ourbit: still needs official API documentation (see section 7).
+- I-07 sandbox expectations: run `python scripts/probe_exchanges.py` on the
+  operator machine and record results in `docs/exchange_probe_results.md`.
+- L-05 sizing reference price: decide entry vs last close. This run changed
+  nothing.
+- L-06 older signals via `/exchange_execute`: decide whether sending a signal id
+  that is not in a fresh analysis should be allowed.
+- Operator tasks unchanged from sections 1-10: probe, key attestation,
+  lock-refresh, a real sandbox run, the 14-day soak, written acceptance of
+  ADR-0011 and ADR-0012 and the terms-of-use statement, and live activation with
+  a human review.
