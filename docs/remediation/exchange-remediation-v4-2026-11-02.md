@@ -150,3 +150,43 @@ a533b2ad45ccb28c52d051a1c982d303c996eb16c150a081c05dfa57c8c09011  tests/golden/b
   consumed before `append_pending`, fixed in P5).
 - `docs/operator_pending.md`: section 11 listing I-03..I-07, L-05, L-06.
 - Commit: this commit.
+
+### P13 - Final gate
+
+- pytest `-m "not slow and not ml"`: `2231 passed, 13 skipped, 19 deselected`.
+- `ruff check .`: clean. `ruff format --check .`: 313 files already formatted.
+- `mypy domain`: no issues in 10 source files.
+- `git diff --check`: clean.
+- Golden hashes match P0 (all three files unchanged).
+- `git status --short`: empty. `git branch --list`: `main` and the pre-existing
+  `baseline/pre-agent`.
+- Live stays closed: defaults are `execution_dry_run=True`,
+  `exchange_sandbox=True`, `exchange_shadow_mode=True`,
+  `exchange_live_enabled=False`, `exchange_enabled=[]`,
+  `exchange_live_review_id=""`, `exchange_attested_keys=[]`,
+  `exchange_symbol_allowlist=[]`.
+
+## Final status per finding
+
+| Finding | Status | Where |
+|---|---|---|
+| H-01 | fixed | P3 `7269b23` |
+| H-02 | fixed | P1 `eeafee3` |
+| H-03 | fixed | P6 `eac16fc` |
+| M-01 | fixed | P5 `27d2980` |
+| M-02 | fixed | P4 `e6f2f2c` |
+| M-03 | fixed | P2 `09d5431` |
+| M-04 | fixed | P4 `e6f2f2c` |
+| L-01 | fixed | P7 `aa6830b` |
+| L-02 | fixed | P8 `c901c2c` |
+| L-03 | fixed | P12 |
+| L-04 | fixed | P11 `5d16da6` |
+| L-05 | open | operator decision |
+| L-06 | open | operator decision |
+| I-01 | fixed | P10 `486b452` |
+| I-02 | fixed | P9 `6c10cb8` |
+| I-03 | open | operator decision |
+| I-04 | open | operator documentation |
+| I-05 | open | by design (LBank rule) |
+| I-06 | open | by design (Ourbit) |
+| I-07 | open | operator probe |
