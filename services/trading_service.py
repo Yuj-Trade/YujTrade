@@ -173,11 +173,14 @@ def _build_exchange_service(config_manager: ConfigManager):
         return None
     ledger = LiveLedger(settings.ledger_path)
 
+    def gateway_factory(spec, sandbox, credentials):
+        return build_gateway(spec, sandbox, credentials, timeout_ms=settings.request_timeout_ms)
+
     async def permission_check(spec):
         from trading.exchanges.credentials import load_exchange_credentials
 
         credentials = load_exchange_credentials(spec, settings.sandbox)
-        gateway = build_gateway(spec, settings.sandbox, credentials)
+        gateway = gateway_factory(spec, settings.sandbox, credentials)
         try:
             ok, reason = await verify_key_permissions(gateway, spec)
         finally:
@@ -189,7 +192,7 @@ def _build_exchange_service(config_manager: ConfigManager):
     return ExchangeExecutionService(
         settings=settings,
         ledger=ledger,
-        gateway_factory=build_gateway,
+        gateway_factory=gateway_factory,
         execution_dry_run=execution_dry_run,
         permission_check=permission_check,
     )

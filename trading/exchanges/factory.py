@@ -9,9 +9,10 @@ def build_gateway(
     spec: ExchangeSpec,
     sandbox: bool,
     credentials: ExchangeCredentials | None = None,
+    timeout_ms: int = 15000,
 ) -> ExchangeGateway:
     if spec.exchange_id == "ourbit":
         raise OurbitNotReady("ourbit_endpoints_not_documented")
     if spec.ccxt_id is None:
         raise OurbitNotReady(f"{spec.exchange_id}_has_no_gateway")
-    return CcxtGateway(spec=spec, sandbox=sandbox, credentials=credentials)
+    return CcxtGateway(spec=spec, sandbox=sandbox, credentials=credentials, timeout_ms=timeout_ms)
