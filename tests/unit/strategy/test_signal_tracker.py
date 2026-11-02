@@ -537,7 +537,7 @@ def _notification_details(**overrides):
         "entry": 100.0,
         "stop": 95.0,
         "target": 110.0,
-        "created_at": datetime(2026, 10, 1, 10, tzinfo=UTC).isoformat(),
+        "created_at": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
     }
     base.update(overrides)
     return base
@@ -550,7 +550,7 @@ class TestSignalTrackerOutcomeNotificationDefects:
         tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
         first = _notification_details(notification_state="pending")
         second = _notification_details(
-            created_at=datetime(2026, 10, 5, 10, tzinfo=UTC).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             entry=200.0,
             stop=195.0,
             target=210.0,
@@ -672,7 +672,7 @@ class TestSignalTrackerProtectedEntries:
         tracker = SignalTracker(storage_path=str(tmp_path / "signal_history.json"))
         first = _notification_details(notification_state="pending")
         second = _notification_details(
-            created_at=datetime(2026, 10, 5, 10, tzinfo=UTC).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             entry=200.0,
         )
 

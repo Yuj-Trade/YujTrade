@@ -5,12 +5,14 @@ The keys `total`, `win_rate` and `pending` are a live contract: the Telegram
 but must not change these three.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from strategy.signal_tracker import SignalTracker
 
 
 def _details(symbol: str = "BTC/USDT") -> dict:
+    created_at = datetime.now(UTC) - timedelta(hours=2)
+    candle_time = created_at - timedelta(hours=1)
     return {
         "symbol": symbol,
         "timeframe": "1h",
@@ -18,8 +20,8 @@ def _details(symbol: str = "BTC/USDT") -> dict:
         "entry": 100.0,
         "stop": 95.0,
         "target": 110.0,
-        "created_at": datetime(2026, 10, 1, 10, tzinfo=UTC).isoformat(),
-        "candle_time": datetime(2026, 10, 1, 9, tzinfo=UTC).isoformat(),
+        "created_at": created_at.isoformat(),
+        "candle_time": candle_time.isoformat(),
     }
 
 
