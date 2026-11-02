@@ -136,7 +136,7 @@ async def test_sandbox_submission_requires_reconciliation(ledger):
     service = _service(ledger, gateway)
     result = await service.submit_signal("binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
     assert result.ok is False
-    assert result.reason == "reconciliation_pending"
+    assert result.reason.startswith("reconciliation_pending")
     assert gateway.placed == 0
 
 
@@ -290,3 +290,44 @@ def test_main_has_exchange_reconcile_loop():
 
 def test_utc_now_is_aware():
     assert datetime.now(UTC).tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_blocker_names_the_missing_credentials(ledger, monkeypatch):
+    gateway = FakeGateway()
+    service = _service(ledger, gateway)
+    import trading.exchanges.credentials as credentials_module
+
+    credentials_module.load_exchange_credentials = lambda spec, sandbox: None
+    await service.reconcile()
+    assert service.reconciled is False
+    assert any("no_credentials:binance" in item for item in service.reconcile_blockers)
+    result = await service.submit_signal("binance", "sig-1", "BTC/USDT", "buy", 0.0005, 50_000.0)
+    assert result.ok is False
+    assert "no_credentials:binance" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_with_no_enabled_venue_reports_it(ledger):
+    gateway = FakeGateway()
+    service = _service(ledger, gateway, _settings(enabled=()))
+    await service.reconcile()
+    assert service.reconciled is False
+    assert "no_enabled_exchange" in service.reconcile_blockers
+
+
+@pytest.mark.asyncio
+async def test_successful_pass_clears_the_blockers(ledger, monkeypatch):
+    gateway = FakeGateway()
+    service = _service(ledger, gateway)
+    import trading.exchanges.credentials as credentials_module
+
+    credentials_module.load_exchange_credentials = lambda spec, sandbox: None
+    await service.reconcile()
+    assert service.reconcile_blockers
+    credentials_module.load_exchange_credentials = lambda spec, sandbox: __import__(
+        "trading.exchanges.credentials", fromlist=["ExchangeCredentials"]
+    ).ExchangeCredentials(api_key="k", api_secret="s")
+    await service.reconcile()
+    assert service.reconciled is True
+    assert service.reconcile_blockers == []

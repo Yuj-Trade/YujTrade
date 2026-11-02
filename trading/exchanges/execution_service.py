@@ -126,6 +126,7 @@ class ExchangeExecutionService:
         self._clock = clock or time.monotonic
         self._permission_cache: dict[str, tuple[bool, float]] = {}
         self.reconciled = False
+        self.reconcile_blockers: list[str] = []
         self.execution_dry_run = (
             bool(ConfigManager.DEFAULT_CONFIG.get("execution_dry_run", True))
             if execution_dry_run is None
@@ -217,8 +218,11 @@ class ExchangeExecutionService:
         if mode is None:
             return await self._refuse(reason, exchange_id=exchange_id, signal_id=signal_id)
         if mode in {"sandbox", "live"} and not self.reconciled:
+            blockers = ",".join(self.reconcile_blockers) or "unknown"
             return await self._refuse(
-                "reconciliation_pending", exchange_id=exchange_id, signal_id=signal_id
+                f"reconciliation_pending:{blockers}",
+                exchange_id=exchange_id,
+                signal_id=signal_id,
             )
         if mode == "live":
             allowed, code_reason = await check_confirmation(
@@ -423,6 +427,7 @@ class ExchangeExecutionService:
             try:
                 spec = get_spec(exchange_id)
             except KeyError:
+                self.reconcile_blockers.append(f"unknown_exchange:{exchange_id}")
                 logger.warning(f"Reconciliation skipped unknown exchange {exchange_id}")
                 failures += 1
                 continue
@@ -430,7 +435,11 @@ class ExchangeExecutionService:
                 continue
             credentials = load_exchange_credentials(spec, self.settings.sandbox)
             if credentials is None:
-                logger.warning(f"Reconciliation has no credentials for {exchange_id}")
+                self.reconcile_blockers.append(f"no_credentials:{exchange_id}")
+                logger.warning(
+                    f"Reconciliation has no credentials for {exchange_id}; "
+                    "sandbox and live submissions stay blocked."
+                )
                 failures += 1
                 continue
             try:
@@ -439,9 +448,11 @@ class ExchangeExecutionService:
                 )
                 usable += 1
             except ExchangeConfigError as exc:
+                self.reconcile_blockers.append(f"gateway_unavailable:{exchange_id}")
                 logger.warning(f"Reconciliation gateway unavailable for {exchange_id}: {exc}")
                 failures += 1
             except Exception as exc:
+                self.reconcile_blockers.append(f"gateway_failed:{exchange_id}")
                 logger.error(f"Reconciliation gateway failed for {exchange_id}: {exc}")
                 failures += 1
         changed: list[str] = []
@@ -453,6 +464,7 @@ class ExchangeExecutionService:
                 notify=self._announce,
             )
         except Exception as exc:
+            self.reconcile_blockers.append("pass_failed")
             logger.error(f"Reconciliation pass failed: {exc}")
             failures += 1
         finally:
@@ -462,6 +474,15 @@ class ExchangeExecutionService:
                 except Exception as exc:
                     logger.debug(f"Reconciliation gateway close failed: {exc}")
         self.reconciled = failures == 0 and usable > 0
+        if self.reconciled:
+            self.reconcile_blockers = []
+        elif usable == 0 and "no_enabled_exchange" not in self.reconcile_blockers:
+            self.reconcile_blockers.append("no_enabled_exchange")
+        elif self.reconcile_blockers:
+            logger.warning(
+                "Exchange submissions stay blocked until reconciliation succeeds: "
+                + ", ".join(self.reconcile_blockers)
+            )
         return changed
 
     async def halt(self, reason: str = "operator_halt") -> None:
