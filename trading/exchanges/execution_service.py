@@ -181,7 +181,9 @@ class ExchangeExecutionService:
     ) -> tuple[str | None, str, bool, list[str], bool]:
         use_sandbox = bool(self.settings.sandbox)
         creds_ok, secrets = credentials_usable(spec, use_sandbox)
-        halted = (await self.ledger.get_control("halted", "0")) == "1"
+        global_halted = (await self.ledger.get_control("halted", "0")) == "1"
+        venue_halted = (await self.ledger.get_control(f"halted:{spec.exchange_id}", "0")) == "1"
+        halted = global_halted or venue_halted
         permissions_ok = await self._permissions_ok(spec, use_sandbox)
         gate = build_gate_input(
             spec=spec,
@@ -480,13 +482,30 @@ class ExchangeExecutionService:
             )
         return changed
 
-    async def halt(self, reason: str = "operator_halt") -> None:
-        await self.ledger.set_control("halted", "1")
-        await self._announce(f"Exchange halted ({reason})")
+    async def halt(self, reason: str = "operator_halt", exchange_id: str | None = None) -> None:
+        key = f"halted:{exchange_id}" if exchange_id else "halted"
+        await self.ledger.set_control(key, "1")
+        scope = exchange_id or "all exchanges"
+        await self._announce(f"{scope} halted ({reason})")
 
-    async def resume(self) -> None:
-        await self.ledger.set_control("halted", "0")
-        await self._announce("Exchange resumed")
+    async def resume(self, exchange_id: str | None = None) -> None:
+        key = f"halted:{exchange_id}" if exchange_id else "halted"
+        await self.ledger.set_control(key, "0")
+        scope = exchange_id or "all exchanges"
+        await self._announce(f"{scope} resumed")
+
+    async def halt_state(self, exchange_id: str | None = None) -> dict:
+        global_halted = (await self.ledger.get_control("halted", "0")) == "1"
+        venue_halted = (
+            (await self.ledger.get_control(f"halted:{exchange_id}", "0")) == "1"
+            if exchange_id
+            else False
+        )
+        return {
+            "global": global_halted,
+            "venue": venue_halted,
+            "halted": global_halted or venue_halted,
+        }
 
     async def order_status(self, client_order_id: str, exchange_id: str) -> dict | None:
         return await self.ledger.get_row(client_order_id, exchange_id)

@@ -32,6 +32,8 @@ def _focus_label() -> str:
 
 QUICK_TIMEFRAMES = ["1h"]
 
+_INVALID_EXCHANGE = object()
+
 
 MARKDOWN_V2_RESERVED = "_*[]()~`>#+-=|{}.!\\"
 
@@ -529,8 +531,15 @@ class TelegramBotHandler:
         if service is None:
             await self._reply(update, "Exchange execution is not configured.")
             return
-        await service.halt()
-        await self._reply(update, "Exchange halted. New orders are refused.")
+        exchange_id = self._exchange_arg(context)
+        if exchange_id is _INVALID_EXCHANGE:
+            await self._reply(update, "Unknown exchange id. Use /exchange_status to list venues.")
+            return
+        await service.halt(exchange_id=exchange_id)
+        if exchange_id:
+            await self._reply(update, f"Exchange {exchange_id} halted. New orders are refused.")
+        else:
+            await self._reply(update, "All exchanges halted. New orders are refused.")
 
     async def exchange_resume_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update, context):
@@ -539,8 +548,28 @@ class TelegramBotHandler:
         if service is None:
             await self._reply(update, "Exchange execution is not configured.")
             return
-        await service.resume()
-        await self._reply(update, "Exchange resumed.")
+        exchange_id = self._exchange_arg(context)
+        if exchange_id is _INVALID_EXCHANGE:
+            await self._reply(update, "Unknown exchange id. Use /exchange_status to list venues.")
+            return
+        await service.resume(exchange_id=exchange_id)
+        if exchange_id:
+            await self._reply(update, f"Exchange {exchange_id} resumed.")
+        else:
+            await self._reply(update, "All exchanges resumed.")
+
+    def _exchange_arg(self, context: ContextTypes.DEFAULT_TYPE):
+        args = context.args or []
+        if not args:
+            return None
+        candidate = str(args[0]).strip()
+        try:
+            from trading.exchanges.registry import get_spec
+
+            get_spec(candidate)
+        except (KeyError, ImportError):
+            return _INVALID_EXCHANGE
+        return candidate
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if not self.admin_chat_id:

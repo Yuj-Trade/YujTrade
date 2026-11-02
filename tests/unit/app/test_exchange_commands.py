@@ -76,11 +76,13 @@ class FakeExchangeService:
     async def request_confirmation(self, exchange_id, signal_id):
         return "ABCD1234"
 
-    async def halt(self):
+    async def halt(self, reason="operator_halt", exchange_id=None):
         self.halted += 1
+        self.halt_venue = exchange_id
 
-    async def resume(self):
+    async def resume(self, exchange_id=None):
         self.resumed += 1
+        self.resume_venue = exchange_id
 
 
 def _texts(update):
@@ -356,3 +358,54 @@ def test_preview_gate_reason_is_shown():
     assert service.submitted == []
     text = "\n".join(_texts(update))
     assert "credentials" in text
+
+
+def test_exchange_halt_with_a_venue_only_targets_that_venue():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["binance"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_halt_command(update, context))
+    assert service.halted == 1
+    assert service.halt_venue == "binance"
+    assert "binance" in "\n".join(_texts(update))
+
+
+def test_exchange_halt_without_venue_is_global():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update()
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_halt_command(update, context))
+    assert service.halted == 1
+    assert service.halt_venue is None
+
+
+def test_exchange_halt_with_an_unknown_venue_is_rejected():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["nosuch"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_halt_command(update, context))
+    assert service.halted == 0
+    assert "Unknown exchange" in "\n".join(_texts(update))
+
+
+def test_exchange_resume_with_a_venue_only_targets_that_venue():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["binance"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_resume_command(update, context))
+    assert service.resumed == 1
+    assert service.resume_venue == "binance"
+
+
+def test_exchange_resume_without_venue_is_global():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update()
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_resume_command(update, context))
+    assert service.resumed == 1
+    assert service.resume_venue is None
