@@ -351,14 +351,21 @@ While the first pass has not succeeded, sandbox and live submissions are
 refused with `reconciliation_pending`; shadow rows are unaffected.
 
 ### 12.3 Emergency stop
-1. Send `/exchange_halt`. The control row `halted=1` in
-   `runs/live_ledger.db` refuses every new submission, including shadow rows.
-   Open orders are **not** cancelled by the halt; cancel them at the venue.
-2. Run `/exchange_status <client_order_id>` for every row in `pending_submit`
+1. Send `/exchange_halt` to halt every venue, or `/exchange_halt <exchange_id>`
+   to halt one venue. The control row `halted=1` (global) or
+   `halted:<exchange_id>` (per venue) refuses every new submission for that
+   scope, including shadow rows. A global halt blocks every venue; a per-venue
+   halt blocks only that venue.
+2. Cancel an open order with `/exchange_cancel <exchange_id> <client_order_id>`.
+   Cancellation is always explicit and admin-only; the halt does not cancel
+   anything by itself. Cancellation is still allowed while halted.
+3. Run `/exchange_status <client_order_id>` for every row in `pending_submit`
    or `unknown`.
-3. Any `unknown` row is a manual decision. Reconciliation reads the venue and
+4. Any `unknown` row is a manual decision. Reconciliation reads the venue and
    never re-sends.
-4. Resume with `/exchange_resume` only after every unresolved row is closed.
+5. Resume with `/exchange_resume` (all venues) or `/exchange_resume <exchange_id>`
+   (one venue) only after every unresolved row is closed. Resuming one venue
+   does not lift a global halt.
 
 ### 12.4 Key rotation
 
@@ -374,13 +381,34 @@ Every 90 days, or immediately after an incident:
 
 - Every ledger method opens its own connection. Fine at the current volume;
   a pooled connection is a future change. (G-23)
-- `halt` stops new submissions; it does not cancel open orders at the venue.
-  Cancel those manually in the venue interface. (G-24)
+- A persistent venue read failure escalates a `pending_submit` or `submitted`
+  row to `unknown` after `exchange_unknown_after_seconds`, with one admin
+  notice. An `open` or `partially_filled` row is left untouched. (I-01, fixed)
+- Reconciliation tracks each venue separately; one unhealthy venue does not
+  block the others. (M-02, fixed)
+- Balance and fee reconciliation against the venue is not implemented. The
+  ledger records orders and reads the fee from the order response; it does not
+  compare the ledger fills against the venue balance or fee report. Open
+  decision: the operator must define the comparison baseline (starting balance
+  or change report). (I-03, open)
+- The client order id is not confirmed for any venue
+  (`client_id_supported` is `False` everywhere). If a submission times out and
+  no venue id was captured, the order only becomes `unknown` over time; there is
+  no other way to find it. Fail-closed. Operator must verify each venue's
+  official documentation before this is turned on. (I-04, open)
 - LBank never reaches live: the key-permission rule for
   `supplement/api_Restrictions` is not defined, so the check returns
-  `lbank_rule_not_defined`. (G-25)
+  `lbank_rule_not_defined`. (I-05)
 - Ourbit stays blocked until official API documentation exists; the factory
-  raises `OurbitNotReady` and no request leaves the process. (G-26)
+  raises `OurbitNotReady` and no request leaves the process. (I-06)
+- The sizing reference price is the signal entry for exchanges but the last
+  candle close for the paper path. Open decision: which reference is correct.
+  (L-05, open)
+- `/exchange_execute` re-runs the analysis; a signal id that is no longer in a
+  fresh analysis is answered with `not found`. Open decision: whether sending an
+  older signal should be allowed. (L-06, open)
+- Sandbox expectations are `None` for most venues; the probe must run on the
+  operator machine. (I-07, open)
 
 ### 12.5 Backups
 
@@ -449,6 +477,37 @@ rotation or header workaround. Matching an account to a venue's terms of use
 and to applicable sanctions is the operator's responsibility. The `iran`
 profile selects the reachable venue set (`lbank`, `ourbit`); it does not
 assert that an account is eligible.
+
+### 12.9 Exchange configuration reference
+
+Every key below is a `config.json` key read by `config/settings.py`. The
+default is the value in `ConfigManager.DEFAULT_CONFIG`; it is the safe value.
+Boolean keys accept only a JSON boolean or one of `true/false`, `1/0`,
+`yes/no`, `on/off` (case-insensitive, trimmed). Any other value is rejected with
+`invalid_boolean:<key>` and the exchange service is disabled; the bot reports
+`not configured`. Never rely on a string like `"false"` being interpreted
+loosely.
+
+| Key | Default | Meaning | Safe value |
+|---|---|---|---|
+| `exchange_enabled` | `[]` | Venues allowed to receive submissions. A comma-separated string is split. Each name must exist in the registry, otherwise `unknown_exchange_in_config:<name>`. | Add one venue only while testing; empty blocks all. |
+| `exchange_access_profile` | `general` | Venue scope filter: `general` or `iran`. | `general` unless you operate under the `iran` profile. |
+| `exchange_sandbox` | `true` | Route submissions to the venue sandbox. | `true` until live activation. |
+| `exchange_shadow_mode` | `true` | Record shadow rows without placing orders. | `true` until the soak passes. |
+| `exchange_live_enabled` | `false` | One of the live-activation gates. | `false`. |
+| `exchange_live_review_id` | `""` | ADR id whose `Status:` must read `accepted`. | `""` until the ADR is accepted. |
+| `exchange_attested_keys` | `[]` | Venues whose key has been attested. | Empty until the operator attests. |
+| `exchange_symbol_allowlist` | `[]` | Symbols allowed to submit. **An empty list refuses every order.** | List each traded symbol explicitly. |
+| `exchange_max_order_notional_usdt` | `50.0` | Per-order notional cap in USDT. | Low; raise deliberately. |
+| `exchange_max_daily_notional_usdt` | `200.0` | Daily notional cap per venue in USDT. | Low; raise deliberately. |
+| `exchange_max_price_deviation_pct` | `2.0` | Maximum order price deviation from the reference. | `2.0` or tighter. |
+| `exchange_max_spread_pct` | `0.5` | Maximum top-of-book spread to trade. | `0.5` or tighter. |
+| `exchange_ledger_path` | `runs/live_ledger.db` | SQLite ledger file. | Keep under `runs/`. |
+| `exchange_reconcile_interval_seconds` | `60` | Reconciliation loop period. | `60`. |
+| `exchange_unknown_after_seconds` | `120` | Age after which a stuck `pending_submit`/`submitted` row escalates to `unknown`. | `120`. |
+| `exchange_request_timeout_ms` | `15000` | ccxt client request timeout in milliseconds. | `15000`. |
+| `exchange_permission_cache_seconds` | `600` | Live key-permission check cache lifetime. | `600`. |
+| `execution_dry_run` | `true` | Paper instead of live for the exchange path. One of the live-activation gates. | `true`. |
 
 ## 13. Troubleshooting
 

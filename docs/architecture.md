@@ -259,30 +259,50 @@ submit_signal
   -> registry lookup                KeyError -> unknown_exchange
   -> profile scope                  mismatch -> scope_mismatch
   -> credential load                absent or plaintext -> credentials_missing
-  -> halt flag                      set -> halted
+  -> halt flag (global or venue)    set -> halted
   -> submission_mode gate           any unmet condition -> refused with a reason
-  -> live mode                      code checked, consumed only after risk passes
+  -> reconciliation per venue       venue not reconciled -> reconciliation_pending:<venue>
+  -> live mode                      pre-validation read, then after the insert
   -> market data + normalize        venue error -> refused, no row
   -> risk_check                     rejection -> refused, no row
   -> ledger.append_pending          duplicate -> refused, no second order
+  -> live mode                      code consumed after the insert; lost race -> row rejected
   -> shadow                         record only, never place
   -> place_limit_order              network error -> row stays pending_submit
   -> terminal statuses             never rewritten by any path
 ```
 
+Two halt scopes exist. `halted=1` is global and blocks every venue;
+`halted:<exchange_id>=1` blocks only that venue. A submission is refused as
+`halted` if either applies. `halt` and `resume` take an optional venue argument;
+resuming one venue does not lift a global halt.
+
 Reconciliation runs once at startup and then every
-`exchange_reconcile_interval_seconds`. For each non-terminal row it prefers the
-stored venue order id and falls back to the client order id only for a venue
-whose limit is verified in the ADR. It applies `next_status` and stops at
-`unknown` for a human decision; it never sends an order and never creates a
-second row. While the first pass has not succeeded, sandbox and live
-submissions are refused with `reconciliation_pending`.
+`exchange_reconcile_interval_seconds`. It tracks each venue independently
+(`reconciled_venues`); a venue whose gateway fails is recorded in
+`reconcile_blockers` keyed by venue and does not block the others. The blocker
+map is rebuilt every pass, so it cannot grow without bound. For each
+non-terminal row it prefers the stored venue order id and falls back to the
+client order id only for a venue whose limit is verified in the ADR. It applies
+`next_status` and stops at `unknown` for a human decision; it never sends an
+order and never creates a second row. A persistent read failure treats the
+snapshot as absent, so a stuck `pending_submit` or `submitted` row escalates to
+`unknown` after the threshold with one admin notice; an `open` row is left as
+is. While a venue's first pass has not succeeded, its sandbox and live
+submissions are refused with `reconciliation_pending:<venue>`.
 
 The live confirmation is issued by the bot: a live request without a code
 records nothing and returns a one-time code valid for 60 seconds. The same
-command with the code validates it before the gateway and consumes it after the
-risk checks and the ledger insert accept the order, so a rejected order does not
-burn the code. The flip is a compare-and-set on the control row.
+command with the code validates it, inserts the ledger row, and only then
+consumes the code, so a duplicate signal is refused with `duplicate_signal`
+without burning the code and a lost race marks the new row `rejected`. The flip
+is a compare-and-set on the control row.
+
+Operator cancellation is explicit and admin-only: `/exchange_cancel <venue>
+<client_order_id>` reads the row, refuses a terminal or shadow row, requires a
+stored venue order id and credentials, calls `cancel_order` on the venue, then
+reads one snapshot and updates the row. Nothing cancels automatically, including
+a halt.
 
 Refusals are recorded in `exchange_refusals` with their reason, and shadow rows
 carry the reference price taken when the signal was produced. Together these
