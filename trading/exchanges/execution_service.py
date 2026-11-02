@@ -13,6 +13,7 @@ from domain.exchange_types import (
     REJECTED,
     SHADOW,
     SUBMITTED,
+    TERMINAL_STATUSES,
     OrderIntent,
 )
 from trading.exchanges.confirmation import (
@@ -43,6 +44,8 @@ class GatewayLike(Protocol):
     async def place_limit_order(self, intent: OrderIntent) -> Any: ...
 
     async def fetch_free_balance(self, currency: str) -> float: ...
+
+    async def cancel_order(self, symbol: str, exchange_order_id: str) -> tuple[bool, str]: ...
 
     async def close(self) -> None: ...
 
@@ -509,3 +512,42 @@ class ExchangeExecutionService:
 
     async def order_status(self, client_order_id: str, exchange_id: str) -> dict | None:
         return await self.ledger.get_row(client_order_id, exchange_id)
+
+    async def cancel(self, exchange_id: str, client_order_id: str) -> dict:
+        from trading.reconciliation import fetch_snapshot
+
+        row = await self.ledger.get_row(client_order_id, exchange_id)
+        if row is None:
+            return {"ok": False, "reason": "unknown_order", "status": ""}
+        status = str(row["status"])
+        if status in TERMINAL_STATUSES:
+            return {"ok": False, "reason": "already_terminal", "status": status}
+        if str(row["mode"]) == "shadow":
+            return {"ok": False, "reason": "shadow_has_no_venue_order", "status": status}
+        exchange_order_id = str(row.get("exchange_order_id") or "")
+        if not exchange_order_id:
+            return {"ok": False, "reason": "no_venue_order_id", "status": status}
+        try:
+            spec = get_spec(exchange_id)
+        except KeyError:
+            return {"ok": False, "reason": "unknown_exchange", "status": status}
+        use_sandbox = str(row["mode"]) == "sandbox"
+        credentials = load_exchange_credentials(spec, use_sandbox)
+        if credentials is None:
+            return {"ok": False, "reason": "credentials_missing", "status": status}
+        gateway = self.gateway_factory(spec, use_sandbox, credentials)
+        try:
+            ok, reason = await gateway.cancel_order(str(row["symbol"]), exchange_order_id)
+            if not ok:
+                return {"ok": False, "reason": reason, "status": status}
+            refreshed = await fetch_snapshot(gateway, row)
+        finally:
+            try:
+                await gateway.close()
+            except Exception as exc:
+                logger.debug(f"Cancel gateway close failed: {exc}")
+        if refreshed is not None:
+            await self.ledger.update_from_snapshot(client_order_id, exchange_id, refreshed)
+        latest = await self.ledger.get_row(client_order_id, exchange_id)
+        new_status = str(latest["status"]) if latest is not None else status
+        return {"ok": True, "reason": reason, "status": new_status}

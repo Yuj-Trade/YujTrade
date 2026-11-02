@@ -21,7 +21,7 @@ def _age_seconds(created_at: str, now_utc: datetime) -> float:
     return (now_utc - created).total_seconds()
 
 
-async def _fetch_snapshot(gateway: Any, row: dict[str, Any]):
+async def fetch_snapshot(gateway: Any, row: dict[str, Any]):
     symbol = str(row["symbol"])
     exchange_order_id = str(row.get("exchange_order_id") or "")
     if exchange_order_id:
@@ -36,6 +36,9 @@ async def _fetch_snapshot(gateway: Any, row: dict[str, Any]):
     if not callable(fetcher):
         return None
     return await fetcher(symbol, str(row["client_order_id"]))
+
+
+_fetch_snapshot = fetch_snapshot
 
 
 async def reconcile_once(

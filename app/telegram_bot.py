@@ -137,6 +137,9 @@ class TelegramBotHandler:
         self.application.add_handler(
             CommandHandler("exchange_resume", self.exchange_resume_command)
         )
+        self.application.add_handler(
+            CommandHandler("exchange_cancel", self.exchange_cancel_command)
+        )
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
@@ -557,6 +560,36 @@ class TelegramBotHandler:
             await self._reply(update, f"Exchange {exchange_id} resumed.")
         else:
             await self._reply(update, "All exchanges resumed.")
+
+    async def exchange_cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self._is_admin(update, context):
+            return
+        service = self._exchange_service()
+        if service is None:
+            await self._reply(update, "Exchange execution is not configured.")
+            return
+        args = context.args or []
+        if len(args) < 2:
+            await self._reply(update, "Usage: /exchange_cancel <exchange_id> <client_order_id>")
+            return
+        exchange_id = str(args[0]).strip()
+        client_order_id = str(args[1]).strip()
+        try:
+            result = await service.cancel(exchange_id, client_order_id)
+        except Exception as e:
+            logger.opt(exception=True).debug(f"Exchange cancel failed: {e}")
+            await self._reply(update, "Cancel failed. Check the venue order manually.")
+            return
+        if result["ok"]:
+            await self._reply(
+                update,
+                f"Cancelled {client_order_id} on {exchange_id}: status={result['status']}",
+            )
+        else:
+            await self._reply(
+                update,
+                f"Cancel refused for {client_order_id} on {exchange_id}: {result['reason']}",
+            )
 
     def _exchange_arg(self, context: ContextTypes.DEFAULT_TYPE):
         args = context.args or []

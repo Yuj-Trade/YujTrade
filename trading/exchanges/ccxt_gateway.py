@@ -153,6 +153,17 @@ class CcxtGateway:
             return {}
         return {"clientOrderId": intent.client_order_id}
 
+    async def cancel_order(self, symbol: str, exchange_order_id: str) -> tuple[bool, str]:
+        try:
+            await self.client.cancel_order(exchange_order_id, symbol)
+        except ccxt_async.OrderNotFound:
+            return False, "order_not_found"
+        except ccxt_async.NetworkError:
+            raise
+        except ccxt_async.ExchangeError as exc:
+            return False, self.error_text(exc)
+        return True, "canceled"
+
     async def fetch_order_by_client_id(
         self, symbol: str, client_order_id: str
     ) -> OrderSnapshot | None:

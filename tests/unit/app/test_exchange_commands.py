@@ -84,6 +84,11 @@ class FakeExchangeService:
         self.resumed += 1
         self.resume_venue = exchange_id
 
+    async def cancel(self, exchange_id, client_order_id):
+        self.cancelled = getattr(self, "cancelled", [])
+        self.cancelled.append((exchange_id, client_order_id))
+        return {"ok": True, "reason": "canceled", "status": "canceled"}
+
 
 def _texts(update):
     return [str(call.args[0]) for call in update.message.reply_text.await_args_list]
@@ -311,6 +316,7 @@ def test_handlers_are_registered():
         "exchange_execute",
         "exchange_halt",
         "exchange_resume",
+        "exchange_cancel",
     } <= names
     assert "exchange_confirm" not in names
 
@@ -409,3 +415,33 @@ def test_exchange_resume_without_venue_is_global():
         asyncio.run(handler.exchange_resume_command(update, context))
     assert service.resumed == 1
     assert service.resume_venue is None
+
+
+def test_exchange_cancel_requires_two_arguments():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["binance"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_cancel_command(update, context))
+    assert not getattr(service, "cancelled", [])
+    assert "Usage" in "\n".join(_texts(update))
+
+
+def test_exchange_cancel_calls_the_service():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["binance", "cid-1"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=True)):
+        asyncio.run(handler.exchange_cancel_command(update, context))
+    assert service.cancelled == [("binance", "cid-1")]
+    assert "canceled" in "\n".join(_texts(update))
+
+
+def test_exchange_cancel_requires_admin():
+    service = FakeExchangeService()
+    handler = _handler(exchange_service=service)
+    update, context = _update(["binance", "cid-1"])
+    with patch.object(TelegramBotHandler, "_is_admin", AsyncMock(return_value=False)):
+        asyncio.run(handler.exchange_cancel_command(update, context))
+    assert not getattr(service, "cancelled", [])
+    update.message.reply_text.assert_not_called()
