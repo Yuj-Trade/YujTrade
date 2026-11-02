@@ -58,8 +58,7 @@ async def reconcile_once(
             snapshot = await _fetch_snapshot(gateway, row)
         except Exception as exc:
             text = gateway.error_text(exc) if hasattr(gateway, "error_text") else str(exc)
-            logger.error(f"Reconciliation read failed for {exchange_id}: {text}")
-            continue
+            logger.warning(f"Reconciliation read failed for {exchange_id}: {text}")
         observed = snapshot.status if snapshot is not None else None
         target = next_status(
             str(row["status"]),

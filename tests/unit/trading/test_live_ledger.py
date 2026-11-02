@@ -243,10 +243,10 @@ async def test_missing_gateway_is_skipped(ledger):
 
 
 @pytest.mark.asyncio
-async def test_gateway_error_is_skipped(ledger):
+async def test_gateway_error_before_the_threshold_keeps_the_status(ledger):
     await ledger.append_pending(_intent(), "sandbox")
     gateway = FakeGateway(error=RuntimeError("network down"))
-    changed = await reconcile_once(ledger, {"binance": gateway}, 0.0)
+    changed = await reconcile_once(ledger, {"binance": gateway}, 3600.0)
     assert changed == []
     row = await ledger.get_row("cid-1", "binance")
     assert row["status"] == PENDING_SUBMIT
