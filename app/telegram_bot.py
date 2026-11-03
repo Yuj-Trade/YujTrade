@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 from datetime import UTC, datetime
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -103,7 +104,7 @@ class TelegramBotHandler:
         if not self.admin_chat_id:
             logger.error("CRITICAL: Admin Chat ID is not configured!")
         else:
-            logger.info(f"Admin Chat ID configured as: {self.admin_chat_id}")
+            logger.info(f"Admin Chat ID configured (ends in {self._admin_suffix()}).")
 
         request = HTTPXRequest(
             http_version="1.1",
@@ -392,6 +393,9 @@ class TelegramBotHandler:
     def _exchange_service(self):
         return getattr(self.trading_service, "exchange_service", None)
 
+    def _admin_suffix(self) -> str:
+        return self.admin_chat_id[-4:] if self.admin_chat_id else ""
+
     async def _reply(self, update: Update, text: str) -> None:
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -614,13 +618,12 @@ class TelegramBotHandler:
             chat_id = update.effective_chat.id
 
         incoming_chat_id = str(chat_id).strip()
-        if incoming_chat_id == self.admin_chat_id:
-            logger.debug(f"Admin access granted for chat ID: {incoming_chat_id}")
+        if hmac.compare_digest(incoming_chat_id, self.admin_chat_id):
+            logger.debug(f"Admin access granted for chat ID ending in {incoming_chat_id[-4:]}")
             return True
 
         logger.warning(
-            f"Unauthorized access attempt from chat ID: {incoming_chat_id} "
-            f"(Expected: {self.admin_chat_id})"
+            f"Unauthorized access attempt from chat ID ending in {incoming_chat_id[-4:]}"
         )
         if chat_id:
             await context.bot.send_message(chat_id, "You are not authorized to use this bot.")
