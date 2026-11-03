@@ -234,7 +234,7 @@ class MarketDataProvider:
         if self._is_closed:
             raise ObjectClosedError("MarketDataProvider is closed")
 
-        if self.session is None or self.session.closed:
+        if self.session is None or self.session.closed or self.binance_fetcher is None:
             await self.initialize()
 
         cache_key = CacheKeyBuilder.ohlcv_key("unified", symbol, timeframe)
@@ -435,7 +435,7 @@ class MarketDataProvider:
         end_utc = end.astimezone(UTC)
         if start_utc >= end_utc:
             raise ValueError("start must precede end")
-        if self.session is None or self.session.closed:
+        if self.session is None or self.session.closed or self.binance_fetcher is None:
             await self.initialize()
         if self.binance_fetcher is None:
             raise InsufficientDataError(f"No range-capable source for {symbol} on {timeframe}.")

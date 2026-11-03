@@ -165,3 +165,28 @@ def test_klines_to_frame_builds_the_same_columns_and_index():
     assert list(frame.columns) == ["open", "high", "low", "close", "volume"]
     assert frame.index[0] == _START
     assert frame["close"].iloc[0] == pytest.approx(100.5)
+
+
+def test_range_fetch_reinitializes_when_the_fetcher_is_not_ready():
+    provider = MarketDataProvider.__new__(MarketDataProvider)
+    provider._is_closed = False
+    provider.session = MagicMock()
+    provider.session.closed = False
+    provider.redis = None
+    provider.ohlcv_store = None
+    provider.data_quality_checker = MagicMock()
+    provider.binance_fetcher = None
+
+    fetcher = SimpleNamespace(get_kline_data=AsyncMock(side_effect=[_rows(_START, 3)]))
+
+    async def _initialize():
+        provider.binance_fetcher = fetcher
+
+    provider.initialize = AsyncMock(side_effect=_initialize)
+    end = _START + timedelta(hours=3)
+
+    frame = asyncio.run(provider.fetch_ohlcv_range("BTC/USDT", "1h", _START, end))
+
+    provider.initialize.assert_awaited_once()
+    assert fetcher.get_kline_data.await_count == 1
+    assert len(frame) == 3
