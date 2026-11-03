@@ -8,6 +8,7 @@ WORKDIR /app
 RUN useradd --create-home --shell /usr/sbin/nologin appuser
 COPY pyproject.toml requirements.txt requirements.lock ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+RUN python -c "import ccxt; print('runtime deps ok')"
 COPY --chown=appuser:appuser . .
 RUN mkdir -p runs artifacts logs reports && chown -R appuser:appuser /app
 USER appuser
