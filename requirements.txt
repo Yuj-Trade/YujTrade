@@ -4,7 +4,6 @@ aiohappyeyeballs
 aiohttp==3.14.4
 aiosignal
 aiosqlite
-alembic
 amqp
 annotated-types
 anyio
@@ -20,7 +19,6 @@ celery
 certifi==2026.10.23
 cffi
 charset-normalizer
-ckzg
 click
 click-didyoumean
 click-plugins
@@ -36,13 +34,6 @@ Cython
 cytoolz
 dateparser
 dotenv
-eth-account
-eth-hash
-eth-keys
-eth-rlp
-eth-typing
-eth-utils
-eth_abi
 flatbuffers
 fonttools
 frozendict
@@ -53,7 +44,6 @@ greenlet
 grpcio
 h11
 h5py
-hexbytes
 httpcore
 httpx==0.28.1
 idna
@@ -93,12 +83,9 @@ prompt_toolkit
 propcache
 protobuf==7.36.2
 psutil
-py-ecc
 pycares
 pycparser
 pycryptodome
-pydantic==2.14.2
-pydantic_core
 Pygments
 pyparsing
 pyproject_hooks
@@ -108,14 +95,12 @@ python-decouple
 python-dotenv==1.2.2
 python-telegram-bot==22.8
 pytz
-pyunormalize
 pywin32; platform_system == "Windows"
 PyYAML==6.0.3
 redis==8.1.0
 regex
 requests==2.34.2
 rich
-rlp
 scikit-learn
 scipy
 sentry-sdk
@@ -125,7 +110,6 @@ six
 slicer
 sniffio
 soupsieve
-SQLAlchemy==2.0.46
 statsmodels
 ta
 TA-Lib
@@ -145,7 +129,6 @@ tzlocal
 urllib3==2.8.0
 vine
 wcwidth
-web3==7.15.0
 websockets
 Werkzeug
 wheel
