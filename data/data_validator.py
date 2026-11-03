@@ -52,31 +52,52 @@ class DataQualityChecker:
 
         return True, "Data quality OK"
 
+    _TIMEFRAME_RULES = {
+        "1h": ("1h",),
+        "4h": ("4h",),
+        "1d": ("1D",),
+        "1w": ("W-MON", "W-SUN"),
+        "1M": ("MS", "ME"),
+    }
+
+    def _gap_grid(self, index: pd.DatetimeIndex, timeframe: str) -> pd.DatetimeIndex:
+        rules = self._TIMEFRAME_RULES.get(timeframe)
+        if rules is None:
+            return pd.DatetimeIndex([], tz=index.tz)
+        best = None
+        best_missing = None
+        for rule in rules:
+            try:
+                grid = pd.date_range(start=index[0], end=index[-1], freq=rule, tz=index.tz)
+            except (ValueError, TypeError):
+                continue
+            if not grid.isin(index).any():
+                continue
+            missing = grid.difference(index)
+            if best is None or len(missing) < len(best_missing):
+                best, best_missing = grid, missing
+        if best is not None:
+            return best_missing
+        deltas = index.to_series().diff().dropna()
+        step = deltas.median() if not deltas.empty else pd.Timedelta(0)
+        if step <= pd.Timedelta(0):
+            return pd.DatetimeIndex([], tz=index.tz)
+        grid = pd.date_range(start=index[0], end=index[-1], freq=step, tz=index.tz)
+        return grid.difference(index)
+
     def repair_ohlcv(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         if data is None or data.empty or not isinstance(data.index, pd.DatetimeIndex):
             return data
         ordered = data.sort_index()
-        frequency = {
-            "1h": "1h",
-            "4h": "4h",
-            "1d": "1D",
-            "1w": "1W",
-            "1M": "30D",
-        }.get(timeframe)
-        if frequency is None or len(ordered) < 2:
+        if timeframe not in self._TIMEFRAME_RULES or len(ordered) < 2:
             return ordered
-        expected = pd.date_range(
-            start=ordered.index[0],
-            end=ordered.index[-1],
-            freq=frequency,
-            tz=ordered.index.tz,
-        )
-        missing = expected.difference(ordered.index)
+        index = ordered.index
+        missing = self._gap_grid(index, timeframe)
         if len(missing) > 3:
             raise ValueError(f"OHLCV gap exceeds repair tolerance: {len(missing)} candles")
         if missing.empty:
-            return data if ordered.index.equals(data.index) else ordered
-        repaired = ordered.reindex(expected)
+            return data if index.equals(data.index) else ordered
+        repaired = ordered.reindex(index.union(missing).sort_values())
         price_columns = [
             column for column in ("open", "high", "low", "close") if column in repaired
         ]

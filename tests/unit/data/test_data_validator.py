@@ -220,6 +220,43 @@ class TestRepairOhlcv:
 
         assert repaired.index.equals(frame.index)
 
+    @pytest.mark.parametrize(
+        ("timeframe", "freq", "rows"),
+        [("1w", "7D", 200), ("1w", "7D", 52), ("1M", "MS", 150), ("1M", "ME", 120)],
+    )
+    def test_a_calendar_aligned_weekly_or_monthly_series_has_no_false_gap(
+        self, checker, timeframe, freq, rows
+    ):
+        frame = _frame(rows=rows, freq=freq)
+
+        repaired = checker.repair_ohlcv(frame, timeframe)
+
+        assert len(repaired) == rows
+        assert repaired.index.equals(frame.index)
+
+    def test_weekly_monday_candles_are_not_flagged_as_gaps(self, checker):
+        index = pd.date_range("2024-01-01", periods=120, freq="7D", tz="UTC")
+        close = pd.Series(np.full(len(index), 100.0), index=index)
+        frame = pd.DataFrame(
+            {"open": close, "high": close, "low": close, "close": close, "volume": close},
+            index=index,
+        )
+
+        repaired = checker.repair_ohlcv(frame, "1w")
+
+        assert len(repaired) == len(frame)
+
+    def test_a_real_weekly_gap_is_still_rejected(self, checker):
+        index = pd.date_range("2024-01-01", periods=60, freq="7D", tz="UTC")
+        close = pd.Series(np.full(len(index), 100.0), index=index)
+        frame = pd.DataFrame(
+            {"open": close, "high": close, "low": close, "close": close, "volume": close},
+            index=index,
+        ).drop(index[10:20])
+
+        with pytest.raises(ValueError, match="gap exceeds repair tolerance"):
+            checker.repair_ohlcv(frame, "1w")
+
 
 class TestFreshnessAndDuplicates:
     @pytest.mark.parametrize("timeframe", ["1h", "4h", "1d", "1w", "1M"])
