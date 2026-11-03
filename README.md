@@ -82,7 +82,7 @@ decrypted via `KeyEncryptor` (see `scripts/encrypt_keys.py`):
 | `max_signals_per_timeframe` | `1` | Cap per timeframe per run |
 | `enable_scheduled_analysis` | `false` | Scheduled loop off unless enabled |
 | `schedule_hour` | `"*/1"` | `"*/N"` = every N hours, plain number = hour |
-| `app_version` | `"6.0.0"` | App version |
+| `app_version` | `"6.0.1"` | App version |
 | `model_data_limits` | `1h:2000, 4h:1500, 1d:1000, 1w:500, 1M:300` | Single contract for training AND prediction data windows |
 | `model_prediction_limit` | `300` | Rows used for one prediction |
 | `model_auto_train_on_predict` | `false` | Prediction never trains implicitly |
