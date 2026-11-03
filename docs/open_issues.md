@@ -576,3 +576,19 @@ Source: `docs/local/audits/security-audit/security-audit-2026-11-02-yujtrade.md`
   `requirements.txt` but imported nowhere in the application. Confirm whether
   they are needed before keeping them (they expand the attack surface for no
   runtime benefit).
+
+## Security re-audit 2026-11-02 (pass 2, commit 957f028)
+
+Local report: `docs/local/audits/security-audit/security-audit-2026-11-02-yujtrade.md`.
+Automated tools ran clean (gitleaks 0, semgrep only the known SQL false
+positives, pip-audit 0 on the manifest, trivy only untracked `skills/`).
+
+- [ ] S-09 (P2, operator machine) A live CourtListener API key sits in
+  plaintext in `.perch/mcp.json` (untracked, gitignored; not in git history).
+  Rotate the key, move it to the environment or a secret store. blocked_by_operator.
+- [ ] S-10 (P3, operator machine) `.perch/mcp.json` launches
+  `@iflow-mcp/blakeox-courtlistener-mcp` unpinned via `npx -y`. Pin the version.
+- [ ] S-11 (info) Add `SECURITY.md`, `CODEOWNERS`, `CONTRIBUTING.md` for OpenSSF
+  Scorecard governance coverage.
+- The `skills/` package-lock CVEs (body-parser, proxy-addr, qs) are in an
+  untracked sample boilerplate, not shipped; no action.
