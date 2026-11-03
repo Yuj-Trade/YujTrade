@@ -6,6 +6,20 @@ from trading.exchanges.gate_inputs import ExchangeSettings
 from trading.live_ledger import LiveLedger
 
 
+@pytest.fixture(autouse=True)
+def _restore_module_patches():
+    import trading.exchanges.credentials as credentials_module
+    import trading.exchanges.execution_service as execution_module
+
+    original_loader = credentials_module.load_exchange_credentials
+    original_usable = execution_module.credentials_usable
+    try:
+        yield
+    finally:
+        credentials_module.load_exchange_credentials = original_loader
+        execution_module.credentials_usable = original_usable
+
+
 def _settings(**overrides) -> ExchangeSettings:
     base = dict(
         enabled=("binance", "kraken"),
