@@ -145,7 +145,7 @@ tzlocal
 urllib3==2.8.0
 vine
 wcwidth
-web3==7.13.0
+web3==7.15.0
 websockets
 Werkzeug
 wheel
