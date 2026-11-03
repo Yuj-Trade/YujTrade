@@ -545,3 +545,34 @@ Open, blocked by an operator decision or official documentation:
 - [ ] I-07 sandbox expectations and the probe need the operator machine.
 - [ ] L-05 sizing reference price (entry vs last close) is an open decision.
 - [ ] L-06 sending an older signal through `/exchange_execute` is an open decision.
+
+## Security audit 2026-11-02
+
+Source: `docs/local/audits/security-audit/security-audit-2026-11-02-yujtrade.md`
+(local, gitignored). Tools run: semgrep 1.183.0, bandit 1.9.4, gitleaks
+8.30.1, trivy 0.74.0, pip-audit 2.10.1.
+
+| Finding | Severity | Status | Commit |
+|---|---|---|---|
+| S-01 Actions pinned to mutable tags | P2 | fixed | `c548e8e` |
+| S-02 No workflow `permissions:` block | P2 | fixed | `c548e8e` |
+| S-03 Admin chat id written to logs | P2 | fixed | M3 commit |
+| S-04 Unpinned pip-tools / pip-audit in CI | P3 | fixed | L2 commit |
+| S-05 requirements.txt mostly unpinned | P3 | fixed (security-relevant pins) | L3 commit |
+| S-06 No pre-commit secret scan | P3 | fixed | L4 commit |
+| S-07 Admin check not constant-time | P3 | fixed | M3 commit |
+| S-08 requirements.lock out of sync with the manifest | P2 | open, blocked | - |
+
+- [ ] S-08 `requirements.lock` was generated from a different manifest: it
+  pins 94 packages and omits `ccxt`, `web3`, `sqlalchemy`, `pydantic`. Docker
+  installs the lock with `--require-hashes`, so the image ships without
+  `ccxt` and the exchange service is silently disabled in the container. The
+  Dockerfile now asserts `import ccxt` after install, so the image build fails
+  loudly instead of shipping broken. Rebuild the lock on Linux:
+  `pip-compile --generate-hashes -o requirements.lock requirements.txt` (a
+  Windows host cannot resolve the Linux-only `nvidia-nccl-cu13` transitive
+  dependency). blocked_by_operator: must run on Linux / the CI runner.
+- [ ] Direct dependencies `web3`, `sqlalchemy`, `pydantic` are declared in
+  `requirements.txt` but imported nowhere in the application. Confirm whether
+  they are needed before keeping them (they expand the attack surface for no
+  runtime benefit).

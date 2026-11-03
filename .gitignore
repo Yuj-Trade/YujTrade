@@ -197,3 +197,7 @@ config.json
 
 # Perch agent config
 .perch/
+
+# Local audits and sensitive reports
+/docs/local/
+
