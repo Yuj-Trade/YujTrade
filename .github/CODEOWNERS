@@ -1,0 +1,13 @@
+# Owners for review routing.
+# Replace the placeholder handle with the GitHub user or team that should review
+# changes to each path. Until a real owner is set, GitHub cannot request a
+# reviewer automatically.
+
+* @Yuj-Trade
+
+# Security-sensitive paths get an extra owner.
+/.github/ @Yuj-Trade
+/Dockerfile @Yuj-Trade
+/config/ @Yuj-Trade
+/utils/security.py @Yuj-Trade
+/trading/exchanges/ @Yuj-Trade
