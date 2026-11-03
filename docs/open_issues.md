@@ -589,7 +589,8 @@ positives, pip-audit 0 on the manifest, trivy only untracked `skills/`).
   value is burned and must not be reused.
 - [x] S-10 (P3, operator machine) F3 pinned the MCP package to
   `@iflow-mcp/blakeox-courtlistener-mcp@0.1.0`.
-- [ ] S-11 (info) Add `SECURITY.md`, `CODEOWNERS`, `CONTRIBUTING.md` for OpenSSF
-  Scorecard governance coverage.
+- [x] S-11 (info) F4 added `SECURITY.md`, `CONTRIBUTING.md` and
+  `.github/CODEOWNERS` for OpenSSF Scorecard governance coverage. Replace the
+  placeholder `@Yuj-Trade` owner in CODEOWNERS with the real reviewer.
 - The `skills/` package-lock CVEs (body-parser, proxy-addr, qs) are in an
   untracked sample boilerplate, not shipped; no action.
