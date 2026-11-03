@@ -581,11 +581,14 @@ Local report: `docs/local/audits/security-audit/security-audit-2026-11-02-yujtra
 Automated tools ran clean (gitleaks 0, semgrep only the known SQL false
 positives, pip-audit 0 on the manifest, trivy only untracked `skills/`).
 
-- [ ] S-09 (P2, operator machine) A live CourtListener API key sits in
-  plaintext in `.perch/mcp.json` (untracked, gitignored; not in git history).
-  Rotate the key, move it to the environment or a secret store. blocked_by_operator.
-- [ ] S-10 (P3, operator machine) `.perch/mcp.json` launches
-  `@iflow-mcp/blakeox-courtlistener-mcp` unpinned via `npx -y`. Pin the version.
+- [~] S-09 (P2, operator machine) A live CourtListener API key was in plaintext
+  in `.perch/mcp.json`. F3 removed the literal value and now references
+  `${COURTLISTENER_API_KEY}` / `${COURTLISTENER_TOKEN}` from the environment.
+  The file is untracked and gitignored. blocked_by_operator: rotate the exposed
+  key at CourtListener and export the new value in the environment; the old
+  value is burned and must not be reused.
+- [x] S-10 (P3, operator machine) F3 pinned the MCP package to
+  `@iflow-mcp/blakeox-courtlistener-mcp@0.1.0`.
 - [ ] S-11 (info) Add `SECURITY.md`, `CODEOWNERS`, `CONTRIBUTING.md` for OpenSSF
   Scorecard governance coverage.
 - The `skills/` package-lock CVEs (body-parser, proxy-addr, qs) are in an
