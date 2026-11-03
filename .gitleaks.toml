@@ -1,0 +1,12 @@
+# Gitleaks configuration for YujTrade.
+# Excludes only vendored code and skill reference material, which intentionally
+# contain secret-detection patterns. Everything under the application tree,
+# tests, and docs stays in scope.
+
+[allowlist]
+description = "Vendored environments and skill reference material"
+paths = [
+  '''Main/''',
+  '''skills/''',
+  '''\.perch/''',
+]
