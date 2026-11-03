@@ -229,9 +229,9 @@ that value and re-running `scripts/encrypt_keys.py`. Never commit `.env`,
 
 `Dockerfile` (pinned `python:3.13-slim-bookworm`, non-root `appuser`,
 `HEALTHCHECK` via `scripts/docker_healthcheck.py`) installs the pinned
-`requirements.lock`. CI (`.github/workflows/ci.yml`) runs ruff, ruff format
-check, mypy on `domain`, the default test gate, a `domain` coverage gate
-(>=90%), and a Docker build.
+`requirements.txt` and asserts `import ccxt` at build time. CI
+(`.github/workflows/ci.yml`) runs ruff, ruff format check, mypy on `domain`,
+the default test gate, a `domain` coverage gate (>=90%), and a Docker build.
 
 ## Troubleshooting
 

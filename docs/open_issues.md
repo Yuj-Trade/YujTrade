@@ -561,21 +561,19 @@ Source: `docs/local/audits/security-audit/security-audit-2026-11-02-yujtrade.md`
 | S-05 requirements.txt mostly unpinned | P3 | fixed (security-relevant pins) | L3 commit |
 | S-06 No pre-commit secret scan | P3 | fixed | L4 commit |
 | S-07 Admin check not constant-time | P3 | fixed | M3 commit |
-| S-08 requirements.lock out of sync with the manifest | P2 | open, blocked | - |
+| S-08 requirements.lock out of sync with the manifest | P2 | fixed | F2 |
 
-- [ ] S-08 `requirements.lock` was generated from a different manifest: it
-  pins 94 packages and omits `ccxt`, `web3`, `sqlalchemy`, `pydantic`. Docker
-  installs the lock with `--require-hashes`, so the image ships without
-  `ccxt` and the exchange service is silently disabled in the container. The
-  Dockerfile now asserts `import ccxt` after install, so the image build fails
-  loudly instead of shipping broken. Rebuild the lock on Linux:
-  `pip-compile --generate-hashes -o requirements.lock requirements.txt` (a
-  Windows host cannot resolve the Linux-only `nvidia-nccl-cu13` transitive
-  dependency). blocked_by_operator: must run on Linux / the CI runner.
-- [ ] Direct dependencies `web3`, `sqlalchemy`, `pydantic` are declared in
-  `requirements.txt` but imported nowhere in the application. Confirm whether
-  they are needed before keeping them (they expand the attack surface for no
-  runtime benefit).
+- [x] S-08 `requirements.lock` was generated from a different manifest (94
+  packages, missing `ccxt` and others), so installing it with
+  `--require-hashes` shipped an image without `ccxt`. Fixed in F2: the stale
+  lock is removed, the Dockerfile installs `requirements.txt` and asserts
+  `import ccxt` at build time, and the CI audit now runs `pip-audit -r
+  requirements.txt`. A regenerated hash-locked file can still be produced on
+  Linux with the `lock-refresh` workflow and committed later; until then the
+  direct pins in `requirements.txt` are the reproducible input.
+- [x] The unused `web3`, `sqlalchemy`, `pydantic`, `alembic` declarations and
+  the `web3` transitive family were removed in F1; `sqlalchemy` remains only as
+  a `optuna` transitive dependency.
 
 ## Security re-audit 2026-11-02 (pass 2, commit 957f028)
 

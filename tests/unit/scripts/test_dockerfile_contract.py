@@ -12,10 +12,10 @@ def test_the_image_asserts_ccxt_imports_at_build_time():
     assert install < assertion, "the ccxt import check must run after the install"
 
 
-def test_the_image_installs_the_hash_pinned_lock():
+def test_the_image_installs_the_manifest():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "--require-hashes -r requirements.lock" in dockerfile
+    assert "pip install --no-cache-dir -r requirements.txt" in dockerfile
 
 
 def test_the_image_runs_as_a_non_root_user():
