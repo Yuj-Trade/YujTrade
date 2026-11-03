@@ -89,7 +89,7 @@ jobs:
           python-version: "3.13"
       - name: Dependency audit
         run: |
-          python -m pip install pip-audit
+          python -m pip install "pip-audit==2.10.1"
           pip-audit -r requirements.lock
 
   secrets-guard:
