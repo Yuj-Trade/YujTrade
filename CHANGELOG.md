@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 This project follows Semantic Versioning.
 
+## [6.0.2] - 2026-11-04
+
+Patch release from a full run and analysis. Fixes a Telegram error-handling
+gap and makes the weekly/monthly analysis pass against real venue history.
+
+### Fixed
+
+- No Telegram error handler was registered, so a transient transport failure
+  (for example `httpx.ConnectTimeout` on `start`) logged the full "No error
+  handlers are registered" traceback. The bot now registers `handle_error`,
+  which absorbs `TimedOut`, `NetworkError`, `RetryAfter`, `Forbidden` and
+  `BadRequest` as warnings and only logs an unexpected error at error level.
+  `_reply` and the `/start` reply also swallow `TimedOut`/`NetworkError` so a
+  slow network no longer surfaces as an exception.
+- `min_data_points` for `1w` (200) and `1M` (150) exceeded the history real
+  venues expose; for example Binance returns 112 monthly candles for BTC and
+  43 for SUI, so `validate_data_quality` rejected every weekly/monthly
+  analysis with `Insufficient data`. Lowered to `1w` 150 and `1M` 40, which
+  still leaves enough candles for the long-term indicators and lets every
+  symbol in the list analyze. The backtesting window tests now derive the
+  expected window count from the constant instead of a hardcoded 150.
+
 ## [6.0.1] - 2026-11-04
 
 Patch release from a full run analysis. Fixes two data-layer defects that made

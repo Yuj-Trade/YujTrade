@@ -1,6 +1,6 @@
 [project]
 name = "yujtrade"
-version = "6.0.1"
+version = "6.0.2"
 description = "Long-term crypto trading signal bot with Telegram delivery"
 requires-python = ">=3.13,<3.14"
 
