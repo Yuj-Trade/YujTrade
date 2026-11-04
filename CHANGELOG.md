@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 This project follows Semantic Versioning.
 
+## [6.0.3] - 2026-11-04
+
+Patch release. Hardens Telegram startup against transient network failures and
+stops the bot token from leaking into logs.
+
+### Fixed
+
+- Telegram startup crashed with a full traceback when `api.telegram.org` was
+  unreachable (`httpx.ConnectTimeout` during `application.initialize()`).
+  Startup now retries `initialize`/`start`/`start_polling` up to four times with
+  exponential backoff, honours `RetryAfter`, and on final failure raises a clean
+  `RuntimeError` logged without a traceback.
+- The bot token was printed in traceback frames (the `https://api.telegram.org/
+  bot<id>:<token>` URL). The logger patcher now redacts the `bot<id>:<token>`
+  pattern from messages and exception values before any sink renders them.
+
 ## [6.0.2] - 2026-11-04
 
 Patch release from a full run and analysis. Fixes a Telegram error-handling
