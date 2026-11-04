@@ -15,9 +15,30 @@ _SECRET_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_TELEGRAM_TOKEN_PATTERN = re.compile(r"bot\d{5,}:[A-Za-z0-9_-]{30,}")
+
+
+def _redact_text(text: str) -> str:
+    text = _SECRET_PATTERN.sub(r"\1=***", text)
+    return _TELEGRAM_TOKEN_PATTERN.sub("bot***:***", text)
+
 
 def _redact_secrets(record):
-    record["message"] = _SECRET_PATTERN.sub(r"\1=***", record["message"])
+    record["message"] = _redact_text(record["message"])
+    exception = record.get("exception")
+    if exception is None:
+        return
+    value = exception.value
+    try:
+        raw = str(value)
+    except (TypeError, ValueError):
+        return
+    redacted = _redact_text(raw)
+    if redacted != raw:
+        try:
+            exception.value.args = (redacted,)
+        except (AttributeError, TypeError):
+            pass
 
 
 logger.configure(patcher=_redact_secrets)

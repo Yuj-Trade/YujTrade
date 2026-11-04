@@ -3,6 +3,8 @@ import signal
 import sys
 from datetime import UTC, datetime
 
+from telegram.error import NetworkError, RetryAfter, TimedOut
+
 from app.telegram_bot import TelegramBotHandler, TelegramOutcomeNotifier
 from application.outcome_policy import NotificationPolicy, PolicyError, build_policy
 from common.constants import TIME_FRAMES
@@ -12,6 +14,8 @@ from services.outcome_dispatch import dispatch_outcomes
 from services.trading_service import TradingService
 from utils.resource_manager import ResourceManager
 from utils.scheduler_store import SchedulerStore
+
+_TRANSIENT_TELEGRAM_ERRORS = (TimedOut, NetworkError)
 
 
 class MainApp:
@@ -27,6 +31,37 @@ class MainApp:
         if not self.shutdown_event.is_set():
             logger.info(f"Shutdown signal {sig} received. Initiating graceful shutdown...")
             self.shutdown_event.set()
+
+    async def _start_telegram_with_retry(self, attempts: int = 4, base_delay: float = 3.0) -> None:
+        application = self.bot_handler.application
+        delay = base_delay
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                await application.initialize()
+                await application.start()
+                await application.updater.start_polling()
+                return
+            except RetryAfter as exc:
+                wait = float(exc.retry_after) if exc.retry_after else delay
+                logger.warning(
+                    f"Telegram rate limited during startup; retrying in {wait:.0f}s "
+                    f"(attempt {attempt}/{attempts})."
+                )
+                await asyncio.sleep(wait)
+                continue
+            except _TRANSIENT_TELEGRAM_ERRORS as exc:
+                last_error = exc
+                if attempt == attempts:
+                    break
+                logger.warning(
+                    f"Telegram startup attempt {attempt}/{attempts} failed ({exc}); "
+                    f"retrying in {delay:.0f}s."
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60.0)
+                continue
+        raise RuntimeError(f"Telegram bot could not start after {attempts} attempts: {last_error}")
 
     @staticmethod
     def _parse_schedule_hour(value) -> float:
@@ -217,10 +252,7 @@ class MainApp:
 
                 logger.info("Starting Telegram bot...")
 
-                await self.bot_handler.application.initialize()
-
-                await self.bot_handler.application.start()
-                await self.bot_handler.application.updater.start_polling()
+                await self._start_telegram_with_retry()
 
                 logger.info("Telegram bot started successfully.")
 
@@ -268,6 +300,8 @@ class MainApp:
 
         except TimeoutError as e:
             logger.opt(exception=True).error(f"A component timed out during initialization: {e}")
+        except RuntimeError as e:
+            logger.error(f"Error during application run: {e}")
         except Exception as e:
             logger.opt(exception=True).error(f"Error during application run: {e}")
         finally:
