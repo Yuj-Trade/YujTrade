@@ -145,6 +145,23 @@ class TelegramBotHandler:
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
+        self.application.add_error_handler(self.handle_error)
+
+    async def handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        error = getattr(context, "error", None)
+        if isinstance(error, (TimedOut, NetworkError)):
+            logger.warning(f"Telegram transport error during update handling: {error}")
+            return
+        if isinstance(error, RetryAfter):
+            logger.warning(f"Telegram rate limited; retry after {error.retry_after}s")
+            return
+        if isinstance(error, Forbidden):
+            logger.warning(f"Telegram refused delivery: {error}")
+            return
+        if isinstance(error, BadRequest):
+            logger.warning(f"Telegram rejected the request: {error}")
+            return
+        logger.opt(exception=error).error(f"Unhandled error while processing an update: {error}")
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update, context):
@@ -165,11 +182,14 @@ class TelegramBotHandler:
             "• *Quick Analyze*: Only 1h timeframe ⚡\n"
             f"• *Full Analyze*: Long-term timeframes ({_focus_label()}) 📊"
         )
-        await update.message.reply_text(
-            escape_markdown_v2(welcome_text),
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+        try:
+            await update.message.reply_text(
+                escape_markdown_v2(welcome_text),
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        except (TimedOut, NetworkError) as exc:
+            logger.warning(f"Telegram start reply skipped, transport unavailable: {exc}")
 
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -397,7 +417,12 @@ class TelegramBotHandler:
         return self.admin_chat_id[-4:] if self.admin_chat_id else ""
 
     async def _reply(self, update: Update, text: str) -> None:
-        await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
+        try:
+            await update.message.reply_text(
+                escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
+            )
+        except (TimedOut, NetworkError) as exc:
+            logger.warning(f"Telegram reply skipped, transport unavailable: {exc}")
 
     async def exchanges_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._is_admin(update, context):
