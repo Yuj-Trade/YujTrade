@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 This project follows Semantic Versioning.
 
+## [6.0.4] - 2026-11-04
+
+Patch release. Makes the operator scripts runnable again from the command line.
+
+### Fixed
+
+- `python scripts/train_models.py` (and every other project script invoked
+  directly) failed with `ModuleNotFoundError: No module named 'common'`:
+  running a file inside `scripts/` puts `scripts/` first on `sys.path`, so the
+  repository root was never importable. Five scripts
+  (`train_models`, `encrypt_keys`, `exchange_shadow_report`,
+  `probe_exchanges`, `seed_exchange_env_names`) now insert the repository root
+  into `sys.path` before importing project code, matching the pattern already
+  used by the other scripts. A regression test runs every eligible script in a
+  subprocess and fails on any import error.
+
 ## [6.0.3] - 2026-11-04
 
 Patch release. Hardens Telegram startup against transient network failures and

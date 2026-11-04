@@ -93,7 +93,7 @@ class ConfigManager:
         "max_signals_per_timeframe": 1,
         "enable_scheduled_analysis": False,
         "schedule_hour": "*/1",
-        "app_version": "6.0.3",
+        "app_version": "6.0.4",
         "timeframe_based_weights": True,
         "model_data_limits": {
             "1h": 2000,
