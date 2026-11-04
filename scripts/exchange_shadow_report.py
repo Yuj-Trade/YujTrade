@@ -1,9 +1,11 @@
 import asyncio
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.logger import logger
 from config.settings import ConfigManager
 from trading.exchanges.gate_inputs import load_exchange_settings

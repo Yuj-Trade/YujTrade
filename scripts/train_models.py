@@ -1,12 +1,14 @@
 import argparse
 import asyncio
 import json
+import sys
 import warnings
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.constants import SYMBOLS, TIME_FRAMES
 from config.logger import logger
 from config.settings import ConfigManager

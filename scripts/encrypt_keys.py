@@ -1,8 +1,10 @@
 import getpass
+import sys
 from pathlib import Path
 
 from decouple import Config, RepositoryEnv
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.logger import logger
 from trading.exchanges.registry import all_secret_names
 from utils.security import KeyEncryptor

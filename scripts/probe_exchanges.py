@@ -1,8 +1,10 @@
 import asyncio
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.logger import logger
 from trading.exchanges.ccxt_gateway import CcxtGateway
 from trading.exchanges.registry import EXCHANGE_REGISTRY
