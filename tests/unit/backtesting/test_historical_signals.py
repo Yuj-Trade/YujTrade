@@ -13,6 +13,12 @@ from backtesting.historical_signals import (
 )
 
 
+def _monthly_minimum() -> int:
+    from common.constants import LONG_TERM_CONFIG
+
+    return int(LONG_TERM_CONFIG["min_data_points"]["1M"])
+
+
 def make_frame(rows: int = 200, timeframe: str = "1M") -> pd.DataFrame:
     freq = {"1M": "MS", "1h": "h", "1d": "D"}[timeframe]
     dates = pd.date_range("2024-01-01", periods=rows, freq=freq, tz="UTC")
@@ -55,7 +61,7 @@ async def test_generator_none_counts_rejections():
         make_frame(200), "BTC/USDT", "1M", generator
     )
     assert signals == []
-    assert rejected["no_signal"] == 50
+    assert rejected["no_signal"] == 200 - _monthly_minimum()
     assert rejected["errors"] == 0
 
 
@@ -66,7 +72,7 @@ async def test_generator_error_counts_rejections():
         make_frame(200), "BTC/USDT", "1M", generator
     )
     assert signals == []
-    assert rejected["errors"] == 50
+    assert rejected["errors"] == 200 - _monthly_minimum()
 
 
 async def test_generator_signals_are_collected():
@@ -76,7 +82,7 @@ async def test_generator_signals_are_collected():
     signals, rejected = await generate_historical_signals(
         make_frame(200), "BTC/USDT", "1M", generator
     )
-    assert signals == [signal] * 50
+    assert signals == [signal] * (200 - _monthly_minimum())
     assert rejected["no_signal"] == 0
     assert rejected["errors"] == 0
 
@@ -85,7 +91,7 @@ async def test_step_skips_windows():
     generator = MagicMock()
     generator.generate_signal = AsyncMock(return_value=None)
     await generate_historical_signals(make_frame(200), "BTC/USDT", "1M", generator, step=10)
-    assert generator.generate_signal.await_count == 5
+    assert generator.generate_signal.await_count == len(range(_monthly_minimum(), 200, 10))
 
 
 async def test_include_flags_forwarded():
@@ -114,7 +120,7 @@ async def test_window_end_is_inclusive_prefix():
     generator = MagicMock()
     generator.generate_signal = generate
     await generate_historical_signals(make_frame(200), "BTC/USDT", "1M", generator)
-    assert seen == list(range(151, 201))
+    assert seen == list(range(_monthly_minimum() + 1, 201))
 
 
 async def test_empty_frame_returns_empty():

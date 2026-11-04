@@ -21,7 +21,7 @@ LONG_TERM_CONFIG = {
     "min_risk_reward_ratio": 2.8,
     "min_volume_surge": 1.4,
     "max_signals_per_run": 3,
-    "min_data_points": {"1h": 600, "4h": 500, "1d": 300, "1w": 200, "1M": 150},
+    "min_data_points": {"1h": 600, "4h": 500, "1d": 300, "1w": 150, "1M": 40},
 }
 
 INDICATOR_GROUPS = {
