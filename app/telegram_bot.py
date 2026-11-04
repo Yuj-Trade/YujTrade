@@ -33,6 +33,8 @@ def _focus_label() -> str:
 
 QUICK_TIMEFRAMES = ["1h"]
 
+TELEGRAM_SEND_ATTEMPTS = 3
+
 _INVALID_EXCHANGE = object()
 
 
@@ -664,6 +666,30 @@ class TelegramBotHandler:
             self._no_signals_text("No new signals found from scheduled analysis. 🤷"),
         )
 
+    async def _send_message_with_retry(self, chat_id: str, text: str, **kwargs) -> bool:
+        delay = 1.0
+        for attempt in range(1, TELEGRAM_SEND_ATTEMPTS + 1):
+            try:
+                await self.application.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+                return True
+            except RetryAfter as exc:
+                wait = float(exc.retry_after) + 1.0
+                logger.warning(
+                    f"Telegram rate limited (attempt {attempt}/{TELEGRAM_SEND_ATTEMPTS}); "
+                    f"retrying in {wait:.0f}s."
+                )
+                await asyncio.sleep(wait)
+            except (TimedOut, NetworkError) as exc:
+                logger.warning(f"Telegram transport error (attempt {attempt}): {exc}")
+                if attempt < TELEGRAM_SEND_ATTEMPTS:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+        logger.error(
+            f"Telegram send to chat ending in {chat_id[-4:]} failed "
+            f"after {TELEGRAM_SEND_ATTEMPTS} attempts."
+        )
+        return False
+
     async def send_signals_to_telegram(
         self,
         signals: list[TradingSignal],
@@ -677,7 +703,7 @@ class TelegramBotHandler:
 
         if signals:
             summary = f"{summary_text} Found {len(signals)} signal(s). 🎯"
-            await self.application.bot.send_message(
+            await self._send_message_with_retry(
                 chat_id,
                 escape_markdown_v2(summary),
                 parse_mode=ParseMode.MARKDOWN_V2,
@@ -685,15 +711,15 @@ class TelegramBotHandler:
             for signal in signals:
                 messages = self.format_signal_message(signal)
                 for message in messages:
-                    try:
-                        await self.application.bot.send_message(
-                            chat_id, message, parse_mode=ParseMode.MARKDOWN_V2
-                        )
-                        await asyncio.sleep(0.5)
-                    except Exception as e:
-                        logger.error(f"Failed to send signal message: {e}")
+                    sent = await self._send_message_with_retry(
+                        chat_id, message, parse_mode=ParseMode.MARKDOWN_V2
+                    )
+                    if not sent:
+                        logger.error("Failed to send signal message after retries.")
+                        continue
+                    await asyncio.sleep(0.5)
         else:
-            await self.application.bot.send_message(
+            await self._send_message_with_retry(
                 chat_id,
                 escape_markdown_v2(no_signals_text),
                 parse_mode=ParseMode.MARKDOWN_V2,
