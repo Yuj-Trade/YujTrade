@@ -323,9 +323,10 @@ class NVIIndicator(TechnicalIndicator):
 
 class PVIIndicator(TechnicalIndicator):
     def calculate(self, data: pd.DataFrame) -> IndicatorResult:
-        if len(data) < 2:
-            raise InsufficientDataError("PVI requires at least 2 data points.")
-        pvi_val = pvi(close=data["close"], volume=data["volume"])
+        if len(data) < 3:
+            raise InsufficientDataError("PVI requires at least 3 data points.")
+        length = min(255, len(data) - 1)
+        pvi_val = pvi(close=data["close"], volume=data["volume"], length=length)
         series = pvi_val.iloc[:, 0] if isinstance(pvi_val, pd.DataFrame) else pvi_val
         clean = series.dropna() if hasattr(series, "dropna") else None
         if clean is None or clean.empty:

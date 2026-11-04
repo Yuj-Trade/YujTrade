@@ -44,3 +44,23 @@ def test_multi_column_sources_yield_a_scalar(name, ohlcv):
     result = IndicatorFactory().create(name).calculate(ohlcv)
     assert isinstance(result.value, float)
     assert np.isfinite(result.value)
+
+
+def test_pvi_computes_on_datasets_shorter_than_the_default_length(ohlcv):
+    from features.indicators.volume import PVIIndicator
+
+    short = ohlcv.iloc[:150]
+    result = PVIIndicator().calculate(short)
+
+    assert np.isfinite(result.value)
+
+
+def test_pvi_matches_the_default_length_on_long_datasets(ohlcv):
+    from pandas_ta.volume import pvi as ta_pvi
+
+    from features.indicators.volume import PVIIndicator
+
+    result = PVIIndicator().calculate(ohlcv)
+    expected = float(ta_pvi(close=ohlcv["close"], volume=ohlcv["volume"]).iloc[-1, 0])
+
+    assert result.value == pytest.approx(expected)
