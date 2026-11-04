@@ -355,7 +355,7 @@ def test_the_delivered_signal_messages_are_valid_markdown_v2_messages():
     )
 
     for call in handler.application.bot.send_message.await_args_list:
-        assert _violations(str(call.args[1]), allow_bold=True) == []
+        assert _violations(str(call.kwargs["text"]), allow_bold=True) == []
 
 
 def test_the_no_signal_delivery_is_a_valid_markdown_v2_message():
@@ -375,4 +375,4 @@ def test_the_no_signal_delivery_is_a_valid_markdown_v2_message():
     )
 
     for call in handler.application.bot.send_message.await_args_list:
-        assert _violations(str(call.args[1])) == []
+        assert _violations(str(call.kwargs["text"])) == []

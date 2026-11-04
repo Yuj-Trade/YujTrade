@@ -20,6 +20,7 @@ class FeatureEngineer:
         self.feature_columns: list[str] | None = None
         self.correlation_manager = IndicatorCorrelationManager()
         self.history_provider = history_provider
+        self._warned_feature_mismatch = False
 
     def _compute_indicator(self, indicator_name: str, data: pd.DataFrame) -> IndicatorResult | None:
         indicator_instance = self.indicator_factory.create(indicator_name)
@@ -86,6 +87,21 @@ class FeatureEngineer:
 
         if not hasattr(self.scaler, "scale_"):
             logger.warning("Scaler has not been fitted. Cannot scale features.")
+            return None
+
+        if self.feature_columns is not None:
+            if list(features.columns) == self.feature_columns:
+                return self.scaler.transform(features)
+            if set(features.columns) == set(self.feature_columns):
+                return self.scaler.transform(features[self.feature_columns])
+            missing = [c for c in self.feature_columns if c not in features.columns]
+            unexpected = [c for c in features.columns if c not in self.feature_columns]
+            if not self._warned_feature_mismatch:
+                logger.warning(
+                    "Feature columns differ from fit time "
+                    f"(missing: {missing}, unexpected: {unexpected}). Skipping scaling."
+                )
+                self._warned_feature_mismatch = True
             return None
 
         return self.scaler.transform(features)
