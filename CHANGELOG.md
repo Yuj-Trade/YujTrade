@@ -3,6 +3,30 @@
 All notable changes to this project are documented here.
 This project follows Semantic Versioning.
 
+## [6.0.5] - 2026-11-06
+
+Minor release. Adds the Telegram Profile menu for managing exchange API keys,
+data-provider keys, and all personalizable trading settings. Defaults reproduce
+current behavior exactly; golden baselines are unchanged.
+
+### Added
+
+- Profile schema (`config/profile_schema.py`) with 47 personalizable settings
+  across 8 sections: risk, stop/target, analysis, notifications, paper costs,
+  reporting, exchange keys, service keys
+- Encrypted key store (`runs/profile_keys.enc.json`) using KeyEncryptor;
+  one Fernet token per value; atomic writes with 600 permissions
+- Profile lookup order: profile store first, then `.env` encrypted path
+- Telegram `/start` third row: `⚙️ Profile` with submenus and pending text input
+- In-place risk config updates; cost model engine rebuild; provider fetcher
+  rebuild on key save; attestation reset on key change (removal only)
+- Operator-only exclusions enforced; no access profile changes from Telegram
+
+### Fixed
+
+- Signal generator gate fallback preserves pre-change behavior when profile
+  defaults apply (`pre_change_gate_get`)
+
 ## [6.0.4] - 2026-11-04
 
 Patch release. Makes the operator scripts runnable again from the command line.
