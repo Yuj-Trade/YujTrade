@@ -39,16 +39,29 @@ def find_plaintext_exchange_secrets(spec: ExchangeSpec, sandbox: bool) -> list[s
     return found
 
 
+def profile_exchange_secret(name: str) -> str | None:
+    from config.profile_keys import exchange_secret_from_profile
+
+    return exchange_secret_from_profile(name)
+
+
+def resolve_exchange_secret(name: str) -> str | None:
+    stored = profile_exchange_secret(name)
+    if stored:
+        return stored
+    return SecretsManager.get_exchange_secret(name)
+
+
 def load_exchange_credentials(spec: ExchangeSpec, sandbox: bool) -> ExchangeCredentials | None:
     names = spec.secret_names(sandbox)
     api_key_name, api_secret_name = names[0], names[1]
-    raw_key = SecretsManager.get_exchange_secret(api_key_name)
-    raw_secret = SecretsManager.get_exchange_secret(api_secret_name)
+    raw_key = resolve_exchange_secret(api_key_name)
+    raw_secret = resolve_exchange_secret(api_secret_name)
     if not raw_key or not raw_secret:
         return None
     raw_passphrase = ""
     if spec.needs_passphrase:
-        raw_passphrase = SecretsManager.get_exchange_secret(names[2]) or ""
+        raw_passphrase = resolve_exchange_secret(names[2]) or ""
         if not raw_passphrase:
             return None
     api_key = _decode(raw_key, spec, api_key_name)

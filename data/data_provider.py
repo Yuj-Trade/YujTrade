@@ -119,57 +119,10 @@ class MarketDataProvider:
 
         self.binance_fetcher = BinanceFetcher(**common_args)
 
-        if SecretsManager.COINDESK_API_KEY:
-            self.coindesk_fetcher = CoinDeskFetcher(
-                api_key=SecretsManager.COINDESK_API_KEY, **common_args
-            )
-
-        self.coingecko_fetcher = CoinGeckoFetcher(
-            api_key=SecretsManager.COINGECKO_KEY, **common_args
-        )
-
-        if SecretsManager.ALPHA_VANTAGE_KEY:
-            self.alphavantage_fetcher = AlphaVantageFetcher(
-                api_key=SecretsManager.ALPHA_VANTAGE_KEY, **common_args
-            )
-
-        if SecretsManager.MESSARI_API_KEY:
-            self.messari_fetcher = MessariFetcher(
-                api_key=SecretsManager.MESSARI_API_KEY, **common_args
-            )
-
         self.defillama_fetcher = DeFiLlamaFetcher(**common_args)
         self.yfinance_fetcher = YFinanceFetcher(**common_args)
 
-        self.market_indices_fetcher = MarketIndicesFetcher(
-            coingecko_fetcher=self.coingecko_fetcher,
-            defillama_fetcher=self.defillama_fetcher,
-            yfinance_fetcher=self.yfinance_fetcher,
-            **common_args,
-        )
-
-        if SecretsManager.CRYPTOPANIC_KEY:
-            cryptopanic_fetcher = CryptoPanicFetcher(
-                api_key=SecretsManager.CRYPTOPANIC_KEY, **common_args
-            )
-            alternativeme_fetcher = AlternativeMeFetcher(**common_args)
-
-            self.news_fetcher = NewsFetcher(
-                cryptopanic_fetcher=cryptopanic_fetcher,
-                alternativeme_fetcher=alternativeme_fetcher,
-                coindesk_fetcher=(
-                    self.coindesk_fetcher
-                    if self.config_manager.get("coindesk_news_enabled", False)
-                    else None
-                ),
-                messari_fetcher=(
-                    self.messari_fetcher
-                    if self.config_manager.get("messari_enabled", False)
-                    else None
-                ),
-                redis_client=self.redis,
-                config_manager=self.config_manager,
-            )
+        self._build_keyed_fetchers(common_args)
 
         self.fetchers = [
             f
@@ -188,6 +141,96 @@ class MarketDataProvider:
         ]
 
         logger.info("MarketDataProvider initialization completed.")
+
+    def _build_keyed_fetchers(self, common_args: dict[str, Any]) -> None:
+        coindesk_key = self._provider_key("COINDESK_API_KEY")
+        if coindesk_key:
+            self.coindesk_fetcher = CoinDeskFetcher(api_key=coindesk_key, **common_args)
+        else:
+            self.coindesk_fetcher = None
+
+        self.coingecko_fetcher = CoinGeckoFetcher(
+            api_key=self._provider_key("COINGECKO_KEY") or "", **common_args
+        )
+
+        alpha_key = self._provider_key("ALPHA_VANTAGE_KEY")
+        self.alphavantage_fetcher = (
+            AlphaVantageFetcher(api_key=alpha_key, **common_args) if alpha_key else None
+        )
+
+        messari_key = self._provider_key("MESSARI_API_KEY")
+        self.messari_fetcher = (
+            MessariFetcher(api_key=messari_key, **common_args) if messari_key else None
+        )
+
+        self.market_indices_fetcher = MarketIndicesFetcher(
+            coingecko_fetcher=self.coingecko_fetcher,
+            defillama_fetcher=self.defillama_fetcher,
+            yfinance_fetcher=self.yfinance_fetcher,
+            **common_args,
+        )
+
+        cryptopanic_key = self._provider_key("CRYPTOPANIC_KEY")
+        if cryptopanic_key:
+            cryptopanic_fetcher = CryptoPanicFetcher(api_key=cryptopanic_key, **common_args)
+            alternativeme_fetcher = AlternativeMeFetcher(**common_args)
+            self.news_fetcher = NewsFetcher(
+                cryptopanic_fetcher=cryptopanic_fetcher,
+                alternativeme_fetcher=alternativeme_fetcher,
+                coindesk_fetcher=(
+                    self.coindesk_fetcher
+                    if self.config_manager.get("coindesk_news_enabled", False)
+                    else None
+                ),
+                messari_fetcher=(
+                    self.messari_fetcher
+                    if self.config_manager.get("messari_enabled", False)
+                    else None
+                ),
+                redis_client=self.redis,
+                config_manager=self.config_manager,
+            )
+        else:
+            self.news_fetcher = None
+
+    def _provider_key(self, name: str) -> str | None:
+        from config.profile_keys import provider_key_from_profile
+
+        stored = provider_key_from_profile(name)
+        if stored:
+            return stored
+        return getattr(SecretsManager, name, "") or None
+
+    def rebuild_keyed_fetchers(self) -> None:
+        if self.session is None or self.session.closed:
+            logger.warning("Provider session is not ready; keyed fetchers were not rebuilt.")
+            return
+        common_args = {
+            "redis_client": self.redis,
+            "session": self.session,
+            "config_manager": self.config_manager,
+        }
+        try:
+            self._build_keyed_fetchers(common_args)
+        except (TypeError, ValueError) as exc:
+            logger.warning(f"Keyed fetcher rebuild skipped: {exc}")
+            return
+        self.fetchers = [
+            f
+            for f in [
+                self.binance_fetcher,
+                self.coindesk_fetcher,
+                self.market_indices_fetcher,
+                self.coingecko_fetcher,
+                self.alphavantage_fetcher,
+                self.messari_fetcher,
+                self.news_fetcher,
+                self.defillama_fetcher,
+                self.yfinance_fetcher,
+            ]
+            if f is not None
+        ]
+        logger.info("Keyed data fetchers rebuilt from the profile store.")
 
     async def close(self):
         if self._is_closed:
