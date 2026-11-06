@@ -45,6 +45,10 @@ class SecretsManager:
         return decouple_config(key, default=default, cast=cast)
 
     @staticmethod
+    def active_encryptor() -> KeyEncryptor | None:
+        return SecretsManager._encryptor
+
+    @staticmethod
     def get_exchange_secret(name: str) -> str | None:
         encryptor = SecretsManager._encryptor
         if encryptor is None:
@@ -169,6 +173,35 @@ class ConfigManager:
         "performance_periods_per_year": 365,
         "performance_min_trades_for_ratios": 30,
         "risk_per_trade_pct": 1.0,
+        "max_portfolio_exposure_pct": 60.0,
+        "max_single_position_pct": 10.0,
+        "max_concurrent_positions": 6,
+        "max_daily_loss_pct": 4.0,
+        "max_weekly_loss_pct": 10.0,
+        "max_drawdown_pct": 20.0,
+        "max_leverage": 3.0,
+        "min_risk_reward": 2.0,
+        "volatility_target_pct": 2.0,
+        "kelly_fraction": 0.5,
+        "loss_streak_threshold": 3,
+        "loss_streak_size_multiplier": 0.5,
+        "weekly_loss_reduction_ratio": 0.5,
+        "stop_atr_multiplier_base": 1.2,
+        "stop_atr_multiplier_high_adx": 1.5,
+        "stop_adx_threshold": 40.0,
+        "target_min_rr_base": 1.8,
+        "target_min_rr_high_adx": 2.0,
+        "target_adx_threshold": 35.0,
+        "stop_use_structure_levels": True,
+        "target_use_structure_levels": True,
+        "full_analyze_timeframes": ["1d", "1w", "1M"],
+        "quick_analyze_timeframe": "1h",
+        "min_confidence_by_timeframe": {"1h": 82, "4h": 78, "1d": 72, "1w": 68, "1M": 65},
+        "min_volume_surge": 1.4,
+        "min_trend_strength": "MODERATE",
+        "require_higher_tf_confirmation": True,
+        "max_signals_per_run": 3,
+        "signal_min_risk_reward_ratio": 2.8,
         "initial_cash": 10000.0,
         "outcome_notifications_mode": "off",
         "outcome_notifications_since": "",
