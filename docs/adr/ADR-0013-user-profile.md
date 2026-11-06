@@ -18,7 +18,11 @@ frozen `ConfigManager.DEFAULT_CONFIG` and `LONG_TERM_CONFIG` values apply.
 
 `ConfigManager.DEFAULT_CONFIG` stays the single source of defaults
 (repository rule). The profile schema (`config/profile_schema.py`) declares
-type, range and choices only, and a test asserts schema defaults equal
+type, range and choices only, the encrypted store lives in
+`config/profile_keys.py`, and the apply helpers live in
+`app/profile_service.py` (`application/` may import only `domain` and the
+standard library, so the store cannot live there), and the menu lives in
+`app/telegram_profile.py`. A test asserts schema defaults equal
 `DEFAULT_CONFIG` values. `LONG_TERM_CONFIG` constants are not edited; keys
 that currently read `LONG_TERM_CONFIG` (analysis timeframes, per-timeframe
 confidence, `min_risk_reward_ratio` gate, `max_signals_per_run`) read the
