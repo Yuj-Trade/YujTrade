@@ -46,5 +46,9 @@ class UpstreamUnavailableError(TradingBotException):
     pass
 
 
+class PortfolioRiskUnavailable(TradingBotException):
+    pass
+
+
 class ArtifactIntegrityError(ModelError):
     pass

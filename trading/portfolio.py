@@ -88,3 +88,14 @@ class PortfolioManager:
 
     def positions_by_symbol(self, symbol: str) -> list[Position]:
         return [p for p in self.positions.values() if p.symbol == symbol]
+
+    def signed_weights(self, prices: dict[str, float], equity: float) -> dict[str, float]:
+        if equity <= 0:
+            return {}
+        weights: dict[str, float] = {}
+        for position in self.positions.values():
+            price = prices.get(position.symbol, position.entry_price)
+            sign = 1.0 if position.side == PositionSide.LONG else -1.0
+            notional = sign * position.quantity * price
+            weights[position.symbol] = weights.get(position.symbol, 0.0) + notional / equity
+        return weights

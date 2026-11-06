@@ -13,7 +13,7 @@ from application.outcome_policy import NotificationPolicy
 from application.performance_report import PerformanceConfig, PerformanceReport
 from common import metrics
 from common.constants import LONG_TERM_CONFIG, SIGNAL_EXPIRY_BY_TIMEFRAME, candle_duration
-from common.core import Position, PositionSide, TradingSignal
+from common.core import Position, PositionSide, SignalType, TradingSignal
 from common.exceptions import InvalidSymbolError
 from common.rate_limit import configure_rate_limits
 from config.logger import logger
@@ -41,6 +41,10 @@ from trading.execution import ExchangeAdapter, ExecutionEngine
 from trading.ledger import PaperLedger
 from trading.paper_trading import PaperTradingEngine
 from trading.portfolio import PortfolioManager
+from trading.portfolio_risk_service import (
+    PortfolioRiskService,
+    build_portfolio_risk_config,
+)
 from trading.risk_manager import RiskManager, build_risk_config
 from utils.resource_manager import ResourceManager
 
@@ -109,7 +113,12 @@ def _utc_moment(value: Any) -> datetime | None:
     return moment.astimezone(UTC)
 
 
-def size_signal_for(signal: TradingSignal, portfolio: Any, risk_manager: Any) -> tuple[float, str]:
+def size_signal_for(
+    signal: TradingSignal,
+    portfolio: Any,
+    risk_manager: Any,
+    portfolio_risk: Any | None = None,
+) -> tuple[float, str]:
     entry = float(signal.entry_price or 0.0)
     if entry <= 0:
         return 0.0, "invalid_entry"
@@ -124,7 +133,44 @@ def size_signal_for(signal: TradingSignal, portfolio: Any, risk_manager: Any) ->
     decision = risk_manager.evaluate(signal, equity, exposure, open_count)
     if not decision.allowed or decision.position_size <= 0:
         return 0.0, str(decision.reason or "risk_rejected")
-    return float(decision.position_size), "ok"
+    size = float(decision.position_size)
+    if portfolio_risk is None or portfolio_risk.config.mode == "off":
+        return size, "ok"
+    side_sign = 1.0 if signal.signal_type == SignalType.BUY else -1.0
+    resolved = portfolio_risk.cached(portfolio_risk.execution_key())
+    if resolved is None:
+        if portfolio_risk.config.mode == "enforce":
+            logger.warning(
+                f"portfolio_view_unavailable: {signal.symbol}-{signal.timeframe} "
+                "has no built portfolio risk view"
+            )
+            return 0.0, "portfolio:corr_unavailable"
+        return size, "ok"
+    view, derived = resolved
+    scale, reason = portfolio_risk.check_entry_with_view(
+        signal.symbol,
+        side_sign,
+        size,
+        entry,
+        portfolio,
+        equity,
+        view,
+        derived,
+    )
+    if portfolio_risk.config.mode == "shadow":
+        logger.info(
+            "portfolio_risk_shadow: "
+            f"symbol={signal.symbol} timeframe={signal.timeframe} "
+            f"k={scale} binding={reason} would_reject={scale <= 0.0}"
+        )
+        return size, "ok"
+    if scale <= 0.0:
+        logger.warning(
+            f"portfolio_risk_reject: symbol={signal.symbol} "
+            f"timeframe={signal.timeframe} check={reason}"
+        )
+        return 0.0, f"portfolio:{reason}"
+    return size * scale, "ok"
 
 
 def _frame_candles(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
@@ -240,6 +286,7 @@ async def create_trading_stack(
         resource_manager=resource_manager,
         exchange_service=_build_exchange_service(config_manager),
         feature_store=_build_feature_store(config_manager),
+        portfolio_risk=PortfolioRiskService(config_manager, market_data_provider),
     )
     await trading_service.initialize()
 
@@ -257,6 +304,7 @@ class TradingService(ModelDataProvider):
         resource_manager: ResourceManager,
         exchange_service: Any | None = None,
         feature_store: Any | None = None,
+        portfolio_risk: Any | None = None,
     ):
         self.market_data_provider = market_data_provider
         self.config_manager = config_manager
@@ -304,6 +352,10 @@ class TradingService(ModelDataProvider):
         )
         risk_cfg = build_risk_config(self.config_manager)
         self.risk_manager = RiskManager(risk_cfg)
+        self.portfolio_risk_config = build_portfolio_risk_config(self.config_manager)
+        self.portfolio_risk = portfolio_risk
+        if portfolio_risk is not None:
+            portfolio_risk.set_config(self.portfolio_risk_config)
         self.portfolio = PortfolioManager(float(self.config_manager.get("initial_cash", 10000.0)))
         self.paper_engine = PaperTradingEngine(
             portfolio=self.portfolio,
@@ -334,6 +386,7 @@ class TradingService(ModelDataProvider):
             self.config_manager.get("performance_ledger_enabled", False)
         )
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
+        self._run_id = ""
         self._paper_barriers: dict[str, tuple[float, float]] = {}
         self._paper_positions_ready = False
 
@@ -526,6 +579,7 @@ class TradingService(ModelDataProvider):
 
     async def run_analysis_for_all_symbols(self) -> list[TradingSignal]:
         self._cycle_log = logger.bind(run_id=uuid.uuid4().hex[:12])
+        self._run_id = "cycle-" + uuid.uuid4().hex[:12]
         await self.signal_generator.begin_run_cycle()
         try:
             signals = await self._run_analysis_cycle_all()
@@ -574,6 +628,8 @@ class TradingService(ModelDataProvider):
             return []
 
         ranked_signals = SignalRanking.rank_signals(signals)
+
+        ranked_signals = await self._apply_portfolio_ranking(ranked_signals)
 
         per_tf_cap = self.config_manager.get("max_signals_per_timeframe", 1)
         try:
@@ -935,7 +991,50 @@ class TradingService(ModelDataProvider):
         )
 
     def size_signal(self, signal: TradingSignal) -> tuple[float, str]:
-        return size_signal_for(signal, self.portfolio, self.risk_manager)
+        return size_signal_for(signal, self.portfolio, self.risk_manager, self.portfolio_risk)
+
+    async def ensure_portfolio_risk_view(self) -> Any:
+        service = self.portfolio_risk
+        if service is None:
+            return None
+        return await service.view(service.execution_key())
+
+    async def _apply_portfolio_ranking(
+        self, ranked_signals: list[TradingSignal]
+    ) -> list[TradingSignal]:
+        service = self.portfolio_risk
+        if service is None or service.config.mode == "off":
+            return ranked_signals
+        try:
+            resolved = await service.resolve(self._run_id)
+        except Exception as exc:
+            logger.warning(f"portfolio_view_unavailable: {exc}")
+            return ranked_signals
+        if resolved is None:
+            return ranked_signals
+        view, derived = resolved
+        prices = dict(zip(view.symbols, view.last_close))
+        equity = float(self.portfolio.equity(prices))
+        book_weights = service.book_weights(self.portfolio, view, equity)
+        budget_factors = service.budget_factors(book_weights, derived)
+        diversified = SignalRanking.select_diversified(
+            ranked_signals,
+            derived.corr,
+            derived.index,
+            book_weights,
+            budget_factors,
+            service.config.correlation_penalty_weight,
+        )
+        if service.config.mode == "shadow":
+            base_order = [signal.symbol for signal in ranked_signals[:10]]
+            new_order = [signal.symbol for signal in diversified[:10]]
+            if base_order != new_order:
+                logger.info(
+                    "portfolio_risk_shadow: event=ranking "
+                    f"base={base_order} diversified={new_order}"
+                )
+            return ranked_signals
+        return diversified
 
     async def execute_signal(self, signal: TradingSignal, mode: str = "paper") -> dict[str, Any]:
         if mode != "paper":

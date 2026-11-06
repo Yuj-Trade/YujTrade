@@ -369,10 +369,14 @@ class TelegramBotHandler:
             return
         try:
             cfg = build_risk_config(self.config_manager)
+            from trading.portfolio_risk_service import build_portfolio_risk_config
+
+            pf = build_portfolio_risk_config(self.config_manager)
             text = (
                 f"Risk per trade: {cfg.risk_per_trade_pct}% | "
                 f"Max exposure: {cfg.max_portfolio_exposure_pct}% | "
-                f"Max positions: {cfg.max_concurrent_positions}"
+                f"Max positions: {cfg.max_concurrent_positions} | "
+                f"Portfolio risk mode: {pf.mode}"
             )
         except Exception as e:
             logger.opt(exception=True).debug(f"Risk config unavailable: {e}")
@@ -557,6 +561,7 @@ class TelegramBotHandler:
         if signal is None:
             await self._reply(update, f"Signal {signal_id} not found.")
             return
+        await self.trading_service.ensure_portfolio_risk_view()
         amount, size_reason = self.trading_service.size_signal(signal)
         price = float(signal.entry_price or 0.0)
         if amount <= 0:
