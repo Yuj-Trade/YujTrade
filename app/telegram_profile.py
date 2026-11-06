@@ -16,6 +16,7 @@ from config.profile_schema import (
     KIND_INT,
     KIND_LIST,
     KIND_MAP,
+    PENDING_INPUT_SECONDS,
     PROVIDER_KEY_NAMES,
     SECTIONS,
     entries_for_section,
@@ -24,7 +25,6 @@ from config.profile_schema import (
 )
 from trading.exchanges.registry import EXCHANGE_REGISTRY
 
-PENDING_INPUT_SECONDS = 120
 VENUES_PER_PAGE = 8
 
 EXCHANGE_ENVIRONMENTS = ("sandbox", "live")

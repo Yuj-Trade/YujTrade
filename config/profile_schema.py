@@ -126,7 +126,6 @@ class ProfileEntry:
     choices: tuple[str, ...] = ()
     restart: bool = False
     parent: str = ""
-    secret: bool = False
 
 
 PROFILE_ENTRIES: tuple[ProfileEntry, ...] = (
@@ -644,6 +643,26 @@ GATE_KEY_ALIASES: dict[str, str] = {
     "require_higher_tf_confirmation": "require_higher_tf_confirmation",
     "focus_timeframes": "full_analyze_timeframes",
 }
+
+PRE_CHANGE_GATE_FALLBACKS: dict[str, Any] = {
+    "min_confidence_threshold": {},
+    "min_trend_strength": "MODERATE",
+    "min_volume_surge": None,
+}
+
+
+def pre_change_gate_get(config_manager: Any) -> Callable[[str, Any], Any]:
+    profile = gate_getter(config_manager)
+
+    def get(key: str, default: Any = None) -> Any:
+        value = profile(key, _MISSING)
+        if value is not _MISSING:
+            return value
+        if key in PRE_CHANGE_GATE_FALLBACKS:
+            return PRE_CHANGE_GATE_FALLBACKS[key]
+        return default
+
+    return get
 
 
 def entries_for_section(section: str) -> tuple[ProfileEntry, ...]:

@@ -149,6 +149,22 @@ def test_analysis_timeframes_follow_the_override(config):
 
 def test_signal_gate_default_matches_the_long_term_constant(tmp_path):
     from application.gate_config import build_gate_config
+    from strategy.signal_generator import SignalGenerator
+
+    manager = ConfigManager(config_path=str(tmp_path / "config.json"))
+    generator = SignalGenerator.__new__(SignalGenerator)
+    generator.config_manager = manager
+    gate = build_gate_config(generator._profile_gate_get(), "1h")
+    assert gate.min_confidence == float("-inf")
+    assert gate.min_trend_strength == "MODERATE"
+    assert gate.min_volume_surge == 0.0
+    generator.config_manager.set("min_volume_surge", "2.5")
+    overridden = build_gate_config(generator._profile_gate_get(), "1h")
+    assert overridden.min_volume_surge == 2.5
+
+
+def test_signal_gate_service_default_matches_the_constant(tmp_path):
+    from application.gate_config import build_gate_config
     from common.constants import LONG_TERM_CONFIG
 
     manager = ConfigManager(config_path=str(tmp_path / "config.json"))

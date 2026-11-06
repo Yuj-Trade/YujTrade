@@ -18,7 +18,7 @@ from common.utils import (
     detect_market_regime,
 )
 from config.logger import logger
-from config.profile_schema import chained_getter
+from config.profile_schema import chained_getter, pre_change_gate_get
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from data.data_validator import DataQualityChecker
@@ -103,7 +103,7 @@ class SignalGenerator:
         return "mid"
 
     def _profile_gate_get(self):
-        return chained_getter(self.config_manager, self.config_manager.get)
+        return pre_change_gate_get(self.config_manager)
 
     def _profile_constant_get(self):
         return chained_getter(self.config_manager, LONG_TERM_CONFIG.get)
