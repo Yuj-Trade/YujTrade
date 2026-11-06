@@ -597,6 +597,15 @@ positives, pip-audit 0 on the manifest, trivy only untracked `skills/`).
 
 ## User profile 2026-11-06 - open items
 
+Decision recorded under ADR-0013 section 7: the generator's quality gate reads
+`min_volume_surge`, `min_trend_strength` and `min_confidence_threshold` through
+`pre_change_gate_get()`, which falls back to the values the generator saw
+before this change (`0.0`, `"MODERATE"`, `-inf`) whenever the stored value
+equals the schema default. Without that fallback the new `DEFAULT_CONFIG` keys
+silently activate a volume-surge gate in `SignalGenerator`, and the slow
+determinism suite showed the two golden baselines changing (see
+`tests/unit/app/test_profile_apply.py`).
+
 Implemented per the owner implementation brief of 2026-11-06. Ambiguity
 decisions recorded here; everything else follows the brief.
 

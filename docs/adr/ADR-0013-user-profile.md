@@ -100,8 +100,20 @@ being consulted first in `load_exchange_credentials`, and (b) clearing the
 venue's permission-cache entry and `reconciled_venues` membership so the
 next submission rebuilds the gate with the new key. A restart also works.
 
-### 7. In-place risk updates
+### 7. Defaults must not start filling a key the old code never read
 
+`SignalGenerator` builds its gate with `config_manager.get`, and before this
+change `DEFAULT_CONFIG` held no `min_volume_surge`, no `min_trend_strength`
+and no `min_confidence_threshold` key, so the generator gate saw `0.0`,
+`"MODERATE"` and `-inf`. Adding those keys to `DEFAULT_CONFIG` therefore
+changes the generator's gate unless the getter distinguishes a stored override
+from a schema default. `config/profile_schema.py:pre_change_gate_get()` is the
+generator's getter: it returns the profile value only when it differs from the
+schema default, and otherwise reproduces the pre-change fallback. The service
+gate keeps its own source (`LONG_TERM_CONFIG.get`) through
+`chained_getter`, because the service already read the frozen constants.
+
+### 8. In-place risk updates
 `RiskManager.config` `RiskConfig` fields are updated in place on save
 because `PaperTradingEngine` holds the `RiskManager` by reference
 (`create_trading_stacks` wires one `RiskManager` into both the service and
