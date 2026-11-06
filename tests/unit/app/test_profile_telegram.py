@@ -318,6 +318,17 @@ def test_venue_paging_moves_forward(handler, menu):
     assert "pf:venue:list:2" in callbacks or True
 
 
+def test_reset_to_defaults_restores_every_saved_value(handler, menu):
+    from config.profile_schema import ALL_ENTRIES
+
+    menu.service.save("risk_per_trade_pct", "3")
+    menu.service.save("min_trend_strength", "STRONG")
+    context = _context()
+    asyncio.run(menu.route("pf:resetall:confirm", _update(data="pf:resetall:confirm"), context))
+    for entry in ALL_ENTRIES:
+        assert menu.service.is_default(entry.key), entry.key
+
+
 def test_deleting_a_key_steps_through_confirmation(handler, menu):
     secret = "to-delete"
     context = _context()

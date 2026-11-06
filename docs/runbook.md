@@ -615,3 +615,108 @@ three:
 ```bash
 python -m pytest -m slow -q
 ```
+
+## 18. Profile (Telegram-managed keys and settings)
+
+### What the menu can reach
+
+`/start` shows a third row, `⚙️ Profile`. It covers exchange API keys,
+data-provider keys, and the personalizable trading settings: provider
+settings, risk and sizing, stop and target, analysis and signal gates, the
+paper cost model, notifications and schedule, and reporting. Every row shows
+the current value and whether it is the default, and each row has a
+`Reset to default` button.
+
+The menu cannot reach the operator-only keys: the exchange access controls
+(`exchange_enabled`, `exchange_access_profile`, `exchange_sandbox`,
+`exchange_shadow_mode`, `execution_dry_run`, `exchange_live_enabled`,
+`exchange_live_review_id`, `exchange_symbol_allowlist`), the safety caps, the
+halt controls, `exchange_attested_keys`, infrastructure keys
+(`TELEGRAM_BOT_TOKEN`, `ADMIN_CHAT_ID`, the Redis and Sentry values, every
+`*_path` and `*_db_path`, `METRICS_PORT`, `metrics_enabled`, cache TTLs, rate
+limits, exchange timeouts and reconciliation intervals), data integrity keys
+(`min_data_points`, `model_data_limits`, `model_prediction_limit`), the
+modeling keys (`model_learning.*`, `drift_*`, `promotion_*`, `feature_store_*`,
+`prediction_trace_*`, `ohlcv_store_*`, `model_auto_train_on_predict`), and the
+legacy `paper_fee_rate` / `paper_slippage_rate`. Section 3 of
+`docs/adr/ADR-0012-exchange-access-profiles.md` keeps every access decision
+out of Telegram reach; see `docs/adr/ADR-0013-user-profile.md`.
+
+### Adding an exchange key
+
+1. Open `⚙️ Profile` and choose `Exchange keys`.
+2. Pick the venue (eight per page), then `Sandbox` or `Live`, then the field
+   (`api_key`, `api_secret`, and `api_passphrase` only where the venue needs
+   one), then `Send the key now`.
+3. Send the key as a normal message. The bot stores it encrypted, deletes your
+   message, and answers with the status only (`set` or `missing`), never the
+   value.
+4. Saving any field of a venue removes that venue from
+   `exchange_attested_keys`, so the permissions check runs again before the
+   next submission.
+
+If the message cannot be deleted (a reply older than 48 hours, or a group
+chat where the bot lacks the right), the bot answers
+`Delete the message manually` and keeps the key stored. Delete the message by
+hand.
+
+`Delete this key` has a confirmation step and removes only that one field.
+
+### Adding a service key
+
+`Service keys` lists the five optional data-provider keys
+(`CRYPTOPANIC_KEY`, `ALPHA_VANTAGE_KEY`, `COINGECKO_KEY`, `COINDESK_API_KEY`,
+`MESSARI_API_KEY`). All five are optional: the features that use them degrade
+when the key is missing, and none of them is required for the bot to start.
+The same flow applies: send the key, the bot deletes the message and answers
+with the status only. Saving one rebuilds the affected fetchers immediately,
+so a newly added key is used by the next fetch without a restart.
+
+### Changing a setting
+
+Choice rows (for example `min_trend_strength`, `coingecko_api_tier`,
+`outcome_notifications_mode`) and boolean rows are one tap. Number, list and
+map rows ask: `Send the new value (range a to b) within 120 seconds`. The bot
+keeps one pending action, offers `Cancel`, and validates the value before it
+writes it. An out-of-range or wrongly typed value is refused and the previous
+value stays.
+
+Where the code already reads a value at call time, the change is applied
+immediately and the reply says `applied`. Risk limits update the running
+`RiskManager.config` in place, because the paper engine holds a reference to
+the same object. Cost-model values rebuild the paper engine's cost profile.
+The values cached at startup — provider settings, the notification policy, the
+scheduler interval, `require_higher_tf_confirmation`,
+`initial_cash` — are written and take effect after a restart; the reply says
+`applies after restart`.
+
+`initial_cash` never resets the paper ledger. The open positions stay open
+across the restart.
+
+### Key rotation through Telegram, then a restart
+
+1. Open `Exchange keys`, pick the venue, the environment, and the field.
+2. Send the new key. The bot stores it and the venue leaves
+   `exchange_attested_keys`, so the next submission re-checks the permissions
+   of the new key.
+3. Rotate the matching key at the venue itself.
+4. Restart the bot (`docs/runbook.md` section 12.4 covers the full rotation
+   procedure). Nothing else is required: lookups resolve the profile store
+   first, and no gateway is cached between submissions.
+
+### Storage and guard rails
+
+Non-secret values go to `config.json` through `ConfigManager.set`, and the new
+keys are listed in `ConfigManager.DEFAULT_CONFIG`, which stays the single
+source of defaults. Secrets go to `runs/profile_keys.enc.json`, one Fernet
+token per value, written to a temp file and moved with `os.replace`, with
+`600` permissions where the operating system supports it. `runs/` is already
+gitignored. Secrets never enter `config.json`, the logs, the error text, or
+the chat history.
+
+When `SECRET_ENCRYPTION_PASSWORD` is missing, the menu refuses to store a key
+and says so. Nothing is written. The existing `.env` encrypted path
+(`ENCRYPTED_<NAME>`) still works as the fallback, and the plaintext rule of
+`credentials_usable` is unchanged: a plaintext key in `.env` keeps credentials
+disabled for that venue.
+

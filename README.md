@@ -164,6 +164,15 @@ See `docs/runbook.md` for the daily checks and
 `/signals` is report-only. `/paper` is the explicit paper-execution command
 and is restricted to the configured administrator.
 
+`/start` also has a `⚙️ Profile` row for the administrator: exchange API keys,
+data-provider keys, and the personalizable trading settings (risk, stop and
+target, analysis and gates, paper costs, notifications, reporting). Every
+default reproduces the previous behavior, so an empty profile changes nothing.
+Secrets are encrypted one value at a time into the gitignored
+`runs/profile_keys.enc.json` and never reach `config.json`, the logs, or the
+chat. Operator-only settings stay out of the menu; see the Profile section of
+`docs/runbook.md` and `docs/adr/ADR-0013-user-profile.md`.
+
 ## Paper trading and risk
 
 Default mode is paper via `TradingService.execute_signal(signal, mode="paper")`,

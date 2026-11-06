@@ -9,6 +9,7 @@ from app.profile_service import ProfileService
 from config.logger import logger
 from config.profile_keys import ProfileKeyStore, get_store
 from config.profile_schema import (
+    ALL_ENTRIES,
     KIND_BOOL,
     KIND_CHOICE,
     KIND_FLOAT,
@@ -84,7 +85,7 @@ class TelegramProfileMenu:
         elif action == "reset":
             await self.reset(update, context, parts[2])
         elif action == "resetall":
-            await self.reset_all(update, context, len(parts) > 3)
+            await self.reset_all(update, context, len(parts) > 2)
         elif action == "venue":
             await self.venue(update, context, parts[2], parts[3])
         elif action == "env":
@@ -298,7 +299,7 @@ class TelegramProfileMenu:
                 update, "Reset every profile value to its default?", InlineKeyboardMarkup(rows)
             )
             return
-        for entry in entries_for_section("*"):
+        for entry in ALL_ENTRIES:
             self.service.reset(entry.key)
         logger.info("Profile reset to defaults.")
         await self._edit(update, "Defaults restored.", self._back())

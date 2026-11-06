@@ -37,13 +37,14 @@ files are unchanged.
 ## Impact
 
 - Affected specs: `user-profile` (new capability)
-- Affected code: `config/profile_schema.py` (new), `application/profile.py`
-  (new: store, apply helpers), `app/telegram_bot.py` (+ `app/telegram_profile.py`,
-  new menu), `trading/risk_manager.py`, `strategy/signal_generator.py`,
+- Affected code: `config/profile_schema.py` (new), `config/profile_keys.py`
+  (new: encrypted store), `app/profile_service.py` (new: apply helpers),
+  `app/telegram_bot.py` (+ `app/telegram_profile.py`, new menu),
+  `trading/risk_manager.py`, `strategy/signal_generator.py`,
   `services/trading_service.py`, `common/utils.py`
   (`calculate_dynamic_levels` gained optional parameters),
   `data/data_provider.py` (provider key rebuild), `config/settings.py`
-  (`DEFAULT_CONFIG` additions), `main.py` (unchanged).
+  (`DEFAULT_CONFIG` additions), `main.py` (handler wiring).
 - Docs: `docs/adr/ADR-0013-user-profile.md`, `docs/runbook.md`,
   `docs/open_issues.md`, `README.md`.
 - Operator-only exclusions are documented in ADR-0013-User-Profile; access

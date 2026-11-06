@@ -594,3 +594,53 @@ positives, pip-audit 0 on the manifest, trivy only untracked `skills/`).
   placeholder `@Yuj-Trade` owner in CODEOWNERS with the real reviewer.
 - The `skills/` package-lock CVEs (body-parser, proxy-addr, qs) are in an
   untracked sample boilerplate, not shipped; no action.
+
+## User profile 2026-11-06 - open items
+
+Implemented per the owner implementation brief of 2026-11-06. Ambiguity
+decisions recorded here; everything else follows the brief.
+
+- [~] P-01 (P2) **Known gap: attestation is the only guard for most venues.**
+  `permission_endpoint` is set for Binance and LBank only; every other venue
+  has `None`, so `verify_key_permissions` returns
+  `no_endpoint_attestation_required` and cannot check that a newly pasted key
+  has the right permissions. The profile removes the venue from
+  `exchange_attested_keys` on save or delete, which forces the re-check for
+  the two venues that can be checked, but the others still rely on the
+  operator pasting a correctly scoped key. A venue-side permission endpoint
+  is the only real fix, and it is outside the codebase.
+- [~] P-02 (P3) `exchange_attested_keys` removal is the only profile write to
+  that key. Nothing in the profile code adds a venue to it, and a test asserts
+  that. The venue must be re-attested through the operator path
+  (the exchange service's own permission check) before a live submission is
+  allowed.
+- [x] P-03 (P3) Exchange secrets and provider secrets share the
+  `runs/profile_keys.enc.json` file, one Fernet token per value, encrypted
+  with the same `KeyEncryptor` as `.env`. Separate files were considered and
+  rejected: one store keeps the backup and rotation procedure in one place.
+- [x] P-04 (P3) Provider keys resolve the profile store first and then
+  `SecretsManager`, because `SecretsManager` snapshots the provider keys as
+  class attributes at import time. A save rebuilds the affected fetchers
+  through `MarketDataProvider.rebuild_keyed_fetchers()` instead of mutating
+  `SecretsManager` at import time.
+- [x] P-05 (P3) Gateways are built per submission and closed after use, so a
+  key change has no cached gateway to drop. The change also clears the venue's
+  permission-cache entry and removes it from `reconciled_venues`, so the next
+  submission rebuilds the gateway from the new key.
+- [x] P-06 (P3) `initial_cash`, the provider settings
+  (`coingecko_api_tier`, `coindesk_news_enabled`, `messari_enabled`), the
+  notification policy, and the scheduler interval are cached at startup, so a
+  save reports `applies after restart`. The paper ledger is never reset.
+- [x] P-07 (P3) The schema holds `default` values so that one test can assert
+  `default == ConfigManager.DEFAULT_CONFIG[key]`, while `DEFAULT_CONFIG` stays
+  the source that the running code reads. A repeated literal in the schema
+  would break that assertion, so the two are tied by the test, not by
+  copy-paste.
+- [x] P-08 (P3) Five data-provider keys are all optional. The code and this
+  runbook state that the features degrade without them, and none of them is
+  marked required.
+- [x] P-09 (P3) The exchange venue list in the menu is filtered to
+  `STATUS_READY`, which excludes Ourbit (`STATUS_PENDING_DOCS`) and keeps
+  LBank, whose scope is `SCOPE_IRAN_ONLY`. LBank keys can be stored from the
+  menu, but the access profile still decides whether the venue is reachable,
+  and no profile command changes that.
