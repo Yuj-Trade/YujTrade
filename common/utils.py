@@ -444,6 +444,14 @@ def calculate_dynamic_levels(
     signal_type: SignalType,
     market_context: MarketAnalysis,
     order_book=None,
+    stop_atr_multiplier_base: float = 1.2,
+    stop_atr_multiplier_high_adx: float = 1.5,
+    stop_adx_threshold: float = 40.0,
+    target_min_rr_base: float = 1.8,
+    target_min_rr_high_adx: float = 2.0,
+    target_adx_threshold: float = 35.0,
+    stop_use_structure_levels: bool = True,
+    target_use_structure_levels: bool = True,
 ) -> dict[str, float]:
     last_close = data["close"].iloc[-1]
 
@@ -459,11 +467,14 @@ def calculate_dynamic_levels(
     if pd.isna(atr) or atr <= 0:
         atr = last_close * 0.02
 
-    min_rr = 2.0 if adx_val > 35 else 1.8
+    min_rr = target_min_rr_high_adx if adx_val > target_adx_threshold else target_min_rr_base
 
     entry = float(last_close)
 
-    risk = atr * (1.5 if adx_val > 40 else 1.2)
+    atr_multiplier = (
+        stop_atr_multiplier_high_adx if adx_val > stop_adx_threshold else stop_atr_multiplier_base
+    )
+    risk = atr * atr_multiplier
 
     if signal_type == SignalType.BUY:
         base_stop_loss = entry - risk
@@ -478,14 +489,20 @@ def calculate_dynamic_levels(
             for s in market_context.support_levels
             if isinstance(s, (int, float)) and s < entry and s > base_stop_loss - risk
         ]
-        stop_loss = max(valid_supports) if valid_supports else base_stop_loss
+        if stop_use_structure_levels and valid_supports:
+            stop_loss = max(valid_supports)
+        else:
+            stop_loss = base_stop_loss
 
         valid_resistances = [
             r
             for r in market_context.resistance_levels
             if isinstance(r, (int, float)) and r > entry and r < base_take_profit + risk
         ]
-        take_profit = min(valid_resistances) if valid_resistances else base_take_profit
+        if target_use_structure_levels and valid_resistances:
+            take_profit = min(valid_resistances)
+        else:
+            take_profit = base_take_profit
 
     else:
         valid_resistances = [
@@ -493,14 +510,20 @@ def calculate_dynamic_levels(
             for r in market_context.resistance_levels
             if isinstance(r, (int, float)) and r > entry and r < base_stop_loss + risk
         ]
-        stop_loss = min(valid_resistances) if valid_resistances else base_stop_loss
+        if stop_use_structure_levels and valid_resistances:
+            stop_loss = min(valid_resistances)
+        else:
+            stop_loss = base_stop_loss
 
         valid_supports = [
             s
             for s in market_context.support_levels
             if isinstance(s, (int, float)) and s < entry and s > base_take_profit - risk
         ]
-        take_profit = max(valid_supports) if valid_supports else base_take_profit
+        if target_use_structure_levels and valid_supports:
+            take_profit = max(valid_supports)
+        else:
+            take_profit = base_take_profit
 
     if order_book and hasattr(order_book, "bids") and signal_type == SignalType.BUY:
         major_bid = max([p for p, _ in order_book.bids[:5]]) if order_book.bids else None

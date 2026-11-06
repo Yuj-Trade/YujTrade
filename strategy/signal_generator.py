@@ -18,6 +18,7 @@ from common.utils import (
     detect_market_regime,
 )
 from config.logger import logger
+from config.profile_schema import chained_getter
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from data.data_validator import DataQualityChecker
@@ -100,6 +101,16 @@ class SignalGenerator:
         if h < 0.45:
             return "low"
         return "mid"
+
+    def _profile_gate_get(self):
+        return chained_getter(self.config_manager, self.config_manager.get)
+
+    def _profile_constant_get(self):
+        return chained_getter(self.config_manager, LONG_TERM_CONFIG.get)
+
+    def _signal_min_risk_reward(self) -> float:
+        default = float(LONG_TERM_CONFIG.get("min_risk_reward_ratio", 2.0))
+        return float(self._profile_constant_get()("min_risk_reward_ratio", default))
 
     async def generate_signal(
         self,
@@ -189,7 +200,26 @@ class SignalGenerator:
             return None
 
         levels = calculate_dynamic_levels(
-            data, signal_type, market_context, external_data.get("order_book")
+            data,
+            signal_type,
+            market_context,
+            external_data.get("order_book"),
+            stop_atr_multiplier_base=float(
+                self.config_manager.get("stop_atr_multiplier_base", 1.2)
+            ),
+            stop_atr_multiplier_high_adx=float(
+                self.config_manager.get("stop_atr_multiplier_high_adx", 1.5)
+            ),
+            stop_adx_threshold=float(self.config_manager.get("stop_adx_threshold", 40.0)),
+            target_min_rr_base=float(self.config_manager.get("target_min_rr_base", 1.8)),
+            target_min_rr_high_adx=float(self.config_manager.get("target_min_rr_high_adx", 2.0)),
+            target_adx_threshold=float(self.config_manager.get("target_adx_threshold", 35.0)),
+            stop_use_structure_levels=bool(
+                self.config_manager.get("stop_use_structure_levels", True)
+            ),
+            target_use_structure_levels=bool(
+                self.config_manager.get("target_use_structure_levels", True)
+            ),
         )
         rr_ratio = calculate_risk_reward_ratio(
             levels["primary_entry"],
@@ -198,7 +228,7 @@ class SignalGenerator:
             signal_type,
         )
 
-        min_rr_ratio = LONG_TERM_CONFIG.get("min_risk_reward_ratio", 2.0)
+        min_rr_ratio = self._signal_min_risk_reward()
         if rr_ratio < min_rr_ratio:
             logger.info(
                 f"Risk/Reward {rr_ratio:.2f} below minimum {min_rr_ratio} for {symbol}-{timeframe}"
@@ -250,7 +280,7 @@ class SignalGenerator:
             )
             for timestamp, row in data.tail(500).iterrows()
         ]
-        gate_config = build_gate_config(self.config_manager.get, timeframe)
+        gate_config = build_gate_config(self._profile_gate_get(), timeframe)
         decision = decide(
             build_snapshot(
                 symbol,
