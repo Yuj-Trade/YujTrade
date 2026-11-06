@@ -248,6 +248,9 @@ class MainApp:
                     config_manager=config_manager,
                     trading_service=self.trading_service,
                     background_tasks=self.background_tasks_manager,
+                    market_data_provider=getattr(
+                        self.trading_service, "market_data_provider", None
+                    ),
                 )
 
                 logger.info("Starting Telegram bot...")

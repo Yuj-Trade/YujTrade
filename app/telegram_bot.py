@@ -103,10 +103,12 @@ class TelegramBotHandler:
         config_manager: ConfigManager,
         trading_service: TradingService,
         background_tasks: BackgroundTaskManager,
+        market_data_provider: Any = None,
     ):
         self.config_manager = config_manager
         self.trading_service = trading_service
         self.background_tasks = background_tasks
+        self.market_data_provider = market_data_provider
         self.admin_chat_id = admin_chat_id.strip() if admin_chat_id else None
 
         if not self.admin_chat_id:
@@ -182,6 +184,7 @@ class TelegramBotHandler:
                     callback_data="full_analyze",
                 )
             ],
+            [InlineKeyboardButton("⚙️ Profile", callback_data="profile_menu")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         welcome_text = (
@@ -208,6 +211,11 @@ class TelegramBotHandler:
             await self.quick_analyze(update, context)
         elif query.data == "full_analyze":
             await self.full_analyze(update, context)
+        elif query.data == "profile_menu":
+            await self.open_profile_menu(update, context)
+        elif str(query.data).startswith("pf:"):
+            if await self._is_admin(update, context):
+                await self._profile_menu().route(str(query.data), update, context)
 
     async def quick_analyze(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -413,8 +421,24 @@ class TelegramBotHandler:
         text = f"Health OK. Last errors: {errors} | {src_text} | {pf_text}"
         await update.message.reply_text(escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2)
 
+    def _profile_menu(self):
+        existing = getattr(self, "profile_menu", None)
+        if existing is not None:
+            return existing
+        from app.telegram_profile import TelegramProfileMenu
+
+        self.profile_menu = TelegramProfileMenu(self)
+        return self.profile_menu
+
+    async def open_profile_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._is_admin(update, context):
+            return
+        await self._profile_menu().menu(update, context)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self._is_admin(update, context):
+            if await self._profile_menu().consume_text(update, context):
+                return
             text = "Please use /start to choose analysis type. 🤖"
             await update.message.reply_text(
                 escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2
