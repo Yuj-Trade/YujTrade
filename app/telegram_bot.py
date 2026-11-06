@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 from datetime import UTC, datetime
+from typing import Any
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -20,18 +21,23 @@ from application.performance_report import PerformanceReport
 from common.constants import LONG_TERM_CONFIG
 from common.core import TradingSignal
 from config.logger import logger
+from config.profile_schema import chained_getter
 from config.settings import ConfigManager
 from services.trading_service import TradingService
 from trading.risk_manager import build_risk_config
 from utils.background_manager import BackgroundTaskManager
 
 
-def _focus_label() -> str:
-    focus = LONG_TERM_CONFIG.get("focus_timeframes", [])
+def _focus_label(config_manager: Any) -> str:
+    get = chained_getter(config_manager, LONG_TERM_CONFIG.get)
+    focus = get("focus_timeframes", [])
     return ", ".join(focus) if focus else "all timeframes"
 
 
-QUICK_TIMEFRAMES = ["1h"]
+def _quick_timeframes(config_manager: Any) -> list[str]:
+    timeframe = config_manager.get("quick_analyze_timeframe", "1h") or "1h"
+    return [str(timeframe)]
+
 
 TELEGRAM_SEND_ATTEMPTS = 3
 
@@ -172,7 +178,7 @@ class TelegramBotHandler:
             [InlineKeyboardButton("⚡ Quick Analyze (1h)", callback_data="quick_analyze")],
             [
                 InlineKeyboardButton(
-                    f"📊 Full Analyze ({_focus_label()})",
+                    f"📊 Full Analyze ({_focus_label(self.config_manager)})",
                     callback_data="full_analyze",
                 )
             ],
@@ -182,7 +188,7 @@ class TelegramBotHandler:
             "Welcome to the Long-term Trading Signal Bot! 🤖\n\n"
             "Choose your analysis type:\n"
             "• *Quick Analyze*: Only 1h timeframe ⚡\n"
-            f"• *Full Analyze*: Long-term timeframes ({_focus_label()}) 📊"
+            f"• *Full Analyze*: Long-term timeframes ({_focus_label(self.config_manager)}) 📊"
         )
         try:
             await update.message.reply_text(
@@ -218,7 +224,9 @@ class TelegramBotHandler:
             chat_id = self.admin_chat_id
 
         async def analysis_task():
-            signals = await self.trading_service.run_quick_analysis(QUICK_TIMEFRAMES)
+            signals = await self.trading_service.run_quick_analysis(
+                _quick_timeframes(self.config_manager)
+            )
 
             await self.send_signals_to_telegram(
                 signals,
@@ -231,7 +239,7 @@ class TelegramBotHandler:
 
     async def full_analyze(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        text = f"Starting Full Analyze ({_focus_label()})... ⏳"
+        text = f"Starting Full Analyze ({_focus_label(self.config_manager)})... ⏳"
         if query:
             await query.edit_message_text(
                 escape_markdown_v2(text), parse_mode=ParseMode.MARKDOWN_V2

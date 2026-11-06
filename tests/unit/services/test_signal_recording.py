@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from common.core import SignalType, TradingSignal
 from config.logger import logger as root_logger
+from config.settings import ConfigManager
 from services.trading_service import TradingService
 from strategy.signal_tracker import SignalTracker, make_signal_id
 
@@ -40,6 +41,7 @@ def _signal(**overrides) -> TradingSignal:
 def _service(tracker, signal) -> TradingService:
     service = TradingService.__new__(TradingService)
     service.invalid_symbols = set()
+    service.config_manager = ConfigManager()
     service._cycle_log = root_logger.bind(run_id="record-test")
     service.market_data_provider = SimpleNamespace(
         fetch_ohlcv_data=AsyncMock(return_value=MagicMock(empty=False))
@@ -121,6 +123,7 @@ async def test_analyze_symbol_logs_symbol_and_timeframe_on_failure():
 
     service = ts.TradingService.__new__(ts.TradingService)
     service.invalid_symbols = set()
+    service.config_manager = ConfigManager()
     service.last_errors = 0
     service._cycle_log = logger
     service.market_data_provider = _Provider()

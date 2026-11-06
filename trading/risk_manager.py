@@ -17,6 +17,27 @@ class RiskConfig:
     min_risk_reward: float = 2.0
     volatility_target_pct: float = 2.0
     kelly_fraction: float = 0.5
+    loss_streak_threshold: int = 3
+    loss_streak_size_multiplier: float = 0.5
+    weekly_loss_reduction_ratio: float = 0.5
+
+
+RISK_CONFIG_FIELDS: tuple[str, ...] = (
+    "risk_per_trade_pct",
+    "max_portfolio_exposure_pct",
+    "max_single_position_pct",
+    "max_concurrent_positions",
+    "max_daily_loss_pct",
+    "max_weekly_loss_pct",
+    "max_drawdown_pct",
+    "max_leverage",
+    "min_risk_reward",
+    "volatility_target_pct",
+    "kelly_fraction",
+    "loss_streak_threshold",
+    "loss_streak_size_multiplier",
+    "weekly_loss_reduction_ratio",
+)
 
 
 def build_risk_config(config_manager: Any) -> RiskConfig:
@@ -31,6 +52,11 @@ def build_risk_config(config_manager: Any) -> RiskConfig:
         max_drawdown_pct=float(get("max_drawdown_pct", 20.0)),
         max_leverage=float(get("max_leverage", 3.0)),
         min_risk_reward=float(get("min_risk_reward", 2.0)),
+        volatility_target_pct=float(get("volatility_target_pct", 2.0)),
+        kelly_fraction=float(get("kelly_fraction", 0.5)),
+        loss_streak_threshold=int(get("loss_streak_threshold", 3)),
+        loss_streak_size_multiplier=float(get("loss_streak_size_multiplier", 0.5)),
+        weekly_loss_reduction_ratio=float(get("weekly_loss_reduction_ratio", 0.5)),
     )
 
 
@@ -57,10 +83,11 @@ class RiskManager:
         return max(0.0, (self.equity_peak - equity) / self.equity_peak * 100.0)
 
     def size_multiplier(self) -> float:
-        if self.consecutive_losses >= 3:
-            return 0.5
-        if self.weekly_pnl <= -self.config.max_weekly_loss_pct * 0.5:
-            return 0.5
+        if self.consecutive_losses >= self.config.loss_streak_threshold:
+            return self.config.loss_streak_size_multiplier
+        weekly_floor = -self.config.max_weekly_loss_pct * self.config.weekly_loss_reduction_ratio
+        if self.weekly_pnl <= weekly_floor:
+            return self.config.weekly_loss_reduction_ratio
         return 1.0
 
     def fixed_fractional_size(self, equity: float, entry: float, stop: float) -> float:

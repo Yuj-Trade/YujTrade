@@ -17,6 +17,7 @@ from common.core import Position, PositionSide, TradingSignal
 from common.exceptions import InvalidSymbolError
 from common.rate_limit import configure_rate_limits
 from config.logger import logger
+from config.profile_schema import chained_getter
 from config.settings import ConfigManager
 from data.data_provider import MarketDataProvider
 from domain.costs import CostProfile, cost_profile_from_config
@@ -476,7 +477,7 @@ class TradingService(ModelDataProvider):
         return signals
 
     def _passes_quality_gates(self, signal: TradingSignal) -> bool:
-        gate_config = build_gate_config(LONG_TERM_CONFIG.get, signal.timeframe)
+        gate_config = build_gate_config(self._profile_get(), signal.timeframe)
         strength = signal.market_context.get("trend_strength")
         strength_name = getattr(strength, "value", strength)
         strength_name = str(strength_name).upper() if strength_name else "WEAK"
@@ -533,8 +534,11 @@ class TradingService(ModelDataProvider):
         self._schedule_learning(self._analysis_timeframes())
         return signals
 
+    def _profile_get(self):
+        return chained_getter(self.config_manager, LONG_TERM_CONFIG.get)
+
     def _analysis_timeframes(self) -> list[str]:
-        focus_timeframes = LONG_TERM_CONFIG.get("focus_timeframes", ["1d", "1w", "1M"])
+        focus_timeframes = self._profile_get()("focus_timeframes", ["1d", "1w", "1M"])
         all_timeframes = self.config_manager.get("timeframes", [])
         return [tf for tf in all_timeframes if tf in focus_timeframes] or all_timeframes
 
@@ -584,7 +588,11 @@ class TradingService(ModelDataProvider):
                 capped_signals.append(sig)
                 seen_per_tf[sig.timeframe] = count + 1
 
-        max_signals = LONG_TERM_CONFIG.get("max_signals_per_run", 3)
+        max_signals = self._profile_get()("max_signals_per_run", 3)
+        try:
+            max_signals = max(1, int(max_signals))
+        except (TypeError, ValueError):
+            max_signals = 3
         final_signals = capped_signals[:max_signals]
 
         if final_signals:

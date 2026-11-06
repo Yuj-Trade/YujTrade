@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import BadRequest, NetworkError, TimedOut
 
 from app.telegram_bot import TelegramBotHandler
+from config.settings import ConfigManager
 
 
 def _handler():
     handler = TelegramBotHandler.__new__(TelegramBotHandler)
     handler.trading_service = MagicMock()
+    handler.config_manager = ConfigManager()
     handler.admin_chat_id = "123"
     return handler
 

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import services.trading_service as trading_service_module
 from common.core import SignalType, TradingSignal
 from config.logger import logger as root_logger
+from config.settings import ConfigManager
 from domain.outcome import Resolution
 from services.trading_service import TradingService
 
@@ -33,6 +34,7 @@ def _signal(**overrides) -> TradingSignal:
 def _service(signal=None, multi_tf=None) -> TradingService:
     service = TradingService.__new__(TradingService)
     service.invalid_symbols = set()
+    service.config_manager = ConfigManager()
     service._cycle_log = root_logger.bind(run_id="test-run-id")
 
     provider = SimpleNamespace(
@@ -134,6 +136,7 @@ class TestMetricsWiring:
         monkeypatch.setattr(trading_service_module.metrics, "record_resolution", resolution_mock)
 
         service = TradingService.__new__(TradingService)
+        service.config_manager = ConfigManager()
         service._cycle_log = root_logger.bind(run_id="reconcile-run")
         expired_details = {
             "symbol": "BTC/USDT",

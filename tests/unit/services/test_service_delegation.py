@@ -13,12 +13,14 @@ from unittest.mock import AsyncMock
 import pandas as pd
 
 from common.core import SignalType, TradingSignal
+from config.settings import ConfigManager
 from services.trading_service import TradingService
 
 
 def _service(provider=None) -> TradingService:
     service = TradingService.__new__(TradingService)
     service.market_data_provider = provider
+    service.config_manager = ConfigManager()
     return service
 
 

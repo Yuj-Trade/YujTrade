@@ -1,7 +1,7 @@
 import hashlib
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -135,6 +135,14 @@ class ExchangeExecutionService:
             if execution_dry_run is None
             else execution_dry_run
         )
+
+    def drop_venue_state(self, exchange_id: str) -> None:
+        self._permission_cache.pop(exchange_id, None)
+        self.reconciled_venues.discard(exchange_id)
+        self.reconcile_blockers.pop(exchange_id, None)
+        attested = tuple(item for item in self.settings.attested_keys if item != exchange_id)
+        if attested != self.settings.attested_keys:
+            self.settings = replace(self.settings, attested_keys=attested)
 
     async def _announce(self, text: str) -> None:
         if self.notify is None:
